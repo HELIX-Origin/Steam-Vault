@@ -18,3 +18,10 @@ vite.config.ts.timestamp-*
 # Local backups created by Steam Vault before writing to Steam files
 /scratch
 *.local.json
+
+# Jekyll local docs preview (scratch files - not committed)
+/Gemfile
+/Gemfile.lock
+/docs/_site
+/docs/.jekyll-cache
+/.jekyll-cache

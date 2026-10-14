@@ -88,6 +88,17 @@ theme; the full visual design pass is tracked as deferred work.
 Early development. Milestone **M1 (Foundation)** delivers Steam discovery, library/collection
 reads and writes, non-Steam shortcuts, the metadata provider layer, AutoCats, and the app shell.
 
+## 📖 Documentation
+
+Full guides and technical reference live on the documentation site:
+
+- **Site:** <https://helix-origin.github.io/Steam-Vault/>
+- **User guides:** <https://helix-origin.github.io/Steam-Vault/docs/>
+- **Technical wiki:** <https://helix-origin.github.io/Steam-Vault/wiki/>
+
+The site is built from the [`docs/`](./docs) folder in this repository using the
+[`helix-docs`](https://github.com/HELIX-Origin/helix-docs) Jekyll theme.
+
 ## 📄 License
 
 BSD-3-Clause. See [`LICENSE`](./LICENSE).
