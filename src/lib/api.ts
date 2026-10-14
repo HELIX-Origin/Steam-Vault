@@ -12,6 +12,7 @@ import type {
   Game,
   IgdbGame,
   ImportResult,
+  MetadataSyncResult,
   OwnedGame,
   OwnedLibrary,
   PlatformGame,
@@ -68,6 +69,10 @@ export const api = {
     invoke<ImportResult>("import_platform_games", { games, accountId3: accountId3 ?? null }),
   getOwnedLibrary: () => invoke<OwnedLibrary>("get_owned_library"),
   refreshOwnedGames: () => invoke<OwnedLibrary>("refresh_owned_games"),
+
+  // Warm the store-metadata cache for the whole library.
+  syncLibraryMetadata: (accountId3?: string) =>
+    invoke<MetadataSyncResult>("sync_library_metadata", { accountId3: accountId3 ?? null }),
 
   // Create collections from a chosen sorting option.
   computeCategorization: (request: CategorizeRequest, accountId3?: string) =>

@@ -44,6 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   an optional prefix, an installed-only filter, and a replace-membership mode.
 - New **Platforms** and **Organize** views (six-item navigation) plus platform and
   installed-state badges in the Library.
+- **On-demand metadata cache warming** for the AutoCats / collection engine: the Steam Store
+  provider now fetches store **tags** (`actions/ajaxgetstoretags`) alongside `appdetails`;
+  `ensure_steam_metadata` de-duplicates ids, reuses entries within the cache TTL, and batches
+  `appdetails` 50 per request; a new `sync_library_metadata` command warms the cache for the
+  whole owned library, and categorization can fetch on demand (`fetchMetadata`, on by default).
 
 ### Fixed
 

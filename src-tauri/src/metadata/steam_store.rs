@@ -1,8 +1,11 @@
-//! Keyless Steam store `appdetails` metadata.
+//! Keyless Steam store metadata.
 //!
-//! Endpoint: `https://store.steampowered.com/api/appdetails?appids=<csv>`.
-//! Returns genres, developers, publishers, feature-flag categories, release
-//! date, and header/capsule images.
+//! Endpoints:
+//! - `https://store.steampowered.com/api/appdetails?appids=<csv>` — genres,
+//!   developers, publishers, feature-flag categories, release date,
+//!   header/capsule images, and the Metacritic critic score.
+//! - `https://store.steampowered.com/actions/ajaxgetstoretags?appid=<id>` —
+//!   Steam community tags.
 
 use std::collections::BTreeMap;
 
@@ -76,9 +79,55 @@ fn parse_details(app_id: u32, data: &Value) -> AppMeta {
         short_description: string(data.get("short_description")),
         header_image: string(data.get("header_image")),
         capsule_image: string(data.get("capsule_image")),
-        user_score: None,
+        // The store response carries a Metacritic critic score (0–100) when one
+        // exists. There is no keyless user-review percentage in this endpoint,
+        // so the score bucket uses whichever score is available.
+        user_score: data
+            .get("metacritic")
+            .and_then(|m| m.get("score"))
+            .and_then(Value::as_f64),
         ..Default::default()
     }
+}
+
+/// Fetch Steam community tags for a set of apps.
+///
+/// Uses Steam's own JSON endpoint (`actions/ajaxgetstoretags`), which returns
+/// `{"tags":[{"tagid":..,"name":"…"}]}` — the same first-party API host as
+/// `appdetails`, so no HTML scraping is involved. Apps with no tags are
+/// omitted. Individual failures are skipped rather than failing the batch.
+pub async fn fetch_tags(
+    client: &reqwest::Client,
+    app_ids: &[u32],
+    cc: &str,
+    lang: &str,
+) -> BTreeMap<u32, Vec<String>> {
+    let mut out = BTreeMap::new();
+    for app_id in app_ids {
+        let url = format!(
+            "https://store.steampowered.com/actions/ajaxgetstoretags?appid={app_id}&cc={cc}&l={lang}"
+        );
+        let Ok(response) = client.get(&url).send().await else {
+            continue;
+        };
+        let Ok(value) = response.json::<Value>().await else {
+            continue;
+        };
+        let tags: Vec<String> = value
+            .get("tags")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|tag| tag.get("name").and_then(Value::as_str).map(str::to_string))
+                    .collect()
+            })
+            .unwrap_or_default();
+        if !tags.is_empty() {
+            out.insert(*app_id, tags);
+        }
+    }
+    out
 }
 
 fn string(value: Option<&Value>) -> Option<String> {

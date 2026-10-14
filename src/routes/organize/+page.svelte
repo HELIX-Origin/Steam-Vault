@@ -2,7 +2,12 @@
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
   import { error, ownedLibrary } from "$lib/stores";
-  import type { CategorizationPlan, CategorizeKind, CategorizeRequest } from "$lib/types";
+  import type {
+    CategorizationPlan,
+    CategorizeKind,
+    CategorizeRequest,
+    MetadataSyncResult
+  } from "$lib/types";
 
   const options: { kind: CategorizeKind; label: string; hint: string }[] = [
     { kind: "genre", label: "Genre", hint: "One collection per genre, e.g. Action, RPG." },
@@ -24,6 +29,8 @@
   let onlyInstalled = false;
   let plan: CategorizationPlan | null = null;
   let busy = false;
+  let syncingMeta = false;
+  let meta: MetadataSyncResult | null = null;
   let applied: string | null = null;
 
   onMount(async () => {
@@ -48,7 +55,8 @@
       kind,
       prefix: prefix.trim() || null,
       removeExisting,
-      onlyInstalled
+      onlyInstalled,
+      fetchMetadata: true
     };
   }
 
@@ -61,6 +69,18 @@
       error.set(errorMessage(e));
     } finally {
       busy = false;
+    }
+  }
+
+  async function syncMetadata() {
+    syncingMeta = true;
+    try {
+      meta = await api.syncLibraryMetadata();
+      error.set(null);
+    } catch (e) {
+      error.set(errorMessage(e));
+    } finally {
+      syncingMeta = false;
     }
   }
 
@@ -122,6 +142,9 @@
     <button class="btn" onclick={syncOwned} disabled={busy}>
       {busy ? "Working…" : "Sync owned games"}
     </button>
+    <button class="btn btn-ghost" onclick={syncMetadata} disabled={syncingMeta}>
+      {syncingMeta ? "Fetching metadata…" : "Sync metadata"}
+    </button>
   </div>
 </div>
 
@@ -158,8 +181,13 @@
   </div>
 </div>
 
-{#if applied}
-  <div class="glass-strong" style="padding:0.9rem 1rem;margin-bottom:1rem">{applied}</div>
+{#if meta}
+  <div class="glass-strong" style="padding:0.9rem 1rem;margin-bottom:1rem">
+    <strong>Metadata</strong> · {meta.requested} checked · {meta.fetched} fetched
+    {#if meta.tagsFetched}· {meta.tagsFetched} tag sets{/if}
+    {#if meta.cached}· {meta.cached} cached{/if}
+    {#if meta.unavailable}· {meta.unavailable} unavailable{/if}
+  </div>
 {/if}
 
 {#if plan}

@@ -34,6 +34,7 @@ pub fn run() {
             commands::create_collection,
             commands::delete_collection,
             commands::fetch_steam_store_metadata,
+            commands::sync_library_metadata,
             commands::fetch_owned_games,
             commands::steamgriddb_search,
             commands::steamgriddb_assets,

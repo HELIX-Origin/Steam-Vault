@@ -252,7 +252,18 @@ export interface CategorizeRequest {
   exclude?: string[];
   removeExisting?: boolean;
   onlyInstalled?: boolean;
+  /** Download missing store metadata before computing (default true). */
+  fetchMetadata?: boolean;
   filter?: Filter | null;
+}
+
+/** Outcome of warming the local metadata cache. */
+export interface MetadataSyncResult {
+  requested: number;
+  fetched: number;
+  tagsFetched: number;
+  cached: number;
+  unavailable: number;
 }
 
 export interface CategorizationPlan {

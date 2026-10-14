@@ -396,6 +396,143 @@ pub async fn fetch_steam_store_metadata(
     Ok(result)
 }
 
+/// Maximum app ids per `appdetails` request (the endpoint accepts a CSV list).
+const METADATA_BATCH_SIZE: usize = 50;
+
+/// Summary of a metadata sync pass, surfaced to the UI.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataSyncResult {
+    /// Distinct app ids considered.
+    pub requested: usize,
+    /// Entries newly downloaded from the Steam Store.
+    pub fetched: usize,
+    /// Community tag lists newly downloaded.
+    pub tags_fetched: usize,
+    /// Entries already fresh in the local cache.
+    pub cached: usize,
+    /// Ids the store could not answer for (not a store app, delisted, or a
+    /// transient network failure).
+    pub unavailable: usize,
+}
+
+/// Ensure the metadata cache holds fresh entries for every id in `app_ids`.
+///
+/// Steam's `appdetails` endpoint only returns data for real store apps, so
+/// callers pass the ids they actually intend to categorize; unknown ids simply
+/// count as [`MetadataSyncResult::unavailable`]. Entries younger than
+/// [`CACHE_MAX_AGE_SECS`] are reused. Network failures are tolerated so that
+/// categorization still works offline for kinds that do not need metadata.
+///
+/// When `want_tags` is set, Steam community tags are fetched too (one request
+/// per app) and cached under the `steam-tags` provider key.
+pub async fn ensure_steam_metadata(
+    state: &AppState,
+    app_ids: &[u32],
+    want_tags: bool,
+) -> MetadataSyncResult {
+    let mut unique: Vec<u32> = app_ids.iter().copied().filter(|id| *id != 0).collect();
+    unique.sort_unstable();
+    unique.dedup();
+
+    // Split into entries we can reuse and entries we must fetch.
+    let missing: Vec<u32> = {
+        let cache = state.cache.lock().expect("cache lock poisoned");
+        unique
+            .iter()
+            .copied()
+            .filter(|id| cache.get("steam-store", *id, Some(CACHE_MAX_AGE_SECS)).is_none())
+            .collect()
+    };
+
+    let requested = unique.len();
+    let cached = requested - missing.len();
+    let mut fetched = 0usize;
+
+    if !missing.is_empty() {
+        let settings = state.settings_snapshot();
+        let client = metadata::http_client();
+        for chunk in missing.chunks(METADATA_BATCH_SIZE) {
+            if let Ok(map) = metadata::steam_store::fetch_app_details(
+                &client,
+                chunk,
+                &settings.country_code,
+                &settings.language,
+            )
+            .await
+            {
+                let mut cache = state.cache.lock().expect("cache lock poisoned");
+                for (app_id, meta) in &map {
+                    cache.put("steam-store", *app_id, meta);
+                }
+                let _ = cache.save();
+                fetched += map.len();
+            }
+        }
+    }
+
+    // Community tags come from a separate (per-app) endpoint, so they are only
+    // fetched when a caller actually needs them.
+    let mut tags_fetched = 0usize;
+    if want_tags {
+        let needing: Vec<u32> = {
+            let cache = state.cache.lock().expect("cache lock poisoned");
+            unique
+                .iter()
+                .copied()
+                .filter(|id| cache.get("steam-tags", *id, Some(CACHE_MAX_AGE_SECS)).is_none())
+                .collect()
+        };
+        if !needing.is_empty() {
+            let settings = state.settings_snapshot();
+            let client = metadata::http_client();
+            let tags = metadata::steam_store::fetch_tags(
+                &client,
+                &needing,
+                &settings.country_code,
+                &settings.language,
+            )
+            .await;
+            let mut cache = state.cache.lock().expect("cache lock poisoned");
+            for (app_id, names) in &tags {
+                let meta = AppMeta {
+                    app_id: *app_id,
+                    tags: names.clone(),
+                    ..Default::default()
+                };
+                cache.put("steam-tags", *app_id, &meta);
+            }
+            let _ = cache.save();
+            tags_fetched = tags.len();
+        }
+    }
+
+    MetadataSyncResult {
+        requested,
+        fetched,
+        tags_fetched,
+        cached,
+        unavailable: requested.saturating_sub(cached + fetched),
+    }
+}
+
+/// Warm (or refresh) store metadata for the whole local library.
+#[tauri::command]
+pub async fn sync_library_metadata(
+    account_id3: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<MetadataSyncResult> {
+    let root = steam_root(&state)?;
+    let account = resolve_account(&root, &state, account_id3);
+    let games = collect_library(&root, account.as_deref())?;
+    let ids: Vec<u32> = games
+        .iter()
+        .filter(|game| game.kind == GameKind::Steam && game.app_id != 0)
+        .map(|game| game.app_id)
+        .collect();
+    Ok(ensure_steam_metadata(&state, &ids, false).await)
+}
+
 #[tauri::command]
 pub async fn fetch_owned_games(state: State<'_, AppState>) -> AppResult<Vec<OwnedGame>> {
     let settings = state.settings_snapshot();
@@ -488,7 +625,7 @@ fn require_key(state: &AppState, provider: &str) -> AppResult<String> {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn compute_autocats(
+pub async fn compute_autocats(
     account_id3: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<AutoCatPlan> {
@@ -497,20 +634,40 @@ pub fn compute_autocats(
     let games = collect_library(&root, account.as_deref())?;
 
     let autos = state.settings_snapshot().auto_cats;
-    let cache = state.cache.lock().expect("cache lock poisoned");
 
+    // Only reach out to the store when at least one enabled rule needs it.
+    let wants_metadata = autos
+        .iter()
+        .any(|autocat| autocat.enabled && autocat.kind.needs_metadata());
+    let wants_tags = autos
+        .iter()
+        .any(|autocat| autocat.enabled && autocat.kind.needs_tags());
+    if wants_metadata || wants_tags {
+        let ids: Vec<u32> = games
+            .iter()
+            .filter(|game| game.kind == GameKind::Steam)
+            .map(|game| game.app_id)
+            .collect();
+        ensure_steam_metadata(&state, &ids, wants_tags).await;
+    }
+
+    let cache = state.cache.lock().expect("cache lock poisoned");
     let mut buckets: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
     let mut missing_metadata = Vec::new();
 
     for game in &games {
-        let Some(meta) = cache.get("steam-store", game.app_id, None) else {
-            if game.kind == crate::steam::models::GameKind::Steam {
-                missing_metadata.push(game.app_id);
+        let meta = cache.get("steam-store", game.app_id, None).cloned();
+        if meta.is_none() && game.kind == GameKind::Steam && wants_metadata {
+            missing_metadata.push(game.app_id);
+        }
+        let mut meta = meta.unwrap_or_default();
+        if wants_tags {
+            if let Some(tags) = cache.get("steam-tags", game.app_id, None) {
+                meta.tags = tags.tags.clone();
             }
-            continue;
-        };
+        }
         for autocat in &autos {
-            for name in crate::autocat::apply(autocat, game, meta) {
+            for name in crate::autocat::apply(autocat, game, &meta) {
                 buckets.entry(name).or_default().insert(game.app_id);
             }
         }
@@ -669,8 +826,28 @@ pub struct CategorizeRequest {
     /// Only include games installed locally.
     #[serde(default)]
     pub only_installed: bool,
+    /// Download missing store metadata before computing (default on).
+    #[serde(default = "default_true")]
+    pub fetch_metadata: bool,
     /// Restrict to games matching this filter (e.g. only installed games).
     pub filter: Option<Filter>,
+}
+
+/// Whether a game passes the request's scope filters (installed-only / filter).
+fn in_scope(game: &Game, request: &CategorizeRequest) -> bool {
+    if request.only_installed && !game.installed {
+        return false;
+    }
+    if let Some(filter) = &request.filter {
+        if !crate::filter::matches(filter, game) {
+            return false;
+        }
+    }
+    true
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// A dry-run preview of the collections a request would create.
@@ -711,7 +888,7 @@ fn build_autocat(request: &CategorizeRequest) -> crate::autocat::AutoCat {
 
 /// Compute (without writing) the collections a sorting option would produce.
 #[tauri::command]
-pub fn compute_categorization(
+pub async fn compute_categorization(
     request: CategorizeRequest,
     account_id3: Option<String>,
     state: State<'_, AppState>,
@@ -720,6 +897,27 @@ pub fn compute_categorization(
     let account = resolve_account(&root, &state, account_id3);
     let games = collect_library(&root, account.as_deref())?;
 
+    // The games this request actually considers.
+    let scoped: Vec<&Game> = games
+        .iter()
+        .filter(|game| in_scope(game, &request))
+        .collect();
+
+    // Pull in any missing store metadata before computing, so metadata-based
+    // kinds (genre, developer, release year, …) have data to work with, and
+    // community tags when the Tag kind was chosen. Shortcuts are never in the
+    // store, so only Steam apps are requested.
+    let wants_metadata = request.kind.needs_metadata();
+    let wants_tags = request.kind.needs_tags();
+    if request.fetch_metadata && (wants_metadata || wants_tags) {
+        let ids: Vec<u32> = scoped
+            .iter()
+            .filter(|game| game.kind == GameKind::Steam)
+            .map(|game| game.app_id)
+            .collect();
+        ensure_steam_metadata(&state, &ids, wants_tags).await;
+    }
+
     let autocat = build_autocat(&request);
     let cache = state.cache.lock().expect("cache lock poisoned");
 
@@ -727,24 +925,19 @@ pub fn compute_categorization(
     let mut missing_metadata = Vec::new();
     let mut categorized = 0usize;
 
-    for game in &games {
-        if request.only_installed && !game.installed {
-            continue;
+    for game in &scoped {
+        let stored = cache.get("steam-store", game.app_id, None).cloned();
+        if stored.is_none() && game.kind == GameKind::Steam && wants_metadata {
+            missing_metadata.push(game.app_id);
         }
-        if let Some(filter) = &request.filter {
-            if !crate::filter::matches(filter, game) {
-                continue;
+        let mut meta = stored.unwrap_or_default();
+        if wants_tags {
+            if let Some(tags) = cache.get("steam-tags", game.app_id, None) {
+                meta.tags = tags.tags.clone();
             }
         }
-        let meta = cache
-            .get("steam-store", game.app_id, None)
-            .cloned()
-            .unwrap_or_default();
         let names = crate::autocat::apply(&autocat, game, &meta);
         if names.is_empty() {
-            if game.kind == GameKind::Steam {
-                missing_metadata.push(game.app_id);
-            }
             continue;
         }
         categorized += 1;
@@ -765,7 +958,7 @@ pub fn compute_categorization(
         kind: request.kind,
         assignments,
         categorized_games: categorized,
-        total_games: games.len(),
+        total_games: scoped.len(),
         games_without_metadata: missing_metadata,
         remove_existing: request.remove_existing,
     })
@@ -804,20 +997,23 @@ pub fn apply_categorization(
             }
         }
 
-        let mut collection = match found {
-            Some(index) => existing[index].clone(),
+        let (mut collection, was_new) = match found {
+            Some(index) => (existing[index].clone(), false),
             None => {
                 created += 1;
                 let nanos = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
-                Collection {
-                    id: format!("uc-{nanos:x}-{created}"),
-                    name: assignment.collection.clone(),
-                    favorite: false,
-                    hidden: false,
-                    dynamic: false,
-                    added: Vec::new(),
-                    removed: Vec::new(),
-                }
+                (
+                    Collection {
+                        id: format!("uc-{nanos:x}-{created}"),
+                        name: assignment.collection.clone(),
+                        favorite: false,
+                        hidden: false,
+                        dynamic: false,
+                        added: Vec::new(),
+                        removed: Vec::new(),
+                    },
+                    true,
+                )
             }
         };
 
@@ -843,7 +1039,9 @@ pub fn apply_categorization(
 
         assigned += assignment.app_ids.len();
         file.upsert(&collection)?;
-        updated += 1;
+        if !was_new {
+            updated += 1;
+        }
     }
 
     file.save()?;

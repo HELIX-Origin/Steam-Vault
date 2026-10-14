@@ -35,6 +35,29 @@ pub enum AutoCatKind {
     Name,
 }
 
+impl AutoCatKind {
+    /// Whether this kind needs per-app store metadata to produce values.
+    ///
+    /// The other kinds read straight off the [`Game`] record (platform, installed
+    /// state, playtime, name), so they work without any network access.
+    pub fn needs_metadata(self) -> bool {
+        matches!(
+            self,
+            AutoCatKind::Genre
+                | AutoCatKind::Developer
+                | AutoCatKind::Publisher
+                | AutoCatKind::Flag
+                | AutoCatKind::ReleaseYear
+                | AutoCatKind::UserScore
+        )
+    }
+
+    /// Whether this kind needs Steam community tags (a separate endpoint).
+    pub fn needs_tags(self) -> bool {
+        matches!(self, AutoCatKind::Tag)
+    }
+}
+
 /// A single automatic categorization rule.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
