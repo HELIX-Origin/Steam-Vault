@@ -1,14 +1,20 @@
 //! AutoCats: Depressurizer-style automatic category generation.
 //!
-//! An [`AutoCat`] turns one field of [`AppMeta`] (genre, developer, publisher,
-//! Steam feature flag, tag, release year, or user score) into category names to
+//! An [`AutoCat`] turns one property of a game or its [`AppMeta`] (genre,
+//! developer, publisher, Steam feature flag, tag, release year, user score,
+//! source platform, installed state, playtime, or name) into category names to
 //! assign. Rules are declarative and stored in settings.
+//!
+//! When a user runs "Create collections" they pick one kind — the generated
+//! collection names are the values of that kind (a game's genre becomes the
+//! "Action" collection, its developer becomes the "Valve" collection, and so
+//! on).
 
 use serde::{Deserialize, Serialize};
 
 use crate::steam::models::{AppMeta, Game};
 
-/// The metadata field an [`AutoCat`] derives categories from.
+/// The field an [`AutoCat`] derives categories from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AutoCatKind {
@@ -19,6 +25,14 @@ pub enum AutoCatKind {
     Tag,
     ReleaseYear,
     UserScore,
+    /// Source storefront (works for imported non-Steam games too).
+    Platform,
+    /// Installed vs. not installed.
+    InstalledState,
+    /// Playtime buckets (Unplayed, <2h, 2–10h, 10–50h, 50h+).
+    Playtime,
+    /// First letter of the name (A–Z, or `#`).
+    Name,
 }
 
 /// A single automatic categorization rule.
@@ -50,7 +64,7 @@ fn default_true() -> bool {
 }
 
 /// Compute the category names an [`AutoCat`] assigns to a game.
-pub fn apply(autocat: &AutoCat, _game: &Game, meta: &AppMeta) -> Vec<String> {
+pub fn apply(autocat: &AutoCat, game: &Game, meta: &AppMeta) -> Vec<String> {
     if !autocat.enabled {
         return Vec::new();
     }
@@ -69,6 +83,14 @@ pub fn apply(autocat: &AutoCat, _game: &Game, meta: &AppMeta) -> Vec<String> {
             Some(score) => vec![score_bucket(score)],
             None => Vec::new(),
         },
+        AutoCatKind::Platform => vec![game.platform.label().to_string()],
+        AutoCatKind::InstalledState => vec![if game.installed {
+            "Installed".to_string()
+        } else {
+            "Not installed".to_string()
+        }],
+        AutoCatKind::Playtime => vec![playtime_bucket(game.playtime_minutes)],
+        AutoCatKind::Name => vec![first_letter(&game.name)],
     };
 
     let include: Vec<String> = autocat.include.iter().map(|s| s.to_lowercase()).collect();
@@ -109,5 +131,22 @@ fn score_bucket(score: f64) -> String {
         "Score: 60-69".into()
     } else {
         "Score: <60".into()
+    }
+}
+
+fn playtime_bucket(minutes: Option<u64>) -> String {
+    match minutes.unwrap_or(0) {
+        0 => "Playtime: Unplayed".into(),
+        m if m < 120 => "Playtime: <2h".into(),
+        m if m < 600 => "Playtime: 2-10h".into(),
+        m if m < 3000 => "Playtime: 10-50h".into(),
+        _ => "Playtime: 50h+".into(),
+    }
+}
+
+fn first_letter(name: &str) -> String {
+    match name.trim().chars().next() {
+        Some(ch) if ch.is_ascii_alphabetic() => ch.to_ascii_uppercase().to_string(),
+        Some(_) | None => "#".into(),
     }
 }

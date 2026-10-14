@@ -68,6 +68,9 @@ pub struct Game {
     pub collections: Vec<String>,
     pub favorite: bool,
     pub hidden: bool,
+    /// Source platform: Steam for real apps, the storefront for imported shortcuts.
+    #[serde(default)]
+    pub platform: crate::platforms::Platform,
     // Non-Steam shortcut specifics.
     pub shortcut_id: Option<u32>,
     pub exe: Option<String>,

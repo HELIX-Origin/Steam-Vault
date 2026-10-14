@@ -26,9 +26,15 @@ SvelteKit frontend) that targets **stable, documented data sources** rather than
 - **Read + write Steam collections** — modern Steam collections via the cloud namespace store, plus
   legacy tag import.
 - **Manual organizing UI** — multi-select games and add/remove collections, favorites, and hidden.
+- **Whole owned library** — sync your entire Steam library (not just installed games) through the
+  Steam Web API so everything you own can be organized.
+- **External platform import** — detect games installed by GOG, Epic Games, itch.io, Amazon Games,
+  Ubisoft Connect, EA, Battle.net, and Rockstar, then import them as non-Steam shortcuts.
 - **Advanced filter builder** — Allowed (OR), Required (AND), Excluded (NOT), and text search.
 - **AutoCats** — automatic categories from genre, developer, publisher, store flags, tags, release
   year, and user score.
+- **Create collections from any sorting option** — one collection per value of the chosen key
+  (genre, developer, platform, installed state, playtime, name, …), with a preview before writing.
 - **Non-Steam game support** — import and manage `shortcuts.vdf` entries, with artwork from
   SteamGridDB.
 - **Metadata providers** — see the table below.
@@ -76,17 +82,20 @@ cargo check --manifest-path src-tauri/Cargo.toml           # Rust
 cargo test  --manifest-path src-tauri/Cargo.toml           # Rust tests
 ```
 
-## 🎨 Planned UI direction
+## 🎨 UI direction
 
-The application UI is planned as a **modern dark interface with a glassmorphism style** — frosted
+The application UI is a **modern dark interface with a glassmorphism style** — frosted
 translucent panels, layered depth, and the HELIX Origin obsidian palette (cyan `#48d8f2` /
-purple `#b06cff` accents). The current UI is a functional scaffold that already applies a glass
-theme; the full visual design pass is tracked as deferred work.
+purple `#b06cff` accents). It ships with a **custom title bar** (frameless window with
+platform-aware window controls) for a cleaner, more cohesive look. The full visual design pass
+remains tracked as deferred work.
 
 ## 🗺️ Status
 
-Early development. Milestone **M1 (Foundation)** delivers Steam discovery, library/collection
-reads and writes, non-Steam shortcuts, the metadata provider layer, AutoCats, and the app shell.
+Early development. **M1 (Foundation)** delivered Steam discovery, library/collection reads and
+writes, non-Steam shortcuts, the metadata provider layer, AutoCats, and the app shell.
+**M2 (Whole-Library Organizing)** adds the custom title bar, external platform detection and
+import, the full owned-library sync, and collection creation from any sorting option.
 
 ## 📖 Documentation
 

@@ -3,7 +3,7 @@ layout: docs
 title: Troubleshooting
 summary: Common issues and how to resolve them
 parent: Documentation Home
-nav_order: 9
+nav_order: 10
 ---
 
 # Troubleshooting

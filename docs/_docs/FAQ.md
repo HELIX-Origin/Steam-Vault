@@ -3,7 +3,7 @@ layout: docs
 title: FAQ
 summary: Frequently asked questions about Steam Vault
 parent: Documentation Home
-nav_order: 10
+nav_order: 11
 ---
 
 # FAQ

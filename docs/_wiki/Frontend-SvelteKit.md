@@ -24,10 +24,18 @@ The frontend is a **SvelteKit** application in static SPA mode, built with **Sve
 | `src/lib/types.ts` | TypeScript mirrors of the Rust serde models. |
 | `src/lib/api.ts` | Typed `invoke` wrappers, one per command, plus an error-message helper. |
 | `src/lib/stores.ts` | Writable stores: settings, providers, install, games, collections, status, loading, error. |
-| `src/routes/+layout.svelte` | The app shell: sidebar navigation and status. |
+| `src/app.css` | The global theme: dark surfaces, glass panels, buttons, pills, and form styles. |
+| `src/lib/types.ts` | TypeScript mirrors of the Rust serde models. |
+| `src/lib/api.ts` | Typed `invoke` wrappers, one per command, plus an error-message helper. |
+| `src/lib/stores.ts` | Writable stores: settings, providers, install, games, collections, owned library, platform scan, status, loading, error. |
+| `src/lib/platform.ts` | Platform detection for window-control rendering. |
+| `src/lib/components/WindowControls.svelte` | Custom title-bar controls (macOS traffic lights / Windows buttons). |
+| `src/routes/+layout.svelte` | The app shell: custom title bar, sidebar navigation, and status. |
 | `src/routes/+page.svelte` | Dashboard. |
 | `src/routes/library/+page.svelte` | Library. |
 | `src/routes/collections/+page.svelte` | Collections. |
+| `src/routes/platforms/+page.svelte` | External-platform detection and import. |
+| `src/routes/organize/+page.svelte` | Create collections from a sorting option. |
 | `src/routes/settings/+page.svelte` | Settings. |
 
 ## 🔌 Talking to the backend
@@ -56,7 +64,8 @@ prefix and update them after each command.
 The interface uses a modern **dark** theme with **glassmorphism**: translucent panels with
 backdrop blur over a layered obsidian background, accented in cyan and purple. Styling is driven by
 CSS custom properties in `app.css` plus utility classes, so the whole look can be retuned from one
-place. A full design pass is on the roadmap.
+place. The window is **frameless** with a custom, draggable title bar and platform-aware window
+controls. A full design pass is on the roadmap.
 
 ## ➡️ Next
 

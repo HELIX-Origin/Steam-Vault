@@ -22,9 +22,12 @@ Steam access, metadata fetching, categorization, and file writing happen here.
 | `steam/process.rs` | Detects whether Steam is running. |
 | `steam/library.rs` | Aggregates games from manifests, library folders, and play stats. |
 | `steam/collections.rs` | Reads/writes the cloud-storage collection namespace. |
-| `steam/shortcuts.rs` | Reads/writes non-Steam shortcuts. |
+| `steam/shortcuts.rs` | Reads/writes non-Steam shortcuts, derives Steam-compatible appids, and appends imports. |
+| `steam/owned.rs` | Caches the full owned Steam library (Web API `GetOwnedGames`). |
 | `steam/models.rs` | Shared serde models (serialized as camelCase). |
 | `metadata/` | Provider clients + a shared HTTP client and registry. |
+| `platforms/` | External-launcher detection (GOG, Epic, itch.io, …) and the appid → platform map. |
+| `platforms/registry.rs` | Windows Uninstall-registry and GOG registry reads (Windows only). |
 | `autocat.rs` | The AutoCats rule engine. |
 | `filter.rs` | The Allowed / Required / Excluded model. |
 | `cache.rs` | JSON metadata cache with a freshness window. |
@@ -54,6 +57,22 @@ snake_case Rust parameters.
 | `igdb_search` | IGDB search (keyed). |
 | `pcgamingwiki_lookup` / `wikipedia_summary` | Keyless supplemental providers. |
 | `compute_autocats` | Build an AutoCat plan without writing. |
+| `detect_platforms` | Scans the machine for games installed by other launchers. |
+| `import_platform_games` | Writes selected platform games to `shortcuts.vdf` as shortcuts. |
+| `get_owned_library` / `refresh_owned_games` | Returns / fetches the full owned Steam library. |
+| `compute_categorization` / `apply_categorization` | Previews and writes collections from a sorting option. |
+
+## 🎮 External platforms & the owned library
+
+`platforms/` discovers games installed by other launchers from local sources only — launcher
+manifests, the GOG registry, the itch app library folder, and the Windows Uninstall registry.
+Selected games are written to `shortcuts.vdf` with Steam-compatible appids
+(`crc32(exe + name) | 0x80000000`), and the appid → platform map is persisted so imported shortcuts
+stay attributable to their storefront.
+
+Because most of a large Steam library is not installed locally, `steam/owned.rs` caches the Web API's
+`GetOwnedGames` result and `load_library` merges it into the game list. Owned-but-not-installed games
+are first-class candidates for categorization and collections.
 
 ## 🗃️ Shared state
 

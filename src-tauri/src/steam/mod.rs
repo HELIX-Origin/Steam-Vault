@@ -4,6 +4,7 @@ pub mod binvdf;
 pub mod collections;
 pub mod library;
 pub mod models;
+pub mod owned;
 pub mod paths;
 pub mod process;
 pub mod shortcuts;

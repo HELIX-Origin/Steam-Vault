@@ -23,9 +23,10 @@ header_actions:
 </div>
 <p>
 Steam Vault reads your <strong>local Steam data</strong> and lets you organize your real Steam
-library directly. It is a spiritual successor to Depressurizer: import your installed games and
-non-Steam shortcuts, build and edit collections (categories), filter with an Allowed / Required /
-Excluded builder, and auto-categorize by genre, developer, publisher, tags, and feature flags.
+library directly. It is a spiritual successor to Depressurizer: import your installed games,
+detect titles installed by other launchers, sync your whole owned Steam library, build and edit
+collections (categories), filter with an Allowed / Required / Excluded builder, and auto-categorize
+by genre, developer, publisher, platform, tags, and feature flags.
 </p>
 <p>
 Unlike its predecessor, Steam Vault is a modern, cross-platform <strong>Tauri v2</strong>
@@ -68,6 +69,21 @@ likely to break it.
 <span class="feature-card__icon" aria-hidden="true">👾</span>
 <h3>Non-Steam games</h3>
 <p>Import and manage non-Steam shortcuts, with artwork pulled from SteamGridDB.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🎮</span>
+<h3>External platforms</h3>
+<p>Detect games installed by GOG, Epic Games, itch.io, and others, then import them as shortcuts.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🌐</span>
+<h3>Whole owned library</h3>
+<p>Sync every game you own through the Steam Web API, not just the ones installed right now.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🧱</span>
+<h3>Collections from any key</h3>
+<p>Build one collection per genre, developer, platform, playtime band, or name — preview first.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🛡️</span>
@@ -151,7 +167,7 @@ Explore the complete guides and references on this site. The
 </div>
 </div>
 <p>
-Steam Vault is in active early development (Milestone&nbsp;M1). Build it from source today; packaged
+Steam Vault is in active development (Milestone&nbsp;M2). Build it from source today; packaged
 installers are planned. See
 <a href="{{ '/docs/Getting-Started/' | relative_url }}">Getting Started</a> for the walkthrough.
 </p>

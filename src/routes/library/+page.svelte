@@ -10,6 +10,23 @@
   let selected = new Set<number>();
   let targetCollection: string | null = null;
   let busy = false;
+  let syncing = false;
+
+  const platformLabels: Record<string, string> = {
+    steam: "Steam",
+    gog: "GOG",
+    epic: "Epic",
+    itch: "itch.io",
+    ubisoft: "Ubisoft",
+    ea: "EA",
+    battlenet: "Battle.net",
+    amazon: "Amazon",
+    xbox: "Xbox",
+    rockstar: "Rockstar",
+    other: "Other"
+  };
+
+  $: installedCount = $games.filter((game) => game.installed).length;
 
   onMount(async () => {
     loading.set(true);
@@ -69,6 +86,19 @@
     }
   }
 
+  async function syncOwned() {
+    syncing = true;
+    try {
+      await api.refreshOwnedGames();
+      games.set(await api.loadLibrary());
+      error.set(null);
+    } catch (e) {
+      error.set(errorMessage(e));
+    } finally {
+      syncing = false;
+    }
+  }
+
   function formatSize(bytes: number): string {
     if (!bytes) return "—";
     const gb = bytes / 1024 ** 3;
@@ -79,9 +109,14 @@
 <div class="row-between" style="margin-bottom:1rem">
   <div>
     <h1>Library</h1>
-    <p class="muted">{$games.length} entries · {filtered.length} shown · {selected.size} selected</p>
+    <p class="muted">
+      {$games.length} owned · {installedCount} installed · {filtered.length} shown · {selected.size} selected
+    </p>
   </div>
   <div class="row">
+    <button class="btn" onclick={syncOwned} disabled={syncing}>
+      {syncing ? "Syncing…" : "Sync owned games"}
+    </button>
     <button class="btn" onclick={selectAll}>Select all</button>
     <button class="btn btn-ghost" onclick={clearSelection} disabled={selected.size === 0}>Clear</button>
   </div>
@@ -117,7 +152,10 @@
         <span class="check">{selected.has(game.appId) ? "✓" : ""}</span>
         <span class="name">
           {game.name || `App ${game.appId}`}
-          {#if game.kind === "shortcut"}<span class="pill pill-accent2">non-Steam</span>{/if}
+          {#if game.kind === "shortcut"}
+            <span class="pill pill-accent2">{platformLabels[game.platform] ?? "Other"}</span>
+          {/if}
+          {#if !game.installed}<span class="pill pill-dim">not installed</span>{/if}
           {#if game.favorite}<span class="pill">★</span>{/if}
         </span>
         <span class="tags">

@@ -1,0 +1,193 @@
+//! External game-platform detection (GOG, Epic, itch.io, and more).
+//!
+//! Steam Vault discovers games installed by other launchers so they can be
+//! imported into Steam as non-Steam shortcuts and organized into collections.
+//! Detection reads authoritative local sources — launcher manifests and the
+//! Windows *Uninstall* registry — and never scrapes a storefront or launches a
+//! launcher process.
+//!
+//! Discovered games are attributed to a [`Platform`], and after import the
+//! appid → platform mapping is persisted so the Library can keep grouping
+//! shortcuts by their source storefront.
+
+mod detectors;
+
+#[cfg(windows)]
+mod registry;
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
+
+use crate::error::AppResult;
+
+pub use detectors::scan_all;
+
+/// A storefront / launcher Steam Vault can detect games from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Platform {
+    Steam,
+    Gog,
+    Epic,
+    Itch,
+    Ubisoft,
+    Ea,
+    BattleNet,
+    Amazon,
+    Xbox,
+    Rockstar,
+    Other,
+}
+
+impl Default for Platform {
+    fn default() -> Self {
+        Platform::Steam
+    }
+}
+
+impl Platform {
+    /// Stable machine id (used in persisted maps and the frontend).
+    pub fn id(self) -> &'static str {
+        match self {
+            Platform::Steam => "steam",
+            Platform::Gog => "gog",
+            Platform::Epic => "epic",
+            Platform::Itch => "itch",
+            Platform::Ubisoft => "ubisoft",
+            Platform::Ea => "ea",
+            Platform::BattleNet => "battlenet",
+            Platform::Amazon => "amazon",
+            Platform::Xbox => "xbox",
+            Platform::Rockstar => "rockstar",
+            Platform::Other => "other",
+        }
+    }
+
+    /// Human-readable label for the UI.
+    pub fn label(self) -> &'static str {
+        match self {
+            Platform::Steam => "Steam",
+            Platform::Gog => "GOG",
+            Platform::Epic => "Epic Games",
+            Platform::Itch => "itch.io",
+            Platform::Ubisoft => "Ubisoft Connect",
+            Platform::Ea => "EA",
+            Platform::BattleNet => "Battle.net",
+            Platform::Amazon => "Amazon Games",
+            Platform::Xbox => "Xbox / Microsoft Store",
+            Platform::Rockstar => "Rockstar",
+            Platform::Other => "Other",
+        }
+    }
+
+    pub fn from_id(id: &str) -> Option<Platform> {
+        Some(match id {
+            "steam" => Platform::Steam,
+            "gog" => Platform::Gog,
+            "epic" => Platform::Epic,
+            "itch" => Platform::Itch,
+            "ubisoft" => Platform::Ubisoft,
+            "ea" => Platform::Ea,
+            "battlenet" => Platform::BattleNet,
+            "amazon" => Platform::Amazon,
+            "xbox" => Platform::Xbox,
+            "rockstar" => Platform::Rockstar,
+            "other" => Platform::Other,
+            _ => return None,
+        })
+    }
+}
+
+/// A game discovered via a non-Steam platform.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformGame {
+    pub name: String,
+    pub platform: Platform,
+    /// The platform's own id for the game (e.g. an Epic `AppName`, GOG game id).
+    pub platform_id: Option<String>,
+    pub install_dir: Option<String>,
+    /// Launch executable, absolute where known.
+    pub exe: Option<String>,
+    pub size_on_disk: Option<u64>,
+    /// A storefront launch URI where available.
+    pub launch_uri: Option<String>,
+    /// Which local source produced this entry (for transparency in the UI).
+    pub source: Option<String>,
+}
+
+/// Per-platform scan summary, so the UI can explain what was (not) found.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformStatus {
+    pub platform: Platform,
+    pub label: String,
+    /// Whether the platform's local data source exists on this machine.
+    pub available: bool,
+    pub count: usize,
+    /// Directories / registry paths that were consulted.
+    pub roots: Vec<String>,
+    pub notes: Option<String>,
+}
+
+/// Result of a full platform scan.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformScan {
+    pub games: Vec<PlatformGame>,
+    pub platforms: Vec<PlatformStatus>,
+}
+
+// ---------------------------------------------------------------------------
+// appid → platform map
+//
+// Non-Steam shortcuts carry no platform information on their own, so after an
+// import we remember which storefront each appid came from. This keeps the
+// Library grouped by source and powers the "Platform" categorization option.
+// ---------------------------------------------------------------------------
+
+/// `…/steam-vault/platform-map.json` under the OS config directory.
+pub fn map_path() -> PathBuf {
+    dirs::config_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("steam-vault")
+        .join("platform-map.json")
+}
+
+/// Load the persisted appid → platform map.
+pub fn load_map() -> BTreeMap<u32, Platform> {
+    std::fs::read_to_string(map_path())
+        .ok()
+        .and_then(|text| serde_json::from_str::<BTreeMap<String, String>>(&text).ok())
+        .map(|map| {
+            map.into_iter()
+                .filter_map(|(key, value)| {
+                    key.parse::<u32>().ok().zip(Platform::from_id(&value))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Merge new appid → platform pairs into the persisted map.
+pub fn record(pairs: &[(u32, Platform)]) -> AppResult<()> {
+    if pairs.is_empty() {
+        return Ok(());
+    }
+    let mut map = load_map();
+    for (app_id, platform) in pairs {
+        map.insert(*app_id, *platform);
+    }
+    let serializable: BTreeMap<String, String> = map
+        .iter()
+        .map(|(app_id, platform)| (app_id.to_string(), platform.id().to_string()))
+        .collect();
+    let path = map_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(path, serde_json::to_string_pretty(&serializable)?)?;
+    Ok(())
+}

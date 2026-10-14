@@ -26,3 +26,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON-backed metadata cache and local settings store.
 - Tauri command surface and a glassmorphism-themed Svelte app shell
   (Dashboard, Library, Collections, Settings).
+- **Custom title bar** (`decorations: false`) with platform-aware window controls
+  (macOS traffic lights, Windows-style buttons elsewhere) and a draggable app header.
+- **Whole owned Steam library** via `IPlayerService/GetOwnedGames`, cached to
+  `owned-games.json` and merged into the Library view so owned-but-not-installed games
+  can be organized (`refresh_owned_games`, `get_owned_library`).
+- **External platform detection** for GOG, Epic Games, itch.io, Amazon Games, Ubisoft
+  Connect, EA, Battle.net, Rockstar, and other publishers (launcher manifests, the GOG
+  registry, the itch app library, and the Windows Uninstall registry) — never scraping.
+- **Import platform games as non-Steam shortcuts** (`import_platform_games`) with
+  Depressurizer-compatible appids (`crc32(exe + name) | 0x80000000`), quoted
+  `Exe` / `StartDir` fields, and de-duplication; a persisted appid → platform map keeps
+  imported shortcuts attributable.
+- **Create collections from any sorting option** (`compute_categorization` /
+  `apply_categorization`): genre, developer, publisher, Steam feature, tag, release
+  year, user score, **platform**, **installed state**, **playtime**, and **name**, with
+  an optional prefix, an installed-only filter, and a replace-membership mode.
+- New **Platforms** and **Organize** views (six-item navigation) plus platform and
+  installed-state badges in the Library.
+
+### Fixed
+
+- `shortcuts.vdf` now reads canonical field casing (`AppName` / `Exe`) and strips the
+  literal quotes Steam stores around `Exe` / `StartDir`; the writer emits the canonical
+  `Exe` / `StartDir` keys instead of lowercase ones.

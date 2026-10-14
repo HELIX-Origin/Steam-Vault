@@ -2,6 +2,20 @@
 
 export type GameKind = "steam" | "shortcut";
 
+/** A storefront / launcher a game can come from. */
+export type Platform =
+  | "steam"
+  | "gog"
+  | "epic"
+  | "itch"
+  | "ubisoft"
+  | "ea"
+  | "battlenet"
+  | "amazon"
+  | "xbox"
+  | "rockstar"
+  | "other";
+
 export interface SteamLibrary {
   index: number;
   path: string;
@@ -35,6 +49,8 @@ export interface Game {
   collections: string[];
   favorite: boolean;
   hidden: boolean;
+  /** Steam for real apps; the source storefront for imported shortcuts. */
+  platform: Platform;
   shortcutId: number | null;
   exe: string | null;
   startDir: string | null;
@@ -123,7 +139,18 @@ export interface IgdbGame {
 export interface AutoCat {
   id: string;
   name: string;
-  kind: "genre" | "developer" | "publisher" | "flag" | "tag" | "releaseyear" | "userscore";
+  kind:
+    | "genre"
+    | "developer"
+    | "publisher"
+    | "flag"
+    | "tag"
+    | "releaseyear"
+    | "userscore"
+    | "platform"
+    | "installedstate"
+    | "playtime"
+    | "name";
   enabled: boolean;
   prefix: string | null;
   maxCategories: number | null;
@@ -153,4 +180,92 @@ export interface AutoCatAssignment {
 export interface AutoCatPlan {
   assignments: AutoCatAssignment[];
   gamesWithoutMetadata: number[];
+}
+
+// --- External platforms -----------------------------------------------------
+
+/** A game discovered by scanning a non-Steam launcher. */
+export interface PlatformGame {
+  name: string;
+  platform: Platform;
+  platformId: string | null;
+  installDir: string | null;
+  exe: string | null;
+  sizeOnDisk: number | null;
+  launchUri: string | null;
+  source: string | null;
+}
+
+/** Per-platform scan summary (availability, count, sources consulted). */
+export interface PlatformStatus {
+  platform: Platform;
+  label: string;
+  available: boolean;
+  count: number;
+  roots: string[];
+  notes: string | null;
+}
+
+export interface PlatformScan {
+  games: PlatformGame[];
+  platforms: PlatformStatus[];
+}
+
+export interface ImportResult {
+  added: Game[];
+  skipped: string[];
+}
+
+// --- Full owned Steam library ----------------------------------------------
+
+export interface OwnedGameRecord {
+  appId: number;
+  name: string;
+  playtimeMinutes: number;
+  playtimeTwoWeeks: number;
+  iconUrl: string | null;
+}
+
+export interface OwnedLibrary {
+  fetchedAt: number | null;
+  steamId64: string | null;
+  games: OwnedGameRecord[];
+}
+
+// --- Create collections from a sorting option ------------------------------
+
+export type CategorizeKind = AutoCat["kind"];
+
+export interface Filter {
+  allowed: string[];
+  required: string[];
+  excluded: string[];
+  search: string | null;
+  kind: GameKind | null;
+}
+
+export interface CategorizeRequest {
+  kind: CategorizeKind;
+  prefix?: string | null;
+  maxCategories?: number | null;
+  include?: string[];
+  exclude?: string[];
+  removeExisting?: boolean;
+  onlyInstalled?: boolean;
+  filter?: Filter | null;
+}
+
+export interface CategorizationPlan {
+  kind: CategorizeKind;
+  assignments: AutoCatAssignment[];
+  categorizedGames: number;
+  totalGames: number;
+  gamesWithoutMetadata: number[];
+  removeExisting: boolean;
+}
+
+export interface ApplyResult {
+  collectionsCreated: number;
+  collectionsUpdated: number;
+  gamesAssigned: number;
 }

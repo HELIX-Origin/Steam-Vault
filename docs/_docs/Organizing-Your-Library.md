@@ -18,7 +18,13 @@ Three controls narrow the list:
 - **Collection filter** — show only games that belong to a chosen collection.
 - **Installed only** — hide entries that are not currently installed.
 
-The header reports the total entries, how many are shown, and how many are selected.
+The header reports how many games you **own**, how many are **installed**, how many are shown, and
+how many are selected.
+
+> **The whole library, not just what is installed.** With a Steam Web API key configured, press
+> **Sync owned games** to fetch every game on your account. The Library then includes games you own
+> but have not installed — marked with a **not installed** pill — so you can organize your entire
+> collection.
 
 ## 🖱️ Selecting and editing
 
@@ -37,12 +43,20 @@ Use **Select all** to act on everything currently shown, and **Clear** to reset 
 ## 🏷️ Reading collection membership
 
 Each row lists the collections a game already belongs to as small pills, so you can see membership
-at a glance. Favorites are marked with a star, and non-Steam shortcuts carry a **non-Steam** pill.
+at a glance. Favorites are marked with a star, and non-Steam shortcuts carry a pill naming their
+source platform.
 
 ## 📊 Columns
 
 - **Name** — the game title, with membership pills.
 - **Size** — on-disk size for installed games.
+
+## 🧱 Creating collections automatically
+
+For bulk work, the **Organize** view creates one collection per value of a chosen sorting option —
+genre, developer, publisher, Steam feature, tag, release year, user score, **platform**, **installed
+state**, **playtime**, or **name**. Choose the option, preview the result, then create the
+collections. See [AutoCategorization](AutoCategorization.md).
 
 ## ➡️ Next steps
 

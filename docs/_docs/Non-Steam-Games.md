@@ -30,10 +30,17 @@ it lets non-Steam entries look at home in your library.
 > **Note:** SteamGridDB requires an API key. Add one in
 > [Settings & API Keys](Settings-and-API-Keys.md) to enable artwork lookups.
 
+## 🎮 Importing from other launchers
+
+Rather than adding each game by hand, use the **Platforms** view to detect installed games from GOG,
+Epic Games, itch.io, Amazon Games, Ubisoft Connect, EA, Battle.net, and Rockstar, and import them in
+bulk. See [External Platforms](External-Platforms.md).
+
 ## 🗂️ Organizing shortcuts
 
-Non-Steam shortcuts appear in the **Library** view with a **non-Steam** pill. You can add and remove
-them from collections exactly like Steam games.
+Non-Steam shortcuts appear in the **Library** view with a pill naming their source platform (for
+example **GOG** or **itch.io**). You can add and remove them from collections exactly like Steam
+games, and the **Organize** view can group them by **Platform** in a single step.
 
 ## 🛡️ Write safety
 
@@ -42,5 +49,6 @@ timestamped backup of `shortcuts.vdf` is taken before any change.
 
 ## ➡️ Next steps
 
+- [External Platforms](External-Platforms.md)
 - [Metadata Providers](Metadata-Providers.md)
 - [Collections](Collections.md)

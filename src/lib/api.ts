@@ -4,11 +4,18 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AppMeta,
+  ApplyResult,
   AutoCatPlan,
+  CategorizationPlan,
+  CategorizeRequest,
   Collection,
   Game,
   IgdbGame,
+  ImportResult,
   OwnedGame,
+  OwnedLibrary,
+  PlatformGame,
+  PlatformScan,
   ProviderInfo,
   Settings,
   SgdbAsset,
@@ -54,6 +61,22 @@ export const api = {
 
   computeAutocats: (accountId3?: string) =>
     invoke<AutoCatPlan>("compute_autocats", { accountId3: accountId3 ?? null }),
+
+  // External platforms and the full owned Steam library.
+  detectPlatforms: () => invoke<PlatformScan>("detect_platforms"),
+  importPlatformGames: (games: PlatformGame[], accountId3?: string) =>
+    invoke<ImportResult>("import_platform_games", { games, accountId3: accountId3 ?? null }),
+  getOwnedLibrary: () => invoke<OwnedLibrary>("get_owned_library"),
+  refreshOwnedGames: () => invoke<OwnedLibrary>("refresh_owned_games"),
+
+  // Create collections from a chosen sorting option.
+  computeCategorization: (request: CategorizeRequest, accountId3?: string) =>
+    invoke<CategorizationPlan>("compute_categorization", {
+      request,
+      accountId3: accountId3 ?? null,
+    }),
+  applyCategorization: (plan: CategorizationPlan, accountId3?: string) =>
+    invoke<ApplyResult>("apply_categorization", { plan, accountId3: accountId3 ?? null }),
 };
 
 /** Normalize an unknown thrown value into a readable message. */

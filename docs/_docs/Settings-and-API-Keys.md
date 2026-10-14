@@ -3,7 +3,7 @@ layout: docs
 title: Settings & API Keys
 summary: Configuration reference for Steam Vault
 parent: Documentation Home
-nav_order: 8
+nav_order: 9
 ---
 
 # Settings & API Keys

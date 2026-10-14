@@ -11,6 +11,7 @@ mod commands;
 mod error;
 mod filter;
 mod metadata;
+mod platforms;
 mod settings;
 mod steam;
 
@@ -40,6 +41,12 @@ pub fn run() {
             commands::pcgamingwiki_lookup,
             commands::wikipedia_summary,
             commands::compute_autocats,
+            commands::detect_platforms,
+            commands::import_platform_games,
+            commands::get_owned_library,
+            commands::refresh_owned_games,
+            commands::compute_categorization,
+            commands::apply_categorization,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

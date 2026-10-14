@@ -33,6 +33,16 @@ Each AutoCat has:
 | Tag | community tag |
 | Release year | year the game was released |
 | User score | score band |
+| Platform | source storefront (Steam, GOG, Epic, …) |
+| Installed state | whether the game is installed locally |
+| Playtime | playtime band (unplayed, `<2h`, 2–10h, 10–50h, 50h+) |
+| Name | first letter of the game's name |
+
+## 🧱 Create collections from a sorting option
+
+The **Organize** view exposes the same kinds as a one-shot action: choose a sorting option, preview
+the collections it would create, then write them all in a single, backed-up operation. Options
+include a name prefix, an installed-only filter, and a replace-membership mode.
 
 ## 🔄 Compute, review, apply
 
