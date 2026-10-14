@@ -49,6 +49,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ensure_steam_metadata` de-duplicates ids, reuses entries within the cache TTL, and batches
   `appdetails` 50 per request; a new `sync_library_metadata` command warms the cache for the
   whole owned library, and categorization can fetch on demand (`fetchMetadata`, on by default).
+- **Logged command scripts** (`scripts/*.mjs`): `tauri:dev` / `tauri:build` and a generic
+  `run.mjs` runner stream output live to the console while writing a timestamped transcript to
+  `logs/` (`<type>-<YYYY-MM-DD_HH-MM-SS>.log`, so runs are never overwritten).
 
 ### Fixed
 

@@ -74,6 +74,17 @@ npm run tauri:dev     # development
 npm run tauri:build   # production bundle
 ```
 
+Both commands run through the logging wrappers in [`scripts/`](./scripts): output streams live to
+the console **and** is written to a timestamped transcript in [`logs/`](./logs)
+(`<type>-<YYYY-MM-DD_HH-MM-SS>.log`, never overwritten). Use `npm run tauri:dev:raw` /
+`npm run tauri:build:raw` to bypass logging, or `npm run log -- <type> <command> [args…]` to log
+anything else, e.g.:
+
+```bash
+npm run log -- check npm run check
+npm run log -- rust  cargo test --manifest-path src-tauri/Cargo.toml
+```
+
 Static checks:
 
 ```bash

@@ -11,8 +11,11 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:dev": "node scripts/dev.mjs",
+    "tauri:dev:raw": "tauri dev",
+    "tauri:build": "node scripts/build.mjs",
+    "tauri:build:raw": "tauri build",
+    "log": "node scripts/run.mjs"
   },
   "author": "HELIX Origin",
   "license": "BSD-3-Clause",

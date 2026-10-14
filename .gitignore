@@ -7,7 +7,6 @@ node_modules
 /package
 .env
 .env.*
-!.env.example
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
@@ -25,3 +24,12 @@ vite.config.ts.timestamp-*
 /docs/_site
 /docs/.jekyll-cache
 /.jekyll-cache
+
+# Logging
+logs/*
+*.log
+
+# Whitelisted files (not ignored)
+!logs/README.md
+!.env.example
+!*.gitkeep
