@@ -19,8 +19,9 @@
     "test": "node scripts/test.mjs",
     "test:rust": "node scripts/test.mjs rust",
     "test:frontend": "node scripts/test.mjs frontend",
+    "test:i18n": "node scripts/test.mjs i18n",
     "test:all": "node scripts/test.mjs all",
-    "verify": "node scripts/test.mjs check rust frontend build"
+    "verify": "node scripts/test.mjs check rust frontend build i18n"
   },
   "author": "HELIX Origin",
   "license": "BSD-3-Clause",

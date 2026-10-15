@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
+  import { t } from "$lib/i18n";
   import { collections, error, games, ownedLibrary } from "$lib/stores";
   import type {
     CategorizationPlan,
@@ -192,9 +193,9 @@
 
 <div class="row-between" style="margin-bottom:1rem">
   <div>
-    <h1>Organize</h1>
+    <h1>{$t("organize.title")}</h1>
     <p class="muted">
-      Pick any sorting option to build Steam collections from your whole library.
+      {$t("organize.subtitle")}
     </p>
   </div>
 </div>

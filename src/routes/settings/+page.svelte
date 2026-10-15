@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
+  import { STEAM_LANGUAGES, setLocale, syncWithSettingsLanguage, t } from "$lib/i18n";
   import { error, install, settings } from "$lib/stores";
   import type { Settings } from "$lib/types";
 
@@ -19,10 +20,13 @@
     { id: "amazon", label: "Amazon Games" },
     { id: "rockstar", label: "Rockstar" },
     { id: "xbox", label: "Xbox / Microsoft Store" },
+    { id: "emulator", label: "Emulators & ROMs" },
     { id: "other", label: "Other studios" }
   ];
 
-  let sources: { id: string; label: string; enabled: boolean; rootsText: string }[] = [];
+  type SourceRow = { id: string; label: string; enabled: boolean; roots: string[] };
+  let sources: SourceRow[] = [];
+  let finding: string | null = null;
 
   /** Project saved preferences onto the fixed platform list. */
   function buildSources() {
@@ -35,9 +39,47 @@
         id: platform.id,
         label: platform.label,
         enabled: entry?.enabled ?? true,
-        rootsText: (entry?.roots ?? []).join("; ")
+        roots: [...(entry?.roots ?? [])]
       };
     });
+  }
+
+  /** Add another (empty) library folder input for a platform. */
+  function addRoot(source: SourceRow) {
+    source.roots = [...source.roots, ""];
+    sources = [...sources];
+  }
+
+  /** Remove one library folder input. */
+  function removeRoot(source: SourceRow, index: number) {
+    source.roots = source.roots.filter((_, i) => i !== index);
+    sources = [...sources];
+  }
+
+  /** Update one library folder input. */
+  function setRoot(source: SourceRow, index: number, value: string) {
+    source.roots = source.roots.map((root, i) => (i === index ? value : root));
+    sources = [...sources];
+  }
+
+  /** Autofill a platform's detected library folders, like the Steam Auto-detect. */
+  async function findFolders(source: SourceRow) {
+    finding = source.id;
+    try {
+      const found = await api.findPlatformFolders(source.id);
+      const roots = source.roots.filter((root) => root.trim());
+      for (const folder of found) {
+        if (!roots.includes(folder)) roots.push(folder);
+      }
+      source.roots = roots;
+      source.enabled = true;
+      sources = [...sources];
+      error.set(null);
+    } catch (e) {
+      error.set(errorMessage(e));
+    } finally {
+      finding = null;
+    }
   }
 
   onMount(async () => {
@@ -45,6 +87,9 @@
       const [loaded, detected] = await Promise.all([api.getSettings(), api.detectSteam()]);
       settings.set(loaded);
       form = { ...loaded };
+      if (loaded.language) {
+        syncWithSettingsLanguage(loaded.language);
+      }
       install.set(detected);
       if (!form.steamRoot && detected) form.steamRoot = detected.root;
       if (!form.accountId3 && detected?.accounts[0]) form.accountId3 = detected.accounts[0].id3;
@@ -73,16 +118,16 @@
     form.platformSources = sources.map((source) => ({
       id: source.id,
       enabled: source.enabled,
-      roots: source.rootsText
-        .split(";")
-        .map((value) => value.trim())
-        .filter(Boolean)
+      roots: source.roots.map((value) => value.trim()).filter(Boolean)
     }));
     busy = true;
     try {
       const updated = await api.saveSettings(form);
       settings.set(updated);
       form = { ...updated };
+      if (updated.language) {
+        setLocale(updated.language);
+      }
       saved = true;
       setTimeout(() => (saved = false), 2200);
       error.set(null);
@@ -96,34 +141,34 @@
 
 <div class="row-between" style="margin-bottom:1.1rem">
   <div>
-    <h1>Settings</h1>
-    <p class="muted">Local configuration. API keys stay on this machine and are never committed.</p>
+    <h1>{$t("settings.title")}</h1>
+    <p class="muted">{$t("settings.subtitle")}</p>
   </div>
   <div class="row">
-    {#if saved}<span class="pill">Saved</span>{/if}
-    <button class="btn btn-primary" disabled={busy || !form} onclick={save}>{busy ? "Saving…" : "Save"}</button>
+    {#if saved}<span class="pill">{$t("common.saved")}</span>{/if}
+    <button class="btn btn-primary" disabled={busy || !form} onclick={save}>{busy ? $t("common.saving") : $t("common.save")}</button>
   </div>
 </div>
 
 {#if form}
   <div class="grid two">
     <section class="glass-strong card">
-      <h2 class="section-title">Steam location</h2>
+      <h2 class="section-title">{$t("settings.steamFolder")}</h2>
       <div class="field">
-        <label for="root">Steam folder</label>
+        <label for="root">{$t("settings.steamFolder")}</label>
         <input id="root" bind:value={form.steamRoot} placeholder="C:\Program Files (x86)\Steam" />
       </div>
-      <button class="btn" onclick={detect}>Auto-detect</button>
+      <button class="btn" onclick={detect}>{$t("settings.autoDetect")}</button>
       {#if $install}
-        <div class="kv"><span class="muted">Libraries</span><span>{$install.libraries.length}</span></div>
-        <div class="kv"><span class="muted">Accounts</span><span>{$install.accounts.length}</span></div>
+        <div class="kv"><span class="muted">{$t("settings.librariesCount")}</span><span>{$install.libraries.length}</span></div>
+        <div class="kv"><span class="muted">{$t("settings.accountsCount")}</span><span>{$install.accounts.length}</span></div>
       {/if}
     </section>
 
     <section class="glass-strong card">
-      <h2 class="section-title">Account</h2>
+      <h2 class="section-title">{$t("settings.activeAccount")}</h2>
       <div class="field">
-        <label for="account">Active Steam account</label>
+        <label for="account">{$t("settings.activeAccount")}</label>
         <select id="account" bind:value={form.accountId3}>
           <option value={null}>Automatic (first found)</option>
           {#each $install?.accounts ?? [] as account (account.id3)}
@@ -135,12 +180,27 @@
       </div>
       <div class="row" style="gap:1rem">
         <div class="field" style="flex:1">
-          <label for="cc">Store country</label>
+          <label for="cc">{$t("settings.storeCountry")}</label>
           <input id="cc" bind:value={form.countryCode} placeholder="us" />
         </div>
         <div class="field" style="flex:1">
-          <label for="lang">Language</label>
-          <input id="lang" bind:value={form.language} placeholder="en" />
+          <label for="lang">{$t("settings.language")}</label>
+          <select
+            id="lang"
+            bind:value={form.language}
+            onchange={(e) => {
+              if (form) {
+                form.language = e.currentTarget.value;
+                setLocale(e.currentTarget.value);
+              }
+            }}
+          >
+            {#each STEAM_LANGUAGES as lang (lang.id)}
+              <option value={lang.id}>
+                {lang.nativeName} ({lang.name})
+              </option>
+            {/each}
+          </select>
         </div>
       </div>
     </section>
@@ -169,31 +229,49 @@
     <section class="glass-strong card">
       <h2 class="section-title">Non-Steam sources</h2>
       <p class="muted-sm">
-        Choose which launchers are scanned for games, and add extra folders — handy when your games
-        live on an external drive. Separate multiple folders with a semicolon.
+        Choose which launchers are scanned for games. Like Steam's <code>libraryfolders.vdf</code>,
+        each launcher keeps its installed games in its own config, so <strong>Find folders</strong>
+        autofills that launcher's config location — the same way the Steam folder is auto-detected.
+        Add game install folders as well when a launcher's config is missing or wrong, or for local
+        games that have no launcher.
       </p>
       <div class="sources">
         {#each sources as source (source.id)}
           <div class="source">
-            <label class="row" style="gap:0.5rem;margin:0">
-              <input
-                type="checkbox"
-                checked={source.enabled}
-                style="width:auto"
-                onchange={(event) => (source.enabled = event.currentTarget.checked)}
-              />
-              <strong>{source.label}</strong>
-            </label>
-            <input
-              placeholder="Extra folder(s)…"
-              value={source.rootsText}
-              oninput={(event) => (source.rootsText = event.currentTarget.value)}
-            />
+            <div class="source-head">
+              <label class="row" style="gap:0.5rem;margin:0">
+                <input
+                  type="checkbox"
+                  checked={source.enabled}
+                  style="width:auto"
+                  onchange={(event) => (source.enabled = event.currentTarget.checked)}
+                />
+                <strong>{source.label}</strong>
+              </label>
+              <button class="btn mini" onclick={() => findFolders(source)} disabled={finding === source.id}>
+                {finding === source.id ? "Finding…" : "Find folders"}
+              </button>
+            </div>
+            {#if source.roots.length === 0}
+              <p class="muted-sm" style="margin:0.1rem 0 0 0.15rem">No extra folders.</p>
+            {/if}
+            {#each source.roots as folder, index}
+              <div class="folder-row">
+                <input
+                  placeholder="C:\Games\Library"
+                  value={folder}
+                  oninput={(event) => setRoot(source, index, event.currentTarget.value)}
+                />
+                <button class="btn mini" title="Remove folder" onclick={() => removeRoot(source, index)}>×</button>
+              </div>
+            {/each}
+            <button class="btn mini add" onclick={() => addRoot(source)}>＋ Add folder</button>
           </div>
         {/each}
       </div>
       <p class="muted-sm" style="margin-top:0.8rem">
-        Steam Vault also looks on every mounted drive for well-known game folders.
+        Steam Vault also looks on every mounted drive for well-known game folders, so games installed
+        apart from a launcher are still found.
       </p>
     </section>
 
@@ -239,10 +317,39 @@
   }
 
   .source {
-    display: grid;
-    grid-template-columns: minmax(150px, 1fr) 1.3fr;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+
+  .source-head {
+    display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 0.7rem;
+  }
+
+  .folder-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .folder-row input {
+    flex: 1;
+  }
+
+  .btn.mini {
+    padding: 0.3rem 0.6rem;
+    font-size: 0.82rem;
+    line-height: 1.2;
+  }
+
+  .btn.add {
+    align-self: flex-start;
   }
 
   .source input[type="checkbox"] {

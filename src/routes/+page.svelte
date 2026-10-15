@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
+  import { t } from "$lib/i18n";
   import { error, games, install, loading, providers } from "$lib/stores";
 
   onMount(async () => {
@@ -34,29 +35,29 @@
 
 <div class="row-between" style="margin-bottom:1.2rem">
   <div>
-    <h1>Dashboard</h1>
-    <p class="muted">A clean-room, cross-platform revival of Depressurizer.</p>
+    <h1>{$t("dashboard.title")}</h1>
+    <p class="muted">{$t("dashboard.subtitle")}</p>
   </div>
   <button class="btn btn-primary" onclick={refresh} disabled={$loading}>
-    {$loading ? "Refreshing…" : "Refresh"}
+    {$loading ? $t("common.refreshing") : $t("common.refresh")}
   </button>
 </div>
 
 <div class="grid stats">
   <div class="glass card stat">
-    <div class="muted-sm">Library entries</div>
+    <div class="muted-sm">{$t("dashboard.totalGames")}</div>
     <div class="stat-value">{$games.length}</div>
   </div>
   <div class="glass card stat">
-    <div class="muted-sm">Installed</div>
+    <div class="muted-sm">{$t("dashboard.installedGames")}</div>
     <div class="stat-value">{installedGames.length}</div>
   </div>
   <div class="glass card stat">
-    <div class="muted-sm">Non-Steam shortcuts</div>
+    <div class="muted-sm">{$t("dashboard.shortcutsCount")}</div>
     <div class="stat-value">{shortcuts.length}</div>
   </div>
   <div class="glass card stat">
-    <div class="muted-sm">Library folders</div>
+    <div class="muted-sm">{$t("storage.steamLibraries")}</div>
     <div class="stat-value">{$install?.libraries.length ?? 0}</div>
   </div>
 </div>

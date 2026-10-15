@@ -28,17 +28,16 @@ SvelteKit frontend) that targets **stable, documented data sources** rather than
 - **Manual organizing UI** — multi-select games and add/remove collections, favorites, and hidden.
 - **Whole owned library** — sync your entire Steam library (not just installed games) through the
   Steam Web API so everything you own can be organized.
-- **External platform import** — detect games installed by GOG, Epic Games, itch.io, Amazon Games,
-  Ubisoft Connect, EA, Battle.net, and Rockstar, then import them as non-Steam shortcuts.
+- **External platform & emulator import** — detect games installed by GOG, Epic Games, itch.io, Amazon Games,
+  Ubisoft Connect, EA, Battle.net, and Rockstar, as well as ROMs across 11 popular emulators (Dolphin, PCSX2, DuckStation, Project64, PPSSPP, RPCS3, Citra, Cemu, Ryujinx, mGBA, Snes9x, RetroArch), then import them as non-Steam shortcuts with tailored launch parameters.
 - **Advanced filter builder** — Allowed (OR), Required (AND), Excluded (NOT), and text search.
 - **AutoCats** — automatic categories from genre, developer, publisher, store flags, tags, release
-  year, and user score.
+  year, and user score, with multi-entity splitting and platform fallbacks.
 - **Create collections from any sorting option** — one collection per value of the chosen key
   (genre, developer, platform, installed state, playtime, name, …), with a preview before writing.
-- **Non-Steam game support** — import and manage `shortcuts.vdf` entries, with artwork from
-  SteamGridDB.
-- **Artwork management** — replace the grid, hero, logo, and icon art for any game, pulling from
-  SteamGridDB (by app id, or by name for shortcuts) or from a local image file.
+- **Non-Steam game support** — import and manage `shortcuts.vdf` entries, with automated artwork downloading.
+- **Artwork management** — replace or auto-fetch the grid, hero, logo, and icon art for any game, pulling from
+  SteamGridDB (by app id, or by name for shortcuts) or from local metadata and file caches.
 - **Metadata providers** — see the table below.
 
 ## 🔌 Metadata providers
@@ -46,10 +45,13 @@ SvelteKit frontend) that targets **stable, documented data sources** rather than
 | Provider | Key required | Purpose |
 | --- | --- | --- |
 | **Steam Store** (`appdetails`) | ❌ No | Genres, developers, publishers, release dates, feature flags |
+| **Steam Store Search** | ❌ No | Match non-Steam & indie titles to official Steam app IDs |
 | **Steam Web API** | ✅ Yes | Owned games, playtime, player summaries |
 | **SteamGridDB** | ✅ Yes | Grids, heroes, logos, icons (especially for non-Steam games) |
 | **IGDB (Twitch)** | ✅ Yes | Rich metadata: summary, genres, companies, cover |
+| **VNDB** | ❌ No | Visual novel developers, publishers, release dates, tags, covers |
 | **PCGamingWiki** | ❌ No | Engine, developers, publishers, release dates |
+| **Local Game Sniffer** | ❌ No | itch.io manifests, Ren'Py, RPG Maker, and PE VersionInfo headers |
 | **Wikipedia** | ❌ No | Article summaries used as a fallback description |
 
 > **Note:** RAWG support is intentionally **not** included (the service is defunct). Steam Web API,
@@ -120,8 +122,10 @@ Early development. **M1 (Foundation)** delivered Steam discovery, library/collec
 writes, non-Steam shortcuts, the metadata provider layer, AutoCats, and the app shell.
 **M2 (Whole-Library Organizing)** adds the custom title bar, external platform detection and
 import, the full owned-library sync, and collection creation from any sorting option. Recent work
-adds a **filter builder** in Organize, **non-Steam source** settings (enable/disable and extra
-folders), and a **Storage** view for inspecting libraries and drives and moving games between them.
+adds a **filter builder** in Organize, refined **non-Steam source** settings with **Find folders**
+auto-detection, **Microsoft Store / Xbox Game Pass** detection, storefront launch URIs on import,
+custom per-shortcut platform re-tagging, automated log file cleanup, and a **Storage** view for
+inspecting libraries and drives and moving games between them.
 **M4 (Artwork)** adds the **Artwork** view for applying and removing custom grid, hero, logo, and
 icon art — from SteamGridDB or your own image files — for both Steam games and non-Steam shortcuts.
 

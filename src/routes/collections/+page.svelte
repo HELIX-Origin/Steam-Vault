@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
+  import { t } from "$lib/i18n";
   import { collections, error, games, loading } from "$lib/stores";
 
   let newName = "";
@@ -53,13 +54,13 @@
 </script>
 
 <div style="margin-bottom:1rem">
-  <h1>Collections</h1>
-  <p class="muted">Manage the categories Steam Vault writes back to your Steam library.</p>
+  <h1>{$t("collections.title")}</h1>
+  <p class="muted">{$t("collections.subtitle")}</p>
 </div>
 
 <div class="glass-strong toolbar">
-  <input placeholder="New collection name" bind:value={newName} style="max-width:300px" />
-  <button class="btn btn-primary" disabled={busy || !newName.trim()} onclick={create}>Create collection</button>
+  <input placeholder={$t("collections.collectionName")} bind:value={newName} style="max-width:300px" />
+  <button class="btn btn-primary" disabled={busy || !newName.trim()} onclick={create}>{$t("collections.create")}</button>
   <span class="muted-sm">Steam must be closed to write changes.</span>
 </div>
 

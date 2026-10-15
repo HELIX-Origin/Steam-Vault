@@ -27,6 +27,7 @@ import type {
   SgdbAsset,
   SgdbGame,
   SteamInstall,
+  SteamSearchResult,
   StorageReport,
 } from "./types";
 
@@ -65,14 +66,21 @@ export const api = {
   igdbSearch: (query: string) => invoke<IgdbGame[]>("igdb_search", { query }),
   pcgamingwikiLookup: (name: string) => invoke<AppMeta | null>("pcgamingwiki_lookup", { name }),
   wikipediaSummary: (title: string) => invoke<string | null>("wikipedia_summary", { title }),
+  vndbLookup: (title: string) => invoke<AppMeta | null>("vndb_lookup", { title }),
+  steamStoreSearch: (term: string) =>
+    invoke<SteamSearchResult[]>("steam_store_search", { term }),
 
   computeAutocats: (accountId3?: string) =>
     invoke<AutoCatPlan>("compute_autocats", { accountId3: accountId3 ?? null }),
 
-  // External platforms and the full owned Steam library.
-  detectPlatforms: () => invoke<PlatformScan>("detect_platforms"),
+  detectPlatforms: (includeOtherDrives?: boolean) =>
+    invoke<PlatformScan>("detect_platforms", { includeOtherDrives: includeOtherDrives ?? false }),
+  findPlatformFolders: (platform: string) =>
+    invoke<string[]>("find_platform_folders", { platform }),
   importPlatformGames: (games: PlatformGame[], accountId3?: string) =>
     invoke<ImportResult>("import_platform_games", { games, accountId3: accountId3 ?? null }),
+  setGamePlatform: (appId: number, platform: string | null) =>
+    invoke<void>("set_game_platform", { appId, platform }),
   getOwnedLibrary: () => invoke<OwnedLibrary>("get_owned_library"),
   refreshOwnedGames: () => invoke<OwnedLibrary>("refresh_owned_games"),
 
@@ -128,6 +136,11 @@ export const api = {
     name: string,
     kind: "grids" | "heroes" | "logos" | "icons",
   ) => invoke<SgdbAsset[]>("steamgriddb_for_game", { appId, name, kind }),
+  autoFetchArtworkForGames: (appIds?: number[], accountId3?: string) =>
+    invoke<number>("auto_fetch_artwork_for_games", {
+      appIds: appIds ?? null,
+      accountId3: accountId3 ?? null,
+    }),
 };
 
 /** Normalize an unknown thrown value into a readable message. */

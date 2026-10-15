@@ -4,25 +4,28 @@
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
   import WindowControls from "$lib/components/WindowControls.svelte";
+  import { isRTL, syncWithSettingsLanguage, t } from "$lib/i18n";
   import { error, providers, settings, steamRunning } from "$lib/stores";
 
   let { children } = $props();
 
   const nav = [
-    { href: "/", label: "Dashboard", icon: "◈" },
-    { href: "/library", label: "Library", icon: "▤" },
-    { href: "/storage", label: "Storage", icon: "▥" },
-    { href: "/artwork", label: "Artwork", icon: "❖" },
-    { href: "/collections", label: "Collections", icon: "❐" },
-    { href: "/platforms", label: "Platforms", icon: "⬡" },
-    { href: "/organize", label: "Organize", icon: "⊞" },
-    { href: "/settings", label: "Settings", icon: "⚙" }
+    { href: "/", key: "nav.dashboard", icon: "◈" },
+    { href: "/library", key: "nav.library", icon: "▤" },
+    { href: "/storage", key: "nav.storage", icon: "▥" },
+    { href: "/artwork", key: "nav.artwork", icon: "❖" },
+    { href: "/collections", key: "nav.collections", icon: "❐" },
+    { href: "/platforms", key: "nav.platforms", icon: "⬡" },
+    { href: "/organize", key: "nav.organize", icon: "⊞" },
+    { href: "/settings", key: "nav.settings", icon: "⚙" }
   ];
 
   onMount(async () => {
     try {
       providers.set(await api.getProviders());
-      settings.set(await api.getSettings());
+      const loadedSettings = await api.getSettings();
+      settings.set(loadedSettings);
+      syncWithSettingsLanguage(loadedSettings?.language);
       steamRunning.set(await api.isSteamRunning());
     } catch (e) {
       error.set(errorMessage(e));
@@ -30,15 +33,15 @@
   });
 </script>
 
-<div class="app">
+<div class="app" dir={$isRTL ? "rtl" : "ltr"}>
   <header class="titlebar" data-tauri-drag-region>
     <div class="tb-brand" data-tauri-drag-region>
       <div class="tb-mark" data-tauri-drag-region>
         <img src="/logo.svg" alt="Steam Vault" width="28" height="28" />
       </div>
       <div class="tb-titles" data-tauri-drag-region>
-        <span class="tb-title" data-tauri-drag-region>Steam Vault</span>
-        <span class="tb-sub" data-tauri-drag-region>Library organizer</span>
+        <span class="tb-title" data-tauri-drag-region>{$t("nav.brandTitle")}</span>
+        <span class="tb-sub" data-tauri-drag-region>{$t("nav.brandSubtitle")}</span>
       </div>
     </div>
     <div class="tb-spacer" data-tauri-drag-region></div>
@@ -51,14 +54,14 @@
         {#each nav as item (item.href)}
           <a class="nav-item" class:active={page.url.pathname === item.href} href={item.href}>
             <span class="nav-icon">{item.icon}</span>
-            {item.label}
+            {$t(item.key)}
           </a>
         {/each}
       </nav>
 
       <div class="status glass">
         <span class:ok-dot={!$steamRunning} class:bad-dot={$steamRunning}></span>
-        <span class="muted-sm">{$steamRunning ? "Steam is running" : "Steam is closed"}</span>
+        <span class="muted-sm">{$steamRunning ? $t("status.steamRunning") : $t("status.steamClosed")}</span>
       </div>
     </aside>
 
@@ -66,7 +69,7 @@
       {#if $error}
         <div class="error-banner" style="margin-bottom:1rem">
           {$error}
-          <button class="btn btn-ghost" style="float:right" onclick={() => error.set(null)}>Dismiss</button>
+          <button class="btn btn-ghost" style="float:right" onclick={() => error.set(null)}>{$t("status.dismiss")}</button>
         </div>
       {/if}
       {@render children?.()}

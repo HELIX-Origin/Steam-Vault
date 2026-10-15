@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Hand-rolled i18n localization engine**: Zero-dependency reactive internationalization engine supporting all 30 officially supported Valve/Steam platform languages with parameter interpolation, English fallback safety, RTL layout support for Arabic, and a 30-language selector in Settings.
+- **Keyless VNDB metadata provider** (`metadata::vndb`): Kana API client fetching visual novel metadata (developers, publishers, release year, tags, and cover art) for visual novels and Ren'Py games.
+- **Steam Store Search provider** (`metadata::steam_search`): Keyless search mapping non-Steam and indie titles to official Steam App IDs to fetch store metadata.
+- **Local game & engine sniffer** (`metadata::local`): Offline metadata extraction from itch.io `receipt.json`, Ren'Py signatures, RPG Maker manifests (`System.json`, `System.rvdata2`, `Scripts.rxdata`), and Windows PE binary VersionInfo headers (`CompanyName`, `ProductName`).
+- **Emulators and ROMs support** (`Platform::Emulator`): Automatic detection of 11 popular emulators (Dolphin, PCSX2, DuckStation, Project64, PPSSPP, RPCS3, Citra, Cemu, Ryujinx, mGBA, Snes9x, RetroArch), recursive ROM scanning, and automated CLI launch arguments.
+- **Automatic artwork resolution**: Non-Steam imports automatically download portrait, hero, logo, and icon art via SteamGridDB and metadata caches; new **Auto-fetch missing art** button in Artwork view.
+- **Multi-entity string splitting & platform fallbacks**: AutoCats splits comma/semicolon/slash-separated developer and publisher lists into discrete collections while preserving legal entity names (`Co., Ltd.`), with fallback to platform storefront for unlisted shortcuts.
+- **High-performance platform scanner & ROM matching**: Replaced slow drive letter probing with instantaneous `sysinfo::Disks` mounted volume enumeration; pre-located emulator executables with $O(1)$ in-memory ROM extension resolution; added top-level executable fast paths and opt-in "Scan all drives" toggle in Platforms view.
+
 - Initial project scaffold: Tauri v2 + SvelteKit (Svelte 5 / TypeScript / Vite).
 - Steam installation discovery (Windows registry + cross-platform fallbacks) with
   `libraryfolders.vdf` library-folder and `loginusers.vdf` account parsing.
@@ -80,6 +89,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Replacing or removing art backs up the previous image first. New **Artwork** view (eight-item
   navigation). Unlike collection and shortcut writes, artwork writes do **not** require Steam to be
   closed.
+- **Settings non-Steam paths refinement**: replaced the semicolon-joined text field
+  with individual folder inputs with **+** add and **×** remove buttons, plus a per-platform
+  **Find folders** button (`find_platform_folders`) that auto-detects launcher config and
+  library locations mirroring Steam's auto-detect UX.
+- **Storefront launch URIs**: `PlatformGame.launch_uri` populated for Epic Games Launcher
+  (`com.epicgames.launcher://apps/<id>?action=launch`), Legendary / Heroic (`legendary://<id>`),
+  and itch.io (`itch://games/<id>`), and written into the non-Steam shortcut's launch options
+  on import.
+- **Per-game platform override & re-tagging**: new `set_game_platform` command persisting
+  custom platform attributions for shortcuts, with interactive dropdown pills on each shortcut
+  row and bulk re-tagging in the Library toolbar.
+- **Microsoft Store / Xbox Game Pass detection**: manifest-based detector scanning `XboxGames`
+  directories across mounted drives, reading `MicrosoftGame.config` and `appxmanifest.xml`
+  for game titles, executables, package identities, and `shell:AppsFolder` launch URIs without scraping.
+- **Automated log file cleanup**: `scripts/lib/logger.mjs` prunes stale log files across runs,
+  maintaining a configurable retention cap (default 25 most recent `.log` files) to protect disk storage.
 
 ### Fixed
 

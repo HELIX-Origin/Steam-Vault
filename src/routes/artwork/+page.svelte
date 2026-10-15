@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
+  import { t } from "$lib/i18n";
   import { error, settings } from "$lib/stores";
   import type { ArtworkSlotId, GameArtwork, SgdbAsset } from "$lib/types";
 
@@ -176,18 +177,33 @@
       busy = false;
     }
   }
+
+  async function autoFetchArt() {
+    busy = true;
+    busyLabel = "Auto-fetching artwork for shortcuts…";
+    notice = null;
+    try {
+      const count = await api.autoFetchArtworkForGames();
+      notice = `Auto-fetched and applied ${count} artwork assets across library shortcuts.`;
+      await refresh();
+    } catch (e) {
+      error.set(errorMessage(e));
+    } finally {
+      busy = false;
+    }
+  }
 </script>
 
 <div class="row-between" style="margin-bottom:1rem">
   <div>
-    <h1>Artwork</h1>
+    <h1>{$t("artwork.title")}</h1>
     <p class="muted">
-      Apply grid, hero, logo, and icon art to any game — including non-Steam shortcuts — from
-      SteamGridDB or a local file.
+      {$t("artwork.subtitle")}
     </p>
   </div>
-  <div class="row">
-    <button class="btn btn-ghost" onclick={() => refresh()} disabled={busy}>Refresh</button>
+  <div class="row" style="gap:0.5rem">
+    <button class="btn" onclick={autoFetchArt} disabled={busy}>{$t("artwork.autoFetchAll")}</button>
+    <button class="btn btn-ghost" onclick={() => refresh()} disabled={busy}>{$t("common.refresh")}</button>
   </div>
 </div>
 

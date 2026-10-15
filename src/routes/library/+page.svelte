@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
+  import { t } from "$lib/i18n";
   import { collections, error, games, loading } from "$lib/stores";
-  import type { Game } from "$lib/types";
+  import type { Game, Platform } from "$lib/types";
 
   let search = "";
   let collectionFilter: string | null = null;
@@ -11,6 +12,7 @@
   let targetCollection: string | null = null;
   let busy = false;
   let syncing = false;
+  let bulkPlatform = "";
 
   const platformLabels: Record<string, string> = {
     steam: "Steam",
@@ -23,8 +25,55 @@
     amazon: "Amazon",
     xbox: "Xbox",
     rockstar: "Rockstar",
+    emulator: "Emulator",
     other: "Other"
   };
+
+  const platformOptions: { id: Platform; label: string }[] = [
+    { id: "steam", label: "Steam" },
+    { id: "gog", label: "GOG" },
+    { id: "epic", label: "Epic" },
+    { id: "itch", label: "itch.io" },
+    { id: "ubisoft", label: "Ubisoft" },
+    { id: "ea", label: "EA" },
+    { id: "battlenet", label: "Battle.net" },
+    { id: "amazon", label: "Amazon" },
+    { id: "xbox", label: "Xbox" },
+    { id: "rockstar", label: "Rockstar" },
+    { id: "emulator", label: "Emulator" },
+    { id: "other", label: "Other" }
+  ];
+
+  $: selectedShortcuts = $games.filter((game) => selected.has(game.appId) && game.kind === "shortcut");
+
+  async function setPlatform(game: Game, platform: string) {
+    try {
+      await api.setGamePlatform(game.appId, platform);
+      game.platform = platform as Platform;
+      games.set([...$games]);
+      error.set(null);
+    } catch (e) {
+      error.set(errorMessage(e));
+    }
+  }
+
+  async function applyBulkPlatform() {
+    if (!bulkPlatform || selectedShortcuts.length === 0) return;
+    busy = true;
+    try {
+      for (const s of selectedShortcuts) {
+        await api.setGamePlatform(s.appId, bulkPlatform);
+        s.platform = bulkPlatform as Platform;
+      }
+      games.set([...$games]);
+      bulkPlatform = "";
+      error.set(null);
+    } catch (e) {
+      error.set(errorMessage(e));
+    } finally {
+      busy = false;
+    }
+  }
 
   $: installedCount = $games.filter((game) => game.installed).length;
 
@@ -108,52 +157,86 @@
 
 <div class="row-between" style="margin-bottom:1rem">
   <div>
-    <h1>Library</h1>
+    <h1>{$t("nav.library")}</h1>
     <p class="muted">
       {$games.length} owned · {installedCount} installed · {filtered.length} shown · {selected.size} selected
     </p>
   </div>
   <div class="row">
     <button class="btn" onclick={syncOwned} disabled={syncing}>
-      {syncing ? "Syncing…" : "Sync owned games"}
+      {syncing ? $t("common.refreshing") : "Sync owned games"}
     </button>
-    <button class="btn" onclick={selectAll}>Select all</button>
-    <button class="btn btn-ghost" onclick={clearSelection} disabled={selected.size === 0}>Clear</button>
+    <button class="btn" onclick={selectAll}>{$t("common.all")}</button>
+    <button class="btn btn-ghost" onclick={clearSelection} disabled={selected.size === 0}>{$t("common.clear")}</button>
   </div>
 </div>
 
 <div class="glass-strong toolbar">
-  <input placeholder="Search games…" bind:value={search} style="max-width:280px" />
+  <input placeholder={$t("library.searchPlaceholder")} bind:value={search} style="max-width:280px" />
   <select bind:value={collectionFilter} style="max-width:220px">
-    <option value={null}>All collections</option>
+    <option value={null}>{$t("library.allCategories")}</option>
     {#each $collections as collection (collection.id)}
       <option value={collection.name}>{collection.name}</option>
     {/each}
   </select>
   <label class="row" style="margin:0;gap:0.4rem">
-    <input type="checkbox" bind:checked={onlyInstalled} style="width:auto" /> Installed only
+    <input type="checkbox" bind:checked={onlyInstalled} style="width:auto" /> {$t("library.installedOnly")}
   </label>
   <div class="spacer"></div>
+  {#if selectedShortcuts.length > 0}
+    <select bind:value={bulkPlatform} style="max-width:140px">
+      <option value="">Set platform…</option>
+      {#each platformOptions as opt}
+        <option value={opt.id}>{opt.label}</option>
+      {/each}
+    </select>
+    <button class="btn" disabled={busy || !bulkPlatform} onclick={applyBulkPlatform}>Tag</button>
+  {/if}
   <select bind:value={targetCollection} style="max-width:200px">
     {#each $collections as collection (collection.id)}
       <option value={collection.name}>{collection.name}</option>
     {/each}
   </select>
-  <button class="btn btn-primary" disabled={busy || selected.size === 0} onclick={() => assign("add")}>Add</button>
-  <button class="btn btn-danger" disabled={busy || selected.size === 0} onclick={() => assign("remove")}>Remove</button>
+  <button class="btn btn-primary" disabled={busy || selected.size === 0} onclick={() => assign("add")}>{$t("common.add")}</button>
+  <button class="btn btn-danger" disabled={busy || selected.size === 0} onclick={() => assign("remove")}>{$t("common.remove")}</button>
 </div>
 
 {#if $loading}
-  <p class="muted">Loading library…</p>
+  <p class="muted">{$t("common.loading")}</p>
 {:else}
   <div class="glass list">
     {#each filtered as game (game.kind + "-" + game.appId)}
-      <button class="row game" class:selected={selected.has(game.appId)} onclick={() => toggleSelection(game.appId)}>
+      <div
+        class="row game"
+        class:selected={selected.has(game.appId)}
+        role="button"
+        tabindex="0"
+        onclick={() => toggleSelection(game.appId)}
+        onkeydown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggleSelection(game.appId);
+          }
+        }}
+      >
         <span class="check">{selected.has(game.appId) ? "✓" : ""}</span>
         <span class="name">
           {game.name || `App ${game.appId}`}
           {#if game.kind === "shortcut"}
-            <span class="pill pill-accent2">{platformLabels[game.platform] ?? "Other"}</span>
+            <!-- svelte-ignore a11y_click_events_have_key_events -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <span class="platform-tag" onclick={(e) => e.stopPropagation()}>
+              <select
+                class="platform-select pill pill-accent2"
+                value={game.platform}
+                onchange={(e) => setPlatform(game, e.currentTarget.value)}
+                title="Change source platform"
+              >
+                {#each platformOptions as opt}
+                  <option value={opt.id}>{opt.label}</option>
+                {/each}
+              </select>
+            </span>
           {/if}
           {#if !game.installed}<span class="pill pill-dim">not installed</span>{/if}
           {#if game.favorite}<span class="pill">★</span>{/if}
@@ -164,7 +247,7 @@
           {/each}
         </span>
         <span class="muted-sm size">{formatSize(game.sizeOnDisk)}</span>
-      </button>
+      </div>
     {/each}
     {#if filtered.length === 0}
       <p class="muted" style="padding:1rem">No games match the current filters.</p>
@@ -248,5 +331,27 @@
     width: 68px;
     text-align: right;
     flex-shrink: 0;
+  }
+
+  .platform-tag {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .platform-select {
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.15rem 0.45rem;
+    outline: none;
+    border-radius: var(--radius-sm, 6px);
+  }
+
+  .platform-select option {
+    background: var(--bg-card, #1c1d22);
+    color: var(--fg, #e6e6e6);
   }
 </style>

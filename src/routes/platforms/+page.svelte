@@ -1,5 +1,6 @@
 <script lang="ts">
   import { api, errorMessage } from "$lib/api";
+  import { t } from "$lib/i18n";
   import { error, platformScan } from "$lib/stores";
   import type { Platform, PlatformGame } from "$lib/types";
 
@@ -14,6 +15,7 @@
     amazon: "Amazon Games",
     xbox: "Xbox",
     rockstar: "Rockstar",
+    emulator: "Emulators & ROMs",
     other: "Other"
   };
 
@@ -47,11 +49,13 @@
     selected = new Set();
   }
 
+  let includeOtherDrives = false;
+
   async function runScan() {
     busy = true;
     imported = null;
     try {
-      platformScan.set(await api.detectPlatforms());
+      platformScan.set(await api.detectPlatforms(includeOtherDrives));
       selected = new Set();
       error.set(null);
     } catch (e) {
@@ -80,14 +84,18 @@
 
 <div class="row-between" style="margin-bottom:1rem">
   <div>
-    <h1>Platforms</h1>
+    <h1>{$t("platforms.title")}</h1>
     <p class="muted">
-      Detect games installed by other launchers, then import them into Steam as non-Steam shortcuts.
+      {$t("platforms.subtitle")}
     </p>
   </div>
-  <div class="row">
+  <div class="row" style="align-items:center;gap:1rem">
+    <label style="display:inline-flex;align-items:center;gap:0.4rem;font-size:0.85rem;color:var(--text-muted);cursor:pointer;user-select:none">
+      <input type="checkbox" bind:checked={includeOtherDrives} />
+      Scan all drives
+    </label>
     <button class="btn btn-primary" onclick={runScan} disabled={busy}>
-      {busy ? "Scanning…" : "Scan for games"}
+      {busy ? $t("common.scanning") : $t("platforms.scanAll")}
     </button>
   </div>
 </div>

@@ -2,6 +2,7 @@
   import { onDestroy, onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { api, errorMessage } from "$lib/api";
+  import { t } from "$lib/i18n";
   import { error, steamRunning } from "$lib/stores";
   import type {
     GamePlacement,
@@ -177,11 +178,11 @@
 
 <div class="row-between" style="margin-bottom:1rem">
   <div>
-    <h1>Storage</h1>
-    <p class="muted">Inspect library folders and drives, register new ones, and move games between libraries.</p>
+    <h1>{$t("storage.title")}</h1>
+    <p class="muted">{$t("storage.subtitle")}</p>
   </div>
   <div class="row">
-    <button class="btn btn-ghost" onclick={refresh} disabled={busy}>Refresh</button>
+    <button class="btn btn-ghost" onclick={refresh} disabled={busy}>{$t("common.refresh")}</button>
   </div>
 </div>
 

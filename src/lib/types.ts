@@ -14,7 +14,14 @@ export type Platform =
   | "amazon"
   | "xbox"
   | "rockstar"
+  | "emulator"
   | "other";
+
+export interface SteamSearchResult {
+  id: number;
+  name: string;
+  tinyImage: string | null;
+}
 
 export interface SteamLibrary {
   index: number;
