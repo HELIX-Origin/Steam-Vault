@@ -158,6 +158,9 @@
         <span class="name">
           {game.name}
           <span class="pill pill-accent2">{labels[game.platform]}</span>
+          {#if game.console}
+            <span class="pill pill-dim">{game.console}</span>
+          {/if}
         </span>
         <span class="muted-sm src">{game.source ?? ""}</span>
       </button>

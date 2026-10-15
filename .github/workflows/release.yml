@@ -8,14 +8,98 @@ on:
     inputs:
       tag:
         description: 'Tag to release (e.g. v1.0.0)'
-        required: true
-        default: 'v1.0.0'
+        required: false
+        default: ''
 
 permissions:
   contents: write
 
 jobs:
-  build-and-release:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-22.04
+    outputs:
+      release_id: ${{ steps.create_release.outputs.release_id }}
+      tag_name: ${{ steps.create_release.outputs.tag_name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create or update release
+        id: create_release
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.PAT_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+
+            let tag = context.ref.replace('refs/tags/', '');
+            if (!tag || tag.startsWith('refs/heads/')) {
+              tag = context.payload.inputs?.tag || 'v1.0.0';
+            }
+            console.log(`Target release tag: ${tag}`);
+
+            let body = '';
+            const candidatePaths = [
+              path.join(process.env.GITHUB_WORKSPACE, '.github', 'releases', `${tag}.md`),
+              path.join(process.env.GITHUB_WORKSPACE, 'docs', 'releases', `${tag}.md`)
+            ];
+            for (const p of candidatePaths) {
+              if (fs.existsSync(p)) {
+                body = fs.readFileSync(p, 'utf8');
+                console.log(`Loaded release notes from: ${p}`);
+                break;
+              }
+            }
+            if (!body) {
+              body = `# Steam Vault ${tag}\n\nCross-platform Steam library organizer and manager built with Tauri v2.`;
+            }
+
+            let release;
+            try {
+              const res = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tag
+              });
+              release = res.data;
+              console.log(`Found existing release: ID ${release.id}`);
+              await github.rest.repos.updateRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.id,
+                name: `Steam Vault ${tag}`,
+                body: body,
+                draft: false,
+                prerelease: false
+              });
+              console.log(`Updated release ID ${release.id} with release notes`);
+            } catch (err) {
+              if (err.status === 404) {
+                console.log(`Creating new release for ${tag}`);
+                const res = await github.rest.repos.createRelease({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  tag_name: tag,
+                  name: `Steam Vault ${tag}`,
+                  body: body,
+                  draft: false,
+                  prerelease: false
+                });
+                release = res.data;
+                console.log(`Created release ID ${release.id}`);
+              } else {
+                throw err;
+              }
+            }
+
+            core.setOutput('release_id', release.id.toString());
+            core.setOutput('tag_name', tag);
+
+  build-and-upload:
+    name: Build & Upload (${{ matrix.platform }})
+    needs: create-release
     permissions:
       contents: write
     strategy:
@@ -37,7 +121,7 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
 
       - name: Install Rust stable
@@ -45,33 +129,25 @@ jobs:
         with:
           targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
       - name: Install Linux dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libayatana-appindicator3-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev xdg-utils
 
       - name: Install frontend dependencies
         run: npm ci || npm install
 
-      - name: Build Tauri installer bundles and publish release
+      - name: Build Tauri installer bundles and upload
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
-          tagName: ${{ github.ref_name || github.event.inputs.tag }}
-          releaseName: 'Steam Vault v__VERSION__'
-          releaseBody: |
-            ## Steam Vault v__VERSION__
-
-            Cross-platform desktop Steam library organizer and manager built with Tauri v2.
-
-            ### Prebuilt Packages
-            - **Windows**: `.msi` and `.exe` (NSIS installer)
-            - **macOS**: `.dmg` (Universal binary for Apple Silicon & Intel)
-            - **Linux**: `.deb` and `.AppImage`
-
-            See [CHANGELOG.md](https://github.com/HELIX-Origin/Steam-Vault/blob/main/CHANGELOG.md) for full release details.
-          releaseDraft: false
-          prerelease: false
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          tagName: ${{ needs.create-release.outputs.tag_name }}
           args: ${{ matrix.args }}

@@ -20,6 +20,9 @@ pub enum AppError {
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
 
+    #[error("database error: {0}")]
+    Database(#[from] rusqlite::Error),
+
     #[error("network error: {0}")]
     Http(#[from] reqwest::Error),
 

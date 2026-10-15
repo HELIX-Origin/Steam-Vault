@@ -52,6 +52,7 @@ pub fn run() {
             commands::igdb_search,
             commands::pcgamingwiki_lookup,
             commands::wikipedia_summary,
+            commands::wikipedia_game_lookup,
             commands::vndb_lookup,
             commands::steam_store_search,
             commands::compute_autocats,
@@ -83,6 +84,11 @@ pub fn run() {
             commands::evaluate_filter,
             commands::save_smart_collection,
             commands::refresh_smart_collection,
+            commands::get_catalog_stats,
+            commands::export_catalog_archive,
+            commands::import_catalog_archive,
+            commands::sync_online_catalog,
+            commands::fetch_online_game_entry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

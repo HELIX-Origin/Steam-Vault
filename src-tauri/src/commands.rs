@@ -28,9 +28,11 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Self {
+        let mut cache = MetadataCache::open();
+        cache.ingest_uninstall_metadata();
         AppState {
             settings: Mutex::new(settings::load()),
-            cache: Mutex::new(MetadataCache::open()),
+            cache: Mutex::new(cache),
         }
     }
 
@@ -481,6 +483,9 @@ pub async fn ensure_steam_metadata(
                 let mut cache = state.cache.lock().expect("cache lock poisoned");
                 for (app_id, meta) in &map {
                     cache.put("steam-store", *app_id, meta);
+                    if let Some(title) = &meta.name {
+                        cache.upsert_catalog_entry(title, meta, Some("steam"), None);
+                    }
                 }
                 let _ = cache.save();
                 fetched += map.len();
@@ -554,7 +559,7 @@ pub async fn ensure_game_metadata(
 
     let mut result = ensure_steam_metadata(state, &steam_ids, want_tags).await;
 
-    // For any Steam games where store details were unavailable, try PCGamingWiki fallback
+    // For any Steam games where store details were unavailable, try catalog first, then PCGamingWiki fallback
     let missing_steam: Vec<(String, u32)> = {
         let cache = state.cache.lock().expect("cache lock poisoned");
         games
@@ -570,9 +575,29 @@ pub async fn ensure_game_metadata(
     };
 
     for (name, app_id) in missing_steam {
-        if let Ok(Some(meta)) = metadata::extra::pcgamingwiki_lookup(&client, &name).await {
+        let cat_opt = {
+            let cache = state.cache.lock().expect("cache lock poisoned");
+            cache.find_catalog_by_title(&name)
+        };
+        if let Some(meta) = cat_opt {
             let mut cache = state.cache.lock().expect("cache lock poisoned");
             cache.put("steam-store", app_id, &meta);
+            let _ = cache.save();
+            result.cached += 1;
+        } else if let Some(online_meta) = fetch_online_catalog_entry(&client, &name).await {
+            let mut cache = state.cache.lock().expect("cache lock poisoned");
+            cache.put("steam-store", app_id, &online_meta);
+            if let Some(title) = &online_meta.name {
+                cache.upsert_catalog_entry(title, &online_meta, Some("steam"), None);
+            }
+            let _ = cache.save();
+            result.fetched += 1;
+        } else if let Ok(Some(meta)) = metadata::extra::pcgamingwiki_lookup(&client, &name).await {
+            let mut cache = state.cache.lock().expect("cache lock poisoned");
+            cache.put("steam-store", app_id, &meta);
+            if let Some(title) = &meta.name {
+                cache.upsert_catalog_entry(title, &meta, Some("steam"), None);
+            }
             let _ = cache.save();
             result.fetched += 1;
         }
@@ -598,6 +623,36 @@ pub async fn ensure_game_metadata(
 
         result.requested += 1;
         let mut resolved: Option<AppMeta> = None;
+
+        // 0. Check local compressed game catalog database
+        {
+            let cache = state.cache.lock().expect("cache lock poisoned");
+            if let Some(exe_str) = game.exe.as_deref() {
+                if let Some(cat_meta) = cache.find_catalog_by_exe(exe_str) {
+                    resolved = Some(cat_meta);
+                }
+            }
+            if resolved.is_none() {
+                if let Some(cat_meta) = cache.find_catalog_by_title(&game.name) {
+                    resolved = Some(cat_meta);
+                }
+            }
+        }
+
+        // 0b. Query community online catalog on-demand if not found locally
+        if resolved.is_none() {
+            if let Some(online_meta) = fetch_online_catalog_entry(&client, &game.name).await {
+                let mut cache = state.cache.lock().expect("cache lock poisoned");
+                let title = online_meta.name.as_deref().unwrap_or(&game.name);
+                cache.upsert_catalog_entry(
+                    title,
+                    &online_meta,
+                    Some(game.platform.label()),
+                    game.exe.as_deref(),
+                );
+                resolved = Some(online_meta);
+            }
+        }
 
         // 1. Local engine inspection (itch receipt, RPG Maker, Ren'Py, PE VersionInfo)
         let dir = game.install_dir.as_deref().map(Path::new);
@@ -690,6 +745,42 @@ pub async fn ensure_game_metadata(
             }
         }
 
+        // 4b. Wikipedia Video Game & console metadata lookup
+        if resolved.as_ref().map_or(true, |m| {
+            m.developers.is_empty() || m.publishers.is_empty() || m.genres.is_empty()
+        }) {
+            if let Ok(Some(wp_meta)) =
+                metadata::extra::wikipedia_game_lookup(&client, &game.name).await
+            {
+                if let Some(ref mut cur) = resolved {
+                    if cur.developers.is_empty() {
+                        cur.developers = wp_meta.developers;
+                    }
+                    if cur.publishers.is_empty() {
+                        cur.publishers = wp_meta.publishers;
+                    }
+                    if cur.release_year.is_none() {
+                        cur.release_year = wp_meta.release_year;
+                    }
+                    for g in wp_meta.genres {
+                        if !cur.genres.contains(&g) {
+                            cur.genres.push(g);
+                        }
+                    }
+                    if cur.short_description.is_none() {
+                        cur.short_description = wp_meta.short_description;
+                    }
+                    for cat in wp_meta.categories {
+                        if !cur.categories.contains(&cat) {
+                            cur.categories.push(cat);
+                        }
+                    }
+                } else {
+                    resolved = Some(wp_meta);
+                }
+            }
+        }
+
         // 5. Fallback publisher attribution from platform if still empty
         let mut final_meta = resolved.unwrap_or_else(|| AppMeta {
             name: Some(game.name.clone()),
@@ -712,6 +803,13 @@ pub async fn ensure_game_metadata(
         let mut cache = state.cache.lock().expect("cache lock poisoned");
         cache.put("shortcut-meta", game.app_id, &final_meta);
         cache.put("steam-store", game.app_id, &final_meta);
+        let platform_str = game.platform.label();
+        cache.upsert_catalog_entry(
+            &game.name,
+            &final_meta,
+            Some(platform_str),
+            game.exe.as_deref(),
+        );
         let _ = cache.save();
         result.fetched += 1;
     }
@@ -809,6 +907,12 @@ pub async fn wikipedia_summary(title: String) -> AppResult<Option<String>> {
 }
 
 #[tauri::command]
+pub async fn wikipedia_game_lookup(title: String) -> AppResult<Option<AppMeta>> {
+    let client = metadata::http_client();
+    metadata::extra::wikipedia_game_lookup(&client, &title).await
+}
+
+#[tauri::command]
 pub async fn vndb_lookup(title: String) -> AppResult<Option<AppMeta>> {
     let client = metadata::http_client();
     metadata::vndb::vndb_lookup(&client, &title).await
@@ -875,7 +979,13 @@ pub async fn compute_autocats(
     for game in &games {
         let meta = cache
             .get("shortcut-meta", game.app_id, None)
-            .or_else(|| cache.get("steam-store", game.app_id, None));
+            .or_else(|| cache.get("steam-store", game.app_id, None))
+            .or_else(|| {
+                game.exe
+                    .as_deref()
+                    .and_then(|e| cache.find_catalog_by_exe(e))
+            })
+            .or_else(|| cache.find_catalog_by_title(&game.name));
         if meta.is_none() && wants_metadata {
             missing_metadata.push(game.app_id);
         }
@@ -1007,15 +1117,22 @@ pub async fn fetch_and_apply_artwork_for_game(
         }
     }
 
-    // 2. Fallback: if portrait grid is still missing, check cached AppMeta (from Steam Store, VNDB, or itch)
+    // 2. Fallback: if portrait grid is still missing, check cached AppMeta, local catalog, or online catalog
     if !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::GridPortrait).present {
-        let img_url = {
+        let mut img_url = {
             let cache = state.cache.lock().expect("cache lock poisoned");
             cache
                 .get("shortcut-meta", app_id, None)
                 .or_else(|| cache.get("steam-store", app_id, None))
+                .or_else(|| cache.find_catalog_by_title(name))
                 .and_then(|m| m.capsule_image.or(m.header_image))
         };
+
+        if img_url.is_none() {
+            if let Some(online_meta) = fetch_online_catalog_entry(&client, name).await {
+                img_url = online_meta.capsule_image.or(online_meta.header_image);
+            }
+        }
 
         if let Some(url) = img_url {
             if let Ok(resp) = client.get(&url).send().await {
@@ -1025,6 +1142,44 @@ pub async fn fetch_and_apply_artwork_for_game(
                             &grid_dir,
                             app_id,
                             ArtworkSlot::GridPortrait,
+                            &bytes,
+                            Some(url),
+                        )
+                        .is_ok()
+                        {
+                            applied_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Fallback: if hero banner is still missing, check cached header_image or catalog
+    if !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::Hero).present {
+        let mut hero_url = {
+            let cache = state.cache.lock().expect("cache lock poisoned");
+            cache
+                .get("shortcut-meta", app_id, None)
+                .or_else(|| cache.get("steam-store", app_id, None))
+                .or_else(|| cache.find_catalog_by_title(name))
+                .and_then(|m| m.header_image)
+        };
+
+        if hero_url.is_none() {
+            if let Some(online_meta) = fetch_online_catalog_entry(&client, name).await {
+                hero_url = online_meta.header_image;
+            }
+        }
+
+        if let Some(url) = hero_url {
+            if let Ok(resp) = client.get(&url).send().await {
+                if resp.status().is_success() {
+                    if let Ok(bytes) = resp.bytes().await {
+                        if artwork::apply_bytes(
+                            &grid_dir,
+                            app_id,
+                            ArtworkSlot::Hero,
                             &bytes,
                             Some(url),
                         )
@@ -1056,26 +1211,97 @@ pub async fn import_platform_games(
     let mut skipped = Vec::new();
     let mut candidates = Vec::new();
     for game in games {
-        let Some(exe) = game.exe.clone().filter(|value| !value.is_empty()) else {
-            skipped.push(format!("{} (no executable found)", game.name));
-            continue;
+        let (exe, launch_options) = match game.exe.clone().filter(|value| !value.is_empty()) {
+            Some(raw_exe) => {
+                let ext = Path::new(&raw_exe)
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                if ext == "html" || ext == "htm" {
+                    #[cfg(windows)]
+                    {
+                        (
+                            "cmd.exe".to_string(),
+                            format!("/c start \"\" \"{}\"", raw_exe),
+                        )
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        ("xdg-open".to_string(), format!("\"{}\"", raw_exe))
+                    }
+                } else if ext == "jar" {
+                    ("java.exe".to_string(), format!("-jar \"{}\"", raw_exe))
+                } else if ext == "love" {
+                    ("love.exe".to_string(), format!("\"{}\"", raw_exe))
+                } else if ext == "py" {
+                    ("pythonw.exe".to_string(), format!("\"{}\"", raw_exe))
+                } else if ext == "bat" || ext == "cmd" {
+                    #[cfg(windows)]
+                    {
+                        ("cmd.exe".to_string(), format!("/c \"{}\"", raw_exe))
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        (raw_exe, game.launch_uri.clone().unwrap_or_default())
+                    }
+                } else {
+                    (raw_exe, game.launch_uri.clone().unwrap_or_default())
+                }
+            }
+            None => {
+                if let Some(ref uri) = game.launch_uri {
+                    #[cfg(windows)]
+                    {
+                        ("cmd.exe".to_string(), format!("/c start \"\" \"{}\"", uri))
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        ("xdg-open".to_string(), uri.clone())
+                    }
+                } else {
+                    skipped.push(format!(
+                        "{} (no executable or launch target found)",
+                        game.name
+                    ));
+                    continue;
+                }
+            }
         };
-        let start_dir = game
-            .install_dir
-            .clone()
-            .or_else(|| {
-                Path::new(&exe)
-                    .parent()
-                    .map(|parent| parent.display().to_string())
-            })
+
+        // Prioritize executable's parent folder so binaries in subdirectories (e.g. Dragon Age II bin_ship) resolve dependencies
+        let start_dir = Path::new(&exe)
+            .parent()
+            .map(|parent| parent.display().to_string())
+            .or_else(|| game.install_dir.clone())
             .unwrap_or_default();
+
+        let mut final_name = game.name.clone();
+        {
+            let cache = state.cache.lock().expect("cache lock poisoned");
+            if let Some(cat_meta) = cache
+                .find_catalog_by_exe(&exe)
+                .or_else(|| cache.find_catalog_by_title(&game.name))
+            {
+                if let Some(ref cat_title) = cat_meta.name {
+                    final_name = cat_title.clone();
+                }
+            }
+        }
+
+        let mut tags = Vec::new();
+        if let Some(ref console) = game.console {
+            tags.push(console.clone());
+        }
+
         candidates.push(shortcuts::NewShortcut {
-            name: game.name.clone(),
+            name: final_name,
             exe,
             start_dir,
             icon: String::new(),
-            launch_options: game.launch_uri.clone().unwrap_or_default(),
+            launch_options,
             platform: game.platform,
+            tags,
         });
     }
 
@@ -1284,7 +1510,13 @@ pub async fn compute_categorization(
     for game in &scoped {
         let stored = cache
             .get("shortcut-meta", game.app_id, None)
-            .or_else(|| cache.get("steam-store", game.app_id, None));
+            .or_else(|| cache.get("steam-store", game.app_id, None))
+            .or_else(|| {
+                game.exe
+                    .as_deref()
+                    .and_then(|e| cache.find_catalog_by_exe(e))
+            })
+            .or_else(|| cache.find_catalog_by_title(&game.name));
         if stored.is_none() && wants_metadata {
             missing_metadata.push(game.app_id);
         }
@@ -1416,9 +1648,13 @@ pub fn apply_categorization(
 /// Inspect every registered Steam library folder, its games, and the mounted
 /// disks — everything the Storage view needs in one round-trip.
 #[tauri::command]
-pub fn get_storage_report(state: State<'_, AppState>) -> AppResult<StorageReport> {
+pub fn get_storage_report(
+    account_id3: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<StorageReport> {
     let root = steam_root(&state)?;
-    storage::report(&root)
+    let account = resolve_account(&root, &state, account_id3);
+    storage::report(&root, account.as_deref())
 }
 
 /// Dry-run a move of a whole library folder: sizes, free space, warnings.
@@ -1729,4 +1965,161 @@ pub fn refresh_smart_collection(
 
     let games = collect_library(&root, Some(&id3))?;
     crate::steam::filters::refresh_smart_collection(&mut file, &collection_id, &games)
+}
+
+/// Statistics on the local compressed game catalog database.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogStats {
+    pub total_games: usize,
+    pub total_metadata_cached: usize,
+}
+
+#[tauri::command]
+pub fn get_catalog_stats(state: State<'_, AppState>) -> CatalogStats {
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    CatalogStats {
+        total_games: cache.catalog_count(),
+        total_metadata_cached: cache.count(),
+    }
+}
+
+#[tauri::command]
+pub fn export_catalog_archive(path: String, state: State<'_, AppState>) -> AppResult<usize> {
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    let bytes = cache.export_catalog_compressed()?;
+    std::fs::write(&path, &bytes)?;
+    Ok(bytes.len())
+}
+
+#[tauri::command]
+pub fn import_catalog_archive(path: String, state: State<'_, AppState>) -> AppResult<usize> {
+    let bytes = std::fs::read(&path)?;
+    let mut cache = state.cache.lock().expect("cache lock poisoned");
+    cache.import_catalog_compressed(&bytes)
+}
+
+/// Default release download URL for the compiled community catalog distribution.
+const DEFAULT_CATALOG_RELEASE_URL: &str =
+    "https://github.com/HELIX-Origin/Steam-Vault-Catalog/releases/latest/download/catalog.db.gz";
+
+/// Synchronize the local catalog from the official HELIX Origin community catalog.
+///
+/// This is consumer-only: it downloads the latest compressed distribution artifact
+/// and merges all game records into the local SQLite database.
+#[tauri::command]
+pub async fn sync_online_catalog(
+    custom_url: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<usize> {
+    let client = metadata::http_client();
+    let url = custom_url
+        .filter(|u| !u.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_CATALOG_RELEASE_URL.to_string());
+
+    let res = client.get(&url).send().await?;
+    if !res.status().is_success() {
+        return Err(AppError::msg(format!(
+            "Failed to download online catalog: HTTP {}",
+            res.status()
+        )));
+    }
+
+    let bytes = res.bytes().await?;
+    let mut cache = state.cache.lock().expect("cache lock poisoned");
+    cache.import_catalog_compressed(&bytes)
+}
+
+/// Helper to fetch and parse a single game entry from the official community catalog on demand.
+pub async fn fetch_online_catalog_entry(
+    client: &reqwest::Client,
+    title_or_slug: &str,
+) -> Option<AppMeta> {
+    let slug = title_or_slug
+        .to_lowercase()
+        .replace(|c: char| !c.is_alphanumeric(), "-")
+        .trim_matches('-')
+        .to_string();
+
+    let url = format!(
+        "https://raw.githubusercontent.com/HELIX-Origin/Steam-Vault-Catalog/main/games/{}.json",
+        slug
+    );
+
+    let res = client.get(&url).send().await.ok()?;
+    if !res.status().is_success() {
+        return None;
+    }
+
+    let val: serde_json::Value = res.json().await.ok()?;
+    let title = val
+        .get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or(title_or_slug);
+    let meta_obj = val.get("metadata");
+
+    Some(AppMeta {
+        name: Some(title.to_string()),
+        developers: meta_obj
+            .and_then(|m| m.get("developers"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
+        publishers: meta_obj
+            .and_then(|m| m.get("publishers"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
+        genres: meta_obj
+            .and_then(|m| m.get("genres"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
+        tags: meta_obj
+            .and_then(|m| m.get("tags"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
+        categories: meta_obj
+            .and_then(|m| m.get("categories"))
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
+        release_year: meta_obj
+            .and_then(|m| m.get("releaseYear"))
+            .and_then(|v| v.as_i64())
+            .map(|y| y as i32),
+        release_date: meta_obj
+            .and_then(|m| m.get("releaseDate"))
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        user_score: meta_obj
+            .and_then(|m| m.get("userScore"))
+            .and_then(|v| v.as_f64()),
+        short_description: meta_obj
+            .and_then(|m| m.get("shortDescription"))
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        header_image: meta_obj
+            .and_then(|m| m.get("headerImage"))
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        capsule_image: meta_obj
+            .and_then(|m| m.get("capsuleImage"))
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        fetched_at: Some(chrono::Utc::now().timestamp()),
+        ..Default::default()
+    })
+}
+
+/// Fetch a single game's JSON entry from the official community repository on demand.
+#[tauri::command]
+pub async fn fetch_online_game_entry(
+    title_or_slug: String,
+    state: State<'_, AppState>,
+) -> AppResult<Option<AppMeta>> {
+    let client = metadata::http_client();
+    let meta = fetch_online_catalog_entry(&client, &title_or_slug).await;
+    if let Some(ref m) = meta {
+        let title = m.name.as_deref().unwrap_or(&title_or_slug);
+        let mut cache = state.cache.lock().expect("cache lock poisoned");
+        cache.upsert_catalog_entry(title, m, None, None);
+    }
+    Ok(meta)
 }

@@ -219,6 +219,7 @@ export interface PlatformGame {
   sizeOnDisk: number | null;
   launchUri: string | null;
   source: string | null;
+  console?: string | null;
 }
 
 /** Per-platform scan summary (availability, count, sources consulted). */
@@ -321,7 +322,7 @@ export interface LibraryEntry {
   diskFree: number | null;
 }
 
-/** An installed Steam app and the library folder that holds it. */
+/** An installed Steam app or external game shortcut and the library folder that holds it. */
 export interface GamePlacement {
   appId: number;
   name: string;
@@ -330,6 +331,7 @@ export interface GamePlacement {
   sizeOnDisk: number;
   installed: boolean;
   folderExists: boolean;
+  platform?: Platform | null;
 }
 
 /** A mounted disk, for the drive overview. */
@@ -416,4 +418,11 @@ export interface ArtworkOutcome {
   source: string | null;
   /** Where the replaced image was archived, when there was one. */
   backup: string | null;
+}
+
+// --- Local game catalog database --------------------------------------------
+
+export interface CatalogStats {
+  totalGames: number;
+  totalMetadataCached: number;
 }

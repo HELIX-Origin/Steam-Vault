@@ -84,11 +84,6 @@ pub fn scan_all(config: &ScanConfig) -> PlatformScan {
             detect_emulators(&mounted_drives),
         );
     }
-    for (platform, detection) in detect_registry_based() {
-        if config.is_enabled(platform) {
-            merge(&mut by_platform, platform, detection);
-        }
-    }
 
     // User-configured folders plus well-known folders on every mounted drive.
     for platform in ORDER {
@@ -102,6 +97,7 @@ pub fn scan_all(config: &ScanConfig) -> PlatformScan {
         {
             roots.extend(drive_candidates(platform, &mounted_drives));
         }
+        roots.retain(|r| !is_blacklisted_root(Path::new(r)));
         roots.sort();
         roots.dedup();
         if !roots.is_empty() {
@@ -164,14 +160,24 @@ fn drive_folder_names(platform: Platform) -> &'static [&'static str] {
     match platform {
         Platform::Gog => &["GOG Games"],
         Platform::Epic => &["Epic Games"],
-        Platform::Itch => &["itch"],
+        Platform::Itch => &["itch\\games", "itch"],
         Platform::Ubisoft => &["Ubisoft Games", "Ubisoft Game Launcher\\games"],
         Platform::Ea => &["EA Games", "Origin Games"],
         Platform::BattleNet => &["Battle.net"],
         Platform::Amazon => &["Amazon Games"],
         Platform::Rockstar => &["Rockstar Games"],
         Platform::Xbox => &["XboxGames"],
-        Platform::Emulator => &["Emulators", "Roms", "RetroArch", "Dolphin", "PCSX2"],
+        Platform::Emulator => &[
+            "ROMs",
+            "Roms",
+            "roms",
+            "Emulators\\Roms",
+            "Emulators\\ROMs",
+            "Games\\Roms",
+            "Games\\ROMs",
+            "Emulation\\roms",
+            "Emulation\\ROMs",
+        ],
         Platform::Steam | Platform::Other => &[],
     }
 }
@@ -206,21 +212,244 @@ fn drive_candidates(platform: Platform, mounted_drives: &[PathBuf]) -> Vec<Strin
     out
 }
 
+/// Check if a path is a launcher's internal data, cache, or config directory (not a game library).
+pub fn is_blacklisted_root(path: &Path) -> bool {
+    let p = path.to_string_lossy().to_lowercase();
+    p.ends_with("\\appdata\\roaming\\itch")
+        || p.ends_with("/appdata/roaming/itch")
+        || p.ends_with("\\appdata\\local\\itch")
+        || p.ends_with("/appdata/local/itch")
+        || p.contains("\\programdata\\ea desktop")
+        || p.contains("/programdata/ea desktop")
+        || p.contains("\\electronic arts\\ea desktop")
+        || p.contains("/electronic arts/ea desktop")
+        || p.contains("\\appdata\\local\\electronic arts")
+        || p.contains("/appdata/local/electronic arts")
+        || p.contains("\\gog.com\\galaxy\\storage")
+        || p.contains("/gog.com/galaxy/storage")
+        || p.contains("\\ubisoft game launcher")
+        || p.contains("/ubisoft game launcher")
+        || p.ends_with("\\appdata\\roaming\\battle.net")
+        || p.ends_with("/appdata/roaming/battle.net")
+        || p.contains("\\rockstar games\\launcher")
+        || p.contains("/rockstar games/launcher")
+}
+
+/// Discover EA game install directories from user and machine configs.
+fn ea_library_dirs() -> Vec<String> {
+    let mut out = Vec::new();
+
+    // 1. User config: %LOCALAPPDATA%\Electronic Arts\EA Desktop\user_*.ini
+    if let Some(local) = env_dir("LOCALAPPDATA") {
+        let ea_user_dir = local.join("Electronic Arts").join("EA Desktop");
+        if let Ok(entries) = std::fs::read_dir(&ea_user_dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with("user_") && name.ends_with(".ini") {
+                    if let Ok(text) = std::fs::read_to_string(entry.path()) {
+                        for line in text.lines() {
+                            if let Some(rest) = line.strip_prefix("user.downloadinplacedir") {
+                                let val = rest.trim_start_matches(['=', ' ', '\t']).trim();
+                                if !val.is_empty() {
+                                    out.push(val.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Machine config: %ProgramData%\Electronic Arts\EA Desktop\machine.ini or %ProgramData%\EA Desktop\machine.ini
+    if let Some(prog_data) = env_dir("ProgramData") {
+        for candidate in &[
+            prog_data
+                .join("Electronic Arts")
+                .join("EA Desktop")
+                .join("machine.ini"),
+            prog_data.join("EA Desktop").join("machine.ini"),
+        ] {
+            if let Ok(text) = std::fs::read_to_string(candidate) {
+                for line in text.lines() {
+                    if let Some(rest) = line.strip_prefix("machine.downloadinplacedir") {
+                        let val = rest.trim_start_matches(['=', ' ', '\t']).trim();
+                        if !val.is_empty() {
+                            out.push(val.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Well-known install folders
+    if let Some(pf) = env_dir("ProgramFiles") {
+        out.push(pf.join("EA Games").display().to_string());
+    }
+    if let Some(pfx86) = env_dir("ProgramFiles(x86)") {
+        out.push(pfx86.join("Origin Games").display().to_string());
+    }
+
+    out
+}
+
+/// Discover ROM directories from popular emulator configurations.
+fn emulator_library_dirs() -> Vec<String> {
+    let mut out = Vec::new();
+
+    // 1. Dolphin: %APPDATA%\Dolphin Emulator\Config\Dolphin.ini or Documents\Dolphin Emulator\Config\Dolphin.ini
+    let mut dolphin_inis = Vec::new();
+    if let Some(appdata) = env_dir("APPDATA") {
+        dolphin_inis.push(
+            appdata
+                .join("Dolphin Emulator")
+                .join("Config")
+                .join("Dolphin.ini"),
+        );
+    }
+    if let Some(docs) = dirs::document_dir() {
+        dolphin_inis.push(
+            docs.join("Dolphin Emulator")
+                .join("Config")
+                .join("Dolphin.ini"),
+        );
+    }
+    for ini in dolphin_inis {
+        if let Ok(text) = std::fs::read_to_string(&ini) {
+            for line in text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("ISOPath") {
+                    if let Some(idx) = trimmed.find('=') {
+                        let path_str = trimmed[idx + 1..].trim();
+                        if !path_str.is_empty() && Path::new(path_str).is_dir() {
+                            out.push(path_str.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. PCSX2: inis\PCSX2.ini in Documents\PCSX2, APPDATA\PCSX2, or LOCALAPPDATA\PCSX2
+    let mut pcsx2_inis = Vec::new();
+    if let Some(docs) = dirs::document_dir() {
+        pcsx2_inis.push(docs.join("PCSX2").join("inis").join("PCSX2.ini"));
+    }
+    if let Some(appdata) = env_dir("APPDATA") {
+        pcsx2_inis.push(appdata.join("PCSX2").join("inis").join("PCSX2.ini"));
+    }
+    if let Some(local) = env_dir("LOCALAPPDATA") {
+        pcsx2_inis.push(local.join("PCSX2").join("inis").join("PCSX2.ini"));
+    }
+    for ini in pcsx2_inis {
+        if let Ok(text) = std::fs::read_to_string(&ini) {
+            for line in text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("Games =") || trimmed.starts_with("RecursivePaths =") {
+                    if let Some(idx) = trimmed.find('=') {
+                        let path_str = trimmed[idx + 1..].trim();
+                        if !path_str.is_empty() && Path::new(path_str).is_dir() {
+                            out.push(path_str.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. DuckStation: settings.ini in Documents\DuckStation or APPDATA\DuckStation
+    let mut duck_inis = Vec::new();
+    if let Some(docs) = dirs::document_dir() {
+        duck_inis.push(docs.join("DuckStation").join("settings.ini"));
+    }
+    if let Some(appdata) = env_dir("APPDATA") {
+        duck_inis.push(appdata.join("DuckStation").join("settings.ini"));
+    }
+    for ini in duck_inis {
+        if let Ok(text) = std::fs::read_to_string(&ini) {
+            for line in text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("RecursivePaths") {
+                    if let Some(idx) = trimmed.find('=') {
+                        let path_str = trimmed[idx + 1..].trim();
+                        if !path_str.is_empty() && Path::new(path_str).is_dir() {
+                            out.push(path_str.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. Ryujinx: %APPDATA%\Ryujinx\Config.json
+    if let Some(appdata) = env_dir("APPDATA") {
+        let ryu_cfg = appdata.join("Ryujinx").join("Config.json");
+        if let Ok(text) = std::fs::read_to_string(&ryu_cfg) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                if let Some(dirs) = val.get("game_dirs").and_then(|v| v.as_array()) {
+                    for d in dirs {
+                        if let Some(p) = d.as_str() {
+                            if Path::new(p).is_dir() {
+                                out.push(p.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Cemu: %LOCALAPPDATA%\Cemu\settings.xml
+    if let Some(local) = env_dir("LOCALAPPDATA") {
+        let cemu_xml = local.join("Cemu").join("settings.xml");
+        if let Ok(text) = std::fs::read_to_string(&cemu_xml) {
+            let mut start = 0;
+            while let Some(open) = text[start..].find("<Path>") {
+                let tag_start = start + open + 6;
+                if let Some(close) = text[tag_start..].find("</Path>") {
+                    let path_str = text[tag_start..tag_start + close].trim();
+                    if !path_str.is_empty() && Path::new(path_str).is_dir() {
+                        out.push(path_str.to_string());
+                    }
+                    start = tag_start + close + 7;
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    // 6. RetroArch: %APPDATA%\RetroArch\retroarch.cfg
+    if let Some(appdata) = env_dir("APPDATA") {
+        let ra_cfg = appdata.join("RetroArch").join("retroarch.cfg");
+        if let Ok(text) = std::fs::read_to_string(&ra_cfg) {
+            for line in text.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("rgui_browser_directory")
+                    || trimmed.starts_with("content_directory")
+                {
+                    if let Some(idx) = trimmed.find('=') {
+                        let path_str = trimmed[idx + 1..].trim().trim_matches('"');
+                        if !path_str.is_empty() && Path::new(path_str).is_dir() {
+                            out.push(path_str.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    out
+}
+
 /// Existing locations for a platform, used to autofill Settings.
 ///
-/// The primary entries are the launcher's config / app locations: just as Steam
-/// keeps its library folders in `libraryfolders.vdf`, most launchers record
-/// their installed games in their own config, so loading that path is usually
-/// enough to find games. Game install folders are included as well, because
-/// they are the fallback when a launcher's config is missing or incorrect, and
-/// the only option for local games that have no shared launcher.
+/// Returns actual game install directories where games or ROMs reside. Launcher
+/// internal configuration/cache folders are explicitly excluded.
 pub fn library_folders(platform: Platform) -> Vec<String> {
-    let mut out: Vec<String> = config_dirs(platform)
-        .into_iter()
-        .map(|path| path.display().to_string())
-        .collect();
+    let mut out: Vec<String> = Vec::new();
 
-    // Library folders the platform's own detector already reads.
     match platform {
         Platform::Itch => {
             if let Some(appdata) = env_dir("APPDATA") {
@@ -256,6 +485,12 @@ pub fn library_folders(platform: Platform) -> Vec<String> {
                 }
             }
         }
+        Platform::Ea => {
+            out.extend(ea_library_dirs());
+        }
+        Platform::Emulator => {
+            out.extend(emulator_library_dirs());
+        }
         Platform::Amazon => {
             if let Some(local) = env_dir("LOCALAPPDATA") {
                 out.push(
@@ -267,93 +502,82 @@ pub fn library_folders(platform: Platform) -> Vec<String> {
                 );
             }
         }
-        _ => {}
-    }
-
-    let mounted = drive_roots();
-    out.extend(detector_roots(platform));
-    // Game install folders stay useful when a launcher's config is missing or
-    // incorrect, and for local games that have no shared launcher at all.
-    out.extend(drive_candidates(platform, &mounted));
-
-    // Only real directories are useful as config / library locations.
-    out.retain(|path| Path::new(path).is_dir());
-    out.sort();
-    out.dedup();
-    out
-}
-
-/// Well-known launcher config / app directories per platform.
-///
-/// These are where a launcher stores the record of its installed games (the
-/// equivalent of Steam's `libraryfolders.vdf`). Paths that do not exist are
-/// dropped by [`library_folders`].
-fn config_dirs(platform: Platform) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    match platform {
-        Platform::Gog => {
-            if let Some(program_data) = env_dir("ProgramData") {
-                out.push(program_data.join("GOG.com").join("Galaxy").join("storage"));
-            }
+        Platform::Xbox => {
             if let Some(local) = env_dir("LOCALAPPDATA") {
-                out.push(local.join("GOG.com").join("Galaxy").join("storage"));
-            }
-        }
-        Platform::Itch => {
-            if let Some(appdata) = env_dir("APPDATA") {
-                out.push(appdata.join("itch"));
+                out.push(
+                    local
+                        .join("Microsoft")
+                        .join("XboxGames")
+                        .display()
+                        .to_string(),
+                );
             }
         }
         Platform::Ubisoft => {
-            if let Some(local) = env_dir("LOCALAPPDATA") {
-                out.push(local.join("Ubisoft Game Launcher"));
+            if let Some(pf) = env_dir("ProgramFiles(x86)") {
+                out.push(
+                    pf.join("Ubisoft")
+                        .join("Ubisoft Game Launcher")
+                        .join("games")
+                        .display()
+                        .to_string(),
+                );
             }
-        }
-        Platform::Ea => {
-            if let Some(program_data) = env_dir("ProgramData") {
-                out.push(program_data.join("EA Desktop"));
+            if let Some(pf) = env_dir("ProgramFiles") {
+                out.push(
+                    pf.join("Ubisoft")
+                        .join("Ubisoft Game Launcher")
+                        .join("games")
+                        .display()
+                        .to_string(),
+                );
             }
         }
         Platform::BattleNet => {
             if let Some(appdata) = env_dir("APPDATA") {
-                out.push(appdata.join("Battle.net"));
+                let cfg = appdata.join("Battle.net").join("Battle.net.config");
+                if let Ok(text) = std::fs::read_to_string(cfg) {
+                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                        if let Some(path) = val
+                            .pointer("/Client/Install/DefaultInstallPath")
+                            .and_then(|v| v.as_str())
+                        {
+                            if !path.is_empty() {
+                                out.push(path.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            if let Some(pf) = env_dir("ProgramFiles(x86)") {
+                out.push(pf.join("Battle.net").display().to_string());
+            }
+            if let Some(pf) = env_dir("ProgramFiles") {
+                out.push(pf.join("Battle.net").display().to_string());
             }
         }
         Platform::Rockstar => {
-            if let Some(local) = env_dir("LOCALAPPDATA") {
-                out.push(local.join("Rockstar Games").join("Launcher"));
+            if let Some(pf) = env_dir("ProgramFiles") {
+                out.push(pf.join("Rockstar Games").display().to_string());
+            }
+            if let Some(pf) = env_dir("ProgramFiles(x86)") {
+                out.push(pf.join("Rockstar Games").display().to_string());
             }
         }
-        Platform::Xbox => {
-            if let Some(local) = env_dir("LOCALAPPDATA") {
-                out.push(local.join("Microsoft").join("XboxGames"));
-            }
-        }
-        Platform::Steam
-        | Platform::Epic
-        | Platform::Amazon
-        | Platform::Emulator
-        | Platform::Other => {}
+        _ => {}
     }
-    out
-}
 
-/// The raw source paths a single platform's detector consults.
-fn detector_roots(platform: Platform) -> Vec<String> {
-    match platform {
-        Platform::Gog => detect_gog().roots,
-        Platform::Epic => detect_epic().roots,
-        Platform::Itch => detect_itch().roots,
-        Platform::Amazon => detect_amazon().roots,
-        Platform::Xbox => detect_xbox(&drive_roots()).roots,
-        Platform::Emulator => detect_emulators(&drive_roots()).roots,
-        Platform::Steam => Vec::new(),
-        _ => detect_registry_based()
-            .into_iter()
-            .filter(|(candidate, _)| *candidate == platform)
-            .flat_map(|(_, detection)| detection.roots)
-            .collect(),
-    }
+    let mounted = drive_roots();
+    out.extend(drive_candidates(platform, &mounted));
+
+    // Exclude launcher internal directories and non-existent folders
+    out.retain(|path| {
+        let p = Path::new(path);
+        p.is_dir() && !is_blacklisted_root(p)
+    });
+    out.sort();
+    out.dedup();
+    out
 }
 
 /// Filter out non-game software, launchers, tools, and system packages.
@@ -363,7 +587,12 @@ pub fn is_game_candidate(name: &str, exe: Option<&str>, install_dir: Option<&str
         return false;
     }
 
-    // 1. Direct blacklisted titles & launchers
+    // Hex hash filter (e.g. 530c11479fe252fc5aabc24935b9776d4900eb3ba58fdc271e0d6229413ad40e)
+    if n.len() >= 16 && n.chars().all(|c| c.is_ascii_hexdigit()) {
+        return false;
+    }
+
+    // 1. Direct blacklisted titles & launchers & cache folders
     const BLACKLISTED_TITLES: &[&str] = &[
         "gog galaxy",
         "epic games launcher",
@@ -393,6 +622,48 @@ pub fn is_game_candidate(name: &str, exe: Option<&str>, install_dir: Option<&str
         "microsoft gameinput",
         "directxredist",
         "gameinputredist",
+        "installdata",
+        "code cache",
+        "local storage",
+        "session storage",
+        "shared dictionary",
+        "partitions",
+        "network",
+        "db",
+        "logs",
+        "log",
+        "plr",
+        "prereqs",
+        "prerequisites",
+        "__macosx",
+        "downloads",
+        "download",
+        "support",
+        "redist",
+        "common",
+        "bin",
+        "docs",
+        "lib",
+        "temp",
+        "tmp",
+        "blob_storage",
+        "cache",
+        "broth",
+        "games",
+        "apps",
+        "webrtc",
+        "gpucache",
+        "indexeddb",
+        "crashpad",
+        "crashdump",
+        "cleanup",
+        "touchup",
+        "__installer",
+        "license",
+        "licenses",
+        "autoupdate",
+        "telemetry",
+        "node_modules",
     ];
     if BLACKLISTED_TITLES
         .iter()
@@ -419,6 +690,8 @@ pub fn is_game_candidate(name: &str, exe: Option<&str>, install_dir: Option<&str
         "vanguard",
         "easyanticheat",
         "battleye",
+        "touchup",
+        "cleanup",
     ];
     if SOFTWARE_KEYWORDS.iter().any(|&kw| n.contains(kw)) {
         return false;
@@ -426,53 +699,23 @@ pub fn is_game_candidate(name: &str, exe: Option<&str>, install_dir: Option<&str
 
     // 3. Check executable name (if present)
     if let Some(exe_str) = exe {
-        let exe_lower = exe_str.to_lowercase();
-        let exe_name = Path::new(&exe_lower)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
-        if exe_name.starts_with("unins")
-            || exe_name.starts_with("setup")
-            || exe_name.starts_with("installer")
-            || exe_name.starts_with("dxsetup")
-            || exe_name == "eaappinstaller.exe"
-            || exe_name == "ubisoftconnect.exe"
-            || exe_name == "galaxyclient.exe"
-            || exe_name == "epicgameslauncher.exe"
-        {
+        if is_executable_blacklisted(Path::new(exe_str)) {
             return false;
         }
     }
 
-    // 4. Check if directory is an ignored directory name
+    // 4. Check if directory is an ignored directory name or inside cache
     if let Some(dir_str) = install_dir {
         let dir_path = Path::new(dir_str);
+        if is_blacklisted_root(dir_path) {
+            return false;
+        }
         if let Some(folder_name) = dir_path.file_name().and_then(|s| s.to_str()) {
             let folder_lower = folder_name.to_lowercase();
-            const IGNORED_FOLDERS: &[&str] = &[
-                "launcher",
-                "directxredist",
-                "gameinputredist",
-                "gamesave",
-                "social club",
-                "crashreportclient",
-                "redist",
-                "_commonredist",
-                "support",
-                "prerequisites",
-                "engine",
-                "common",
-                "bin",
-                "docs",
-                "lib",
-                "temp",
-                "blob_storage",
-                "cache",
-                "broth",
-                "games",
-                "apps",
-            ];
-            if IGNORED_FOLDERS.contains(&folder_lower.as_str()) {
+            if folder_lower.len() >= 16 && folder_lower.chars().all(|c| c.is_ascii_hexdigit()) {
+                return false;
+            }
+            if BLACKLISTED_TITLES.contains(&folder_lower.as_str()) {
                 return false;
             }
         }
@@ -548,6 +791,10 @@ fn detect_custom_roots(platform: Platform, roots: &[String]) -> Detection {
                         }
                         let sub_name = sub.file_name().to_string_lossy().to_string();
                         let sub_exe = find_executable(&sub_path, 3);
+                        // Folder scan candidates MUST have an executable or recognized indie entrypoint
+                        if sub_exe.is_none() {
+                            continue;
+                        }
                         let sub_dir = Some(sub_path.display().to_string());
                         if is_game_candidate(&sub_name, sub_exe.as_deref(), sub_dir.as_deref()) {
                             detection.games.push(PlatformGame {
@@ -559,6 +806,7 @@ fn detect_custom_roots(platform: Platform, roots: &[String]) -> Detection {
                                 size_on_disk: None,
                                 launch_uri: None,
                                 source: Some("Folder scan".into()),
+                                console: None,
                             });
                         }
                     }
@@ -567,6 +815,10 @@ fn detect_custom_roots(platform: Platform, roots: &[String]) -> Detection {
             }
 
             let exe = find_executable(&path, 3);
+            // Folder scan candidates MUST have an executable or recognized indie entrypoint
+            if exe.is_none() {
+                continue;
+            }
             let dir = Some(path.display().to_string());
             if is_game_candidate(&name, exe.as_deref(), dir.as_deref()) {
                 detection.games.push(PlatformGame {
@@ -578,6 +830,7 @@ fn detect_custom_roots(platform: Platform, roots: &[String]) -> Detection {
                     size_on_disk: None,
                     launch_uri: None,
                     source: Some("Folder scan".into()),
+                    console: None,
                 });
             }
         }
@@ -587,6 +840,9 @@ fn detect_custom_roots(platform: Platform, roots: &[String]) -> Detection {
 
 /// A stable identity for de-duplicating the same game across detectors.
 fn dedup_key(game: &PlatformGame) -> String {
+    if let Some(ref id) = game.platform_id {
+        return format!("id:{id}");
+    }
     let key = game
         .install_dir
         .as_deref()
@@ -622,7 +878,7 @@ fn join_exe(dir: &str, relative: &str) -> String {
     }
 }
 
-/// Check if an executable is an uninstaller, setup, or support utility.
+/// Check if an executable is an uninstaller, setup, crash handler, or support utility.
 fn is_executable_blacklisted(path: &Path) -> bool {
     let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
         return true;
@@ -632,37 +888,47 @@ fn is_executable_blacklisted(path: &Path) -> bool {
         || n.starts_with("setup")
         || n.starts_with("installer")
         || n.starts_with("cleanup")
+        || n.starts_with("touchup")
         || n.starts_with("dxsetup")
         || n.starts_with("crashreport")
         || n.starts_with("eaappinstaller")
-        || n.starts_with("touchup")
+        || n.starts_with("ealauncher")
+        || n.starts_with("eaconnect")
         || n.starts_with("activation")
+        || n.starts_with("unitycrashhandler")
+        || n.starts_with("crashpad_handler")
+        || n.starts_with("cef_subprocess")
+        || n.starts_with("notification_helper")
+        || n.starts_with("vc_redist")
+        || n.starts_with("vcredist")
+        || n.starts_with("dotnet")
+        || n.starts_with("werfault")
         || n == "easervice.exe"
+        || n == "butler.exe"
+        || n == "epicgameslauncher.exe"
+        || n == "galaxyclient.exe"
+        || n == "ubisoftconnect.exe"
 }
 
-/// Find the shallowest `.exe` beneath `dir`, up to `depth` levels deep.
+/// Find the most suitable game executable or indie engine launch file beneath `dir`.
+///
+/// Uses candidate scoring:
+/// - Exact or partial match with the game's folder name: +100
+/// - Accompanied by Unity `*_Data` or Godot `*.pck`: +90
+/// - Standard launcher names (`Game.exe`, `Launch.exe`, etc.): +80
+/// - Root-level executable: +40
+/// - Immediate subdirectory (`bin/`, `bin_ship/`): +20
+/// - Disqualifies non-game utilities (crash handlers, notification helpers, setups).
+/// - Fallback to indie engine entrypoints (`.bat`, `.cmd`, `.love`, `.jar`, `.py`, `.html`).
 fn find_executable(dir: &Path, depth: usize) -> Option<String> {
-    // 1. Fast path: check if dir itself has a valid game executable (depth 0)
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file()
-                && path
-                    .extension()
-                    .map(|ext| ext.eq_ignore_ascii_case("exe"))
-                    .unwrap_or(false)
-                && !is_executable_blacklisted(&path)
-            {
-                return Some(path.display().to_string());
-            }
-        }
-    }
+    let mut candidates: Vec<(i32, String)> = Vec::new();
+    let folder_stem = dir
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let clean_folder = folder_stem.replace(|c: char| !c.is_alphanumeric(), "");
 
-    if depth == 0 {
-        return None;
-    }
-
-    // 2. BFS for subdirectories up to depth
     let mut queue = vec![(dir.to_path_buf(), 0usize)];
     while let Some((current, level)) = queue.pop() {
         let Ok(entries) = std::fs::read_dir(&current) else {
@@ -688,24 +954,120 @@ fn find_executable(dir: &Path, depth: usize) -> Option<String> {
                     || dname == "tmp"
                     || dname == "logs"
                     || dname == "prereqs"
+                    || dname == "prerequisites"
                 {
                     continue;
                 }
                 if level < depth {
                     subdirs.push((path, level + 1));
                 }
-            } else if path
-                .extension()
-                .map(|ext| ext.eq_ignore_ascii_case("exe"))
-                .unwrap_or(false)
-                && !is_executable_blacklisted(&path)
-            {
-                return Some(path.display().to_string());
+            } else if path.is_file() {
+                let ext = path
+                    .extension()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                let stem = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+                let clean_stem = stem.replace(|c: char| !c.is_alphanumeric(), "");
+
+                if ext == "exe" {
+                    if is_executable_blacklisted(&path) {
+                        continue;
+                    }
+
+                    let mut score = 50;
+
+                    // Match folder name
+                    if !clean_folder.is_empty()
+                        && (clean_stem == clean_folder
+                            || clean_stem.starts_with(&clean_folder)
+                            || clean_folder.starts_with(&clean_stem))
+                    {
+                        score += 100;
+                    }
+
+                    // Common game launcher names
+                    if stem == "game"
+                        || stem == "launch"
+                        || stem == "launcher"
+                        || stem == "start"
+                        || stem == "play"
+                    {
+                        score += 80;
+                    }
+
+                    // Level bonus / penalty
+                    if level == 0 {
+                        score += 40;
+                    } else if level == 1 {
+                        score += 20;
+                    } else {
+                        score -= 20;
+                    }
+
+                    // Check for Unity / Godot companion markers
+                    if current.join(format!("{stem}_Data")).is_dir() {
+                        score += 90;
+                    }
+                    if current.join(format!("{stem}.pck")).is_file() {
+                        score += 90;
+                    }
+
+                    // Prefer 64-bit
+                    if stem.ends_with("64") || stem.ends_with("x64") || stem.ends_with("win64") {
+                        score += 10;
+                    }
+
+                    // Penalize lib/ internal binaries (like Ren'Py python.exe)
+                    let p_str = path.to_string_lossy().to_lowercase();
+                    if p_str.contains("\\lib\\")
+                        || p_str.contains("/lib/")
+                        || p_str.contains("\\lib32\\")
+                        || p_str.contains("\\lib64\\")
+                    {
+                        score -= 60;
+                    }
+
+                    // Penalize config / tool keywords
+                    if stem.contains("config")
+                        || stem.contains("settings")
+                        || stem.contains("tool")
+                        || stem.contains("editor")
+                        || stem.contains("update")
+                        || stem.contains("server")
+                        || stem.contains("dedicated")
+                        || stem.contains("benchmark")
+                    {
+                        score -= 80;
+                    }
+
+                    candidates.push((score, path.display().to_string()));
+                } else if ext == "bat" || ext == "cmd" {
+                    if !stem.starts_with("unins") && !stem.starts_with("setup") {
+                        let score = if level == 0 { 40 } else { 20 };
+                        candidates.push((score, path.display().to_string()));
+                    }
+                } else if ext == "love" || ext == "jar" {
+                    let score = if level == 0 { 35 } else { 15 };
+                    candidates.push((score, path.display().to_string()));
+                } else if ext == "py" && (stem == "main" || stem == "run" || stem == "game") {
+                    let score = if level == 0 { 30 } else { 10 };
+                    candidates.push((score, path.display().to_string()));
+                } else if ext == "html" && stem == "index" {
+                    let score = if level == 0 { 25 } else { 5 };
+                    candidates.push((score, path.display().to_string()));
+                }
             }
         }
         queue.extend(subdirs);
     }
-    None
+
+    candidates.sort_by_key(|a| std::cmp::Reverse(a.0));
+    candidates.into_iter().next().map(|(_, path)| path)
 }
 
 // ---------------------------------------------------------------------------
@@ -734,6 +1096,7 @@ fn detect_gog() -> Detection {
                 size_on_disk: None,
                 launch_uri: None,
                 source: Some("GOG Galaxy registry".into()),
+                console: None,
             });
         }
     }
@@ -838,6 +1201,7 @@ fn epic_from_manifest(path: &Path) -> Option<PlatformGame> {
             .and_then(|v| v.as_str())
             .map(|id| format!("com.epicgames.launcher://apps/{id}?action=launch")),
         source: Some("Epic manifest".into()),
+        console: None,
     })
 }
 
@@ -905,6 +1269,7 @@ fn heroic_installed(path: &Path, platform: Platform) -> Vec<PlatformGame> {
                 None
             },
             source: Some("legendary / Heroic".into()),
+            console: None,
         });
     }
     out
@@ -995,9 +1360,23 @@ fn detect_itch() -> Detection {
                                             .unwrap_or(false);
                                         let rel_path =
                                             cand.get("path").and_then(|p| p.as_str()).unwrap_or("");
+
+                                        if is_executable_blacklisted(Path::new(rel_path)) {
+                                            continue;
+                                        }
+
                                         #[cfg(windows)]
-                                        let matches_os =
-                                            flavor == "windows" || rel_path.ends_with(".exe");
+                                        let matches_os = flavor == "windows"
+                                            || rel_path.ends_with(".exe")
+                                            || flavor == "html"
+                                            || rel_path.ends_with(".html")
+                                            || flavor == "love"
+                                            || rel_path.ends_with(".love")
+                                            || flavor == "jar"
+                                            || rel_path.ends_with(".jar")
+                                            || rel_path.ends_with(".bat")
+                                            || rel_path.ends_with(".cmd")
+                                            || rel_path.ends_with(".py");
                                         #[cfg(not(windows))]
                                         let matches_os = flavor != "windows";
 
@@ -1041,6 +1420,7 @@ fn detect_itch() -> Detection {
                             size_on_disk,
                             launch_uri: Some(format!("itch://games/{game_id}")),
                             source: Some("itch app (butler.db)".into()),
+                            console: None,
                         });
                     }
                 }
@@ -1106,17 +1486,26 @@ fn scan_itch_dir(dir: &Path, detection: &mut Detection) {
         let folder_name = entry.file_name().to_string_lossy().to_string();
         let folder_lower = folder_name.to_lowercase();
 
-        // Skip internal/container directories
+        // Skip internal/container directories and cache
         if folder_name.starts_with('.')
             || folder_lower == "games"
             || folder_lower == "apps"
             || folder_lower == "broth"
             || folder_lower == "prereqs"
+            || folder_lower == "prerequisites"
             || folder_lower == "cache"
             || folder_lower == "blob_storage"
             || folder_lower == "db"
             || folder_lower == "logs"
             || folder_lower == "partitions"
+            || folder_lower == "code cache"
+            || folder_lower == "local storage"
+            || folder_lower == "session storage"
+            || folder_lower == "shared dictionary"
+            || folder_lower == "network"
+            || folder_lower == "downloads"
+            || folder_lower == "__macosx"
+            || (folder_lower.len() >= 16 && folder_lower.chars().all(|c| c.is_ascii_hexdigit()))
         {
             continue;
         }
@@ -1197,6 +1586,7 @@ fn scan_itch_dir(dir: &Path, detection: &mut Detection) {
             size_on_disk: None,
             launch_uri,
             source: Some("itch library folder".into()),
+            console: None,
         });
     }
 }
@@ -1227,6 +1617,7 @@ fn detect_amazon() -> Detection {
                         size_on_disk: None,
                         launch_uri: None,
                         source: Some("Amazon Games library".into()),
+                        console: None,
                     });
                 }
             }
@@ -1344,6 +1735,7 @@ fn scan_xbox_dir(dir: &Path, detection: &mut Detection) {
             size_on_disk: None,
             launch_uri,
             source: Some("Xbox Game Pass / Microsoft Store".into()),
+            console: None,
         });
     }
 }
@@ -1544,9 +1936,17 @@ fn detect_emulators(mounted_drives: &[PathBuf]) -> Detection {
     let mut detection = Detection::empty();
     let emu_map = locate_installed_emulators(mounted_drives);
 
-    // Scan mounted drives for ROMs folders
+    // 1. Authoritative: directories configured in emulator settings
+    for dir_str in emulator_library_dirs() {
+        let dir = Path::new(&dir_str);
+        if dir.is_dir() {
+            scan_emulator_dir(dir, &mut detection, &emu_map);
+        }
+    }
+
+    // 2. ROM folders on mounted drives
     for drive in mounted_drives {
-        for sub in &["Roms", "Games\\Roms", "Emulators", "Games\\Emulators"] {
+        for sub in drive_folder_names(Platform::Emulator) {
             let candidate = drive.join(sub);
             if candidate.is_dir() {
                 scan_emulator_dir(&candidate, &mut detection, &emu_map);
@@ -1633,6 +2033,102 @@ fn locate_installed_emulators(mounted_drives: &[PathBuf]) -> BTreeMap<&'static s
     map
 }
 
+/// Determine the specific console platform (e.g. GameCube, Wii, PlayStation, etc.) for a ROM file.
+pub fn determine_console_platform(path: &Path, emu_name: Option<&str>) -> Option<String> {
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())?
+        .to_ascii_lowercase();
+    let p_str = path.to_string_lossy().to_ascii_lowercase();
+    let emu_lower = emu_name.unwrap_or("").to_ascii_lowercase();
+
+    match ext.as_str() {
+        "gcm" => Some("GameCube".to_string()),
+        "rvz" | "wbfs" | "wad" | "ciso" => Some("Wii".to_string()),
+        "z64" | "n64" | "v64" => Some("Nintendo 64".to_string()),
+        "sfc" | "smc" => Some("Super Nintendo".to_string()),
+        "nes" => Some("NES".to_string()),
+        "gba" => Some("Game Boy Advance".to_string()),
+        "gbc" => Some("Game Boy Color".to_string()),
+        "gb" => Some("Game Boy".to_string()),
+        "nds" => Some("Nintendo DS".to_string()),
+        "3ds" | "cia" | "cxi" => Some("Nintendo 3DS".to_string()),
+        "nsp" | "xci" => Some("Nintendo Switch".to_string()),
+        "rpx" | "wua" | "wud" | "wux" => Some("Wii U".to_string()),
+        "cso" => Some("PlayStation Portable".to_string()),
+        "pbp" => {
+            if p_str.contains("psp") || emu_lower.contains("psp") {
+                Some("PlayStation Portable".to_string())
+            } else {
+                Some("PlayStation".to_string())
+            }
+        }
+        "md" | "gen" | "smd" => Some("Sega Genesis".to_string()),
+        "gg" => Some("Sega Game Gear".to_string()),
+        "sms" => Some("Sega Master System".to_string()),
+        "a26" => Some("Atari 2600".to_string()),
+        "iso" => {
+            if emu_lower.contains("dolphin")
+                || p_str.contains("dolphin")
+                || p_str.contains("gamecube")
+                || p_str.contains("wii")
+            {
+                if p_str.contains("gamecube") || p_str.contains("gcn") {
+                    Some("GameCube".to_string())
+                } else if p_str.contains("wii") {
+                    Some("Wii".to_string())
+                } else {
+                    let file_size = std::fs::metadata(path).ok().map(|m| m.len()).unwrap_or(0);
+                    if file_size > 0 && file_size <= 1_500_000_000 {
+                        Some("GameCube".to_string())
+                    } else {
+                        Some("Wii".to_string())
+                    }
+                }
+            } else if emu_lower.contains("pcsx2")
+                || p_str.contains("pcsx2")
+                || p_str.contains("ps2")
+            {
+                Some("PlayStation 2".to_string())
+            } else if emu_lower.contains("duckstation")
+                || p_str.contains("duckstation")
+                || p_str.contains("ps1")
+                || p_str.contains("psx")
+            {
+                Some("PlayStation".to_string())
+            } else if emu_lower.contains("ppsspp") || p_str.contains("psp") {
+                Some("PlayStation Portable".to_string())
+            } else {
+                None
+            }
+        }
+        "chd" | "cue" | "bin" => {
+            if emu_lower.contains("pcsx2") || p_str.contains("ps2") {
+                Some("PlayStation 2".to_string())
+            } else if emu_lower.contains("duckstation")
+                || p_str.contains("duckstation")
+                || p_str.contains("ps1")
+                || p_str.contains("psx")
+            {
+                Some("PlayStation".to_string())
+            } else if p_str.contains("dreamcast") {
+                Some("Dreamcast".to_string())
+            } else if p_str.contains("saturn") {
+                Some("Sega Saturn".to_string())
+            } else if p_str.contains("genesis") || p_str.contains("megadrive") {
+                Some("Sega Genesis".to_string())
+            } else if emu_lower.contains("pcsx2") {
+                Some("PlayStation 2".to_string())
+            } else if emu_lower.contains("duckstation") {
+                Some("PlayStation".to_string())
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
 /// Recursively scan a directory for ROM files up to depth 4.
 fn scan_emulator_dir(
     dir: &Path,
@@ -1664,9 +2160,28 @@ fn scan_roms_recursive(
         let path = entry.path();
         if path.is_dir() {
             let folder_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            let f_lower = folder_name.to_lowercase();
             if folder_name.starts_with('.')
-                || folder_name.eq_ignore_ascii_case("cache")
-                || folder_name.eq_ignore_ascii_case("temp")
+                || f_lower == "sys"
+                || f_lower == "system"
+                || f_lower == "assets"
+                || f_lower == "shaders"
+                || f_lower == "bios"
+                || f_lower == "plugins"
+                || f_lower == "lang"
+                || f_lower == "languages"
+                || f_lower == "docs"
+                || f_lower == "user"
+                || f_lower == "config"
+                || f_lower == "paks"
+                || f_lower == "themes"
+                || f_lower == "dump"
+                || f_lower == "load"
+                || f_lower == "profiles"
+                || f_lower == "cache"
+                || f_lower == "temp"
+                || f_lower == "tmp"
+                || f_lower == "logs"
             {
                 continue;
             }
@@ -1679,6 +2194,34 @@ fn scan_roms_recursive(
         };
         let ext_lower = ext.to_ascii_lowercase();
 
+        let raw_name = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let name_lower = raw_name.to_lowercase();
+
+        // Skip known system/firmware/internal tools
+        if name_lower.starts_with("codehandler")
+            || name_lower.starts_with("dsp_coef")
+            || name_lower.starts_with("dsp_rom")
+            || name_lower.starts_with("font")
+            || name_lower.starts_with("romfont")
+            || name_lower.starts_with("scph")
+            || name_lower.starts_with("bios")
+            || name_lower.starts_with("firmware")
+            || name_lower.starts_with("keys")
+            || name_lower.starts_with("titlekey")
+            || name_lower == "misc"
+        {
+            continue;
+        }
+
+        // For .bin files, require size >= 10 MB (disc image vs small internal binaries)
+        let file_len = entry.metadata().ok().map(|m| m.len()).unwrap_or(0);
+        if ext_lower == "bin" && file_len < 10 * 1024 * 1024 {
+            continue;
+        }
+
         // Check if file is a known ROM extension
         let matched_emu = KNOWN_EMULATORS.iter().find(|emu| {
             emu.rom_exts
@@ -1690,17 +2233,13 @@ fn scan_roms_recursive(
             continue;
         };
 
-        let raw_name = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
         let name = crate::metadata::vndb::clean_search_term(&raw_name);
         if name.is_empty() {
             continue;
         }
 
         let rom_path_str = path.display().to_string();
-        let size = entry.metadata().ok().map(|m| m.len());
+        let size = Some(file_len);
 
         let (emu_name, exe, launch_uri) = match emu_map.get(emu.name) {
             Some(exe_path) => {
@@ -1714,6 +2253,12 @@ fn scan_roms_recursive(
             ),
         };
 
+        let console = determine_console_platform(&path, Some(emu.name));
+        let display_source = match &console {
+            Some(c) => format!("{emu_name} · {c}"),
+            None => emu_name.to_string(),
+        };
+
         detection.games.push(PlatformGame {
             name,
             platform: Platform::Emulator,
@@ -1722,7 +2267,8 @@ fn scan_roms_recursive(
             exe,
             size_on_disk: size,
             launch_uri,
-            source: Some(emu_name.into()),
+            source: Some(display_source),
+            console,
         });
     }
 }
@@ -1764,6 +2310,7 @@ fn detect_registry_based() -> Vec<(Platform, Detection)> {
             size_on_disk: None,
             launch_uri: None,
             source: Some(format!("Uninstall registry · {publisher}")),
+            console: None,
         });
     }
     buckets.into_iter().collect()
@@ -1918,6 +2465,56 @@ mod tests {
             None,
             Some("C:\\Users\\AppData\\itch\\apps")
         ));
+        assert!(!is_game_candidate(
+            "InstallData",
+            None,
+            Some("C:\\ProgramData\\EA Desktop\\InstallData")
+        ));
+        assert!(!is_game_candidate(
+            "Code Cache",
+            None,
+            Some("C:\\Users\\AppData\\itch\\Code Cache")
+        ));
+        assert!(!is_game_candidate(
+            "db",
+            None,
+            Some("C:\\Users\\AppData\\itch\\db")
+        ));
+        assert!(!is_game_candidate(
+            "Local Storage",
+            None,
+            Some("C:\\Users\\AppData\\itch\\Local Storage")
+        ));
+        assert!(!is_game_candidate(
+            "logs",
+            None,
+            Some("C:\\Users\\AppData\\itch\\logs")
+        ));
+        assert!(!is_game_candidate(
+            "Partitions",
+            None,
+            Some("C:\\Users\\AppData\\itch\\Partitions")
+        ));
+        assert!(!is_game_candidate(
+            "prereqs",
+            None,
+            Some("C:\\Users\\AppData\\itch\\prereqs")
+        ));
+        assert!(!is_game_candidate(
+            "Shared Dictionary",
+            None,
+            Some("C:\\Users\\AppData\\itch\\Shared Dictionary")
+        ));
+        assert!(!is_game_candidate(
+            "530c11479fe252fc5aabc24935b9776d4900eb3ba58fdc271e0d6229413ad40e",
+            None,
+            None
+        ));
+        assert!(!is_game_candidate(
+            "bff3034ad0fe5ad4201268c3aad502c0a6eb142c06437aed3437cddd8834fded",
+            None,
+            None
+        ));
 
         // Valid games must pass
         assert!(is_game_candidate(
@@ -1958,5 +2555,53 @@ mod tests {
             assert_ne!(g.name, "DirectXRedist");
             assert_ne!(g.name, "GameSave");
         }
+    }
+
+    #[test]
+    fn determines_console_platforms_correctly() {
+        assert_eq!(
+            determine_console_platform(
+                Path::new("C:\\Roms\\Melee.gcm"),
+                Some("Dolphin (GameCube/Wii)")
+            )
+            .as_deref(),
+            Some("GameCube")
+        );
+        assert_eq!(
+            determine_console_platform(
+                Path::new("C:\\Roms\\MarioKartWii.rvz"),
+                Some("Dolphin (GameCube/Wii)")
+            )
+            .as_deref(),
+            Some("Wii")
+        );
+        assert_eq!(
+            determine_console_platform(Path::new("C:\\Roms\\Mario64.z64"), None).as_deref(),
+            Some("Nintendo 64")
+        );
+        assert_eq!(
+            determine_console_platform(Path::new("C:\\Roms\\ChronoTrigger.sfc"), None).as_deref(),
+            Some("Super Nintendo")
+        );
+        assert_eq!(
+            determine_console_platform(Path::new("C:\\Roms\\PokemonEmerald.gba"), None).as_deref(),
+            Some("Game Boy Advance")
+        );
+        assert_eq!(
+            determine_console_platform(
+                Path::new("C:\\Roms\\Persona4.chd"),
+                Some("PCSX2 (PlayStation 2)")
+            )
+            .as_deref(),
+            Some("PlayStation 2")
+        );
+        assert_eq!(
+            determine_console_platform(
+                Path::new("C:\\Roms\\MGS.chd"),
+                Some("DuckStation (PlayStation 1)")
+            )
+            .as_deref(),
+            Some("PlayStation")
+        );
     }
 }

@@ -28,6 +28,13 @@ impl Bvdf {
         }
     }
 
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            Bvdf::String(value) => Some(value),
+            _ => None,
+        }
+    }
+
     pub fn get(&self, key: &str) -> Option<&Bvdf> {
         self.as_object()?
             .iter()

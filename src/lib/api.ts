@@ -8,6 +8,7 @@ import type {
   ArtworkOutcome,
   ArtworkSlotId,
   AutoCatPlan,
+  CatalogStats,
   CategorizationPlan,
   CategorizeRequest,
   Collection,
@@ -82,6 +83,8 @@ export const api = {
   igdbSearch: (query: string) => invoke<IgdbGame[]>("igdb_search", { query }),
   pcgamingwikiLookup: (name: string) => invoke<AppMeta | null>("pcgamingwiki_lookup", { name }),
   wikipediaSummary: (title: string) => invoke<string | null>("wikipedia_summary", { title }),
+  wikipediaGameLookup: (title: string) =>
+    invoke<AppMeta | null>("wikipedia_game_lookup", { title }),
   vndbLookup: (title: string) => invoke<AppMeta | null>("vndb_lookup", { title }),
   steamStoreSearch: (term: string) =>
     invoke<SteamSearchResult[]>("steam_store_search", { term }),
@@ -114,7 +117,8 @@ export const api = {
     invoke<ApplyResult>("apply_categorization", { plan, accountId3: accountId3 ?? null }),
 
   // Storage management: inspect, register, and relocate Steam libraries.
-  getStorageReport: () => invoke<StorageReport>("get_storage_report"),
+  getStorageReport: (accountId3?: string) =>
+    invoke<StorageReport>("get_storage_report", { accountId3: accountId3 ?? null }),
   previewMoveLibrary: (from: string, to: string) =>
     invoke<MovePreview>("preview_move_library", { from, to }),
   moveLibrary: (from: string, to: string) =>
@@ -157,6 +161,15 @@ export const api = {
       appIds: appIds ?? null,
       accountId3: accountId3 ?? null,
     }),
+
+  // Local game catalog & compressed archives
+  getCatalogStats: () => invoke<CatalogStats>("get_catalog_stats"),
+  exportCatalogArchive: (path: string) => invoke<number>("export_catalog_archive", { path }),
+  importCatalogArchive: (path: string) => invoke<number>("import_catalog_archive", { path }),
+  syncOnlineCatalog: (customUrl?: string) =>
+    invoke<number>("sync_online_catalog", { customUrl: customUrl ?? null }),
+  fetchOnlineGameEntry: (titleOrSlug: string) =>
+    invoke<AppMeta | null>("fetch_online_game_entry", { titleOrSlug }),
 };
 
 /** Normalize an unknown thrown value into a readable message. */

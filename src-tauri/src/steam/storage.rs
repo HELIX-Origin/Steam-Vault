@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::error::{AppError, AppResult};
+use crate::platforms::Platform;
 use crate::steam::models::SteamLibrary;
 use crate::steam::{paths, vdf};
 
@@ -62,7 +63,7 @@ pub struct LibraryEntry {
     pub disk_free: Option<u64>,
 }
 
-/// An installed Steam app and the library folder that holds it.
+/// An installed Steam app or external game shortcut and the library folder that holds it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GamePlacement {
@@ -72,8 +73,9 @@ pub struct GamePlacement {
     pub install_dir: Option<String>,
     pub size_on_disk: u64,
     pub installed: bool,
-    /// Whether the `common/<installdir>` folder is actually present.
+    /// Whether the `common/<installdir>` or game directory folder is actually present.
     pub folder_exists: bool,
+    pub platform: Option<Platform>,
 }
 
 /// A mounted disk, for the drive overview.
@@ -294,8 +296,43 @@ fn common_dir(library: &str, install_dir: &str) -> PathBuf {
 // Reporting
 // ---------------------------------------------------------------------------
 
-/// Build the full storage report for a Steam root.
-pub fn report(root: &Path) -> AppResult<StorageReport> {
+/// Recursively compute the size of a directory on disk up to `max_depth`.
+fn dir_size(path: &Path, max_depth: usize) -> u64 {
+    if !path.is_dir() {
+        if path.is_file() {
+            return path.metadata().map(|m| m.len()).unwrap_or(0);
+        }
+        return 0;
+    }
+    let mut total = 0u64;
+    let mut stack = vec![(path.to_path_buf(), 0usize)];
+    let mut visited_dirs = 0usize;
+
+    while let Some((dir, depth)) = stack.pop() {
+        if visited_dirs > 30_000 || depth > max_depth {
+            continue;
+        }
+        visited_dirs += 1;
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if let Ok(meta) = entry.metadata() {
+                if meta.is_file() {
+                    total = total.saturating_add(meta.len());
+                } else if meta.is_dir() && !meta.file_type().is_symlink() && depth < max_depth {
+                    stack.push((p, depth + 1));
+                }
+            }
+        }
+    }
+    total
+}
+
+/// Build the full storage report for a Steam root, including both Steam games
+/// and non-Steam game shortcuts with their disk footprints and platforms.
+pub fn report(root: &Path, account: Option<&str>) -> AppResult<StorageReport> {
     let root_str = root.display().to_string();
     let disks = disks_snapshot();
     let libraries = paths::read_library_folders(root);
@@ -303,6 +340,7 @@ pub fn report(root: &Path) -> AppResult<StorageReport> {
     let mut entries = Vec::new();
     let mut games = Vec::new();
 
+    // 1. Steam games from registered library folders
     for library in &libraries {
         let manifests = manifests_in(&library.path);
         let total_bytes: u64 = manifests.iter().map(|m| m.size_on_disk).sum();
@@ -321,6 +359,7 @@ pub fn report(root: &Path) -> AppResult<StorageReport> {
                 size_on_disk: manifest.size_on_disk,
                 installed: is_installed(manifest),
                 folder_exists: !manifest.install_dir.is_empty() && folder.is_dir(),
+                platform: Some(Platform::Steam),
             });
         }
 
@@ -335,6 +374,73 @@ pub fn report(root: &Path) -> AppResult<StorageReport> {
             disk_total,
             disk_free,
         });
+    }
+
+    // 2. Non-Steam shortcuts for the selected or active accounts
+    let accounts: Vec<String> = if let Some(id3) = account {
+        vec![id3.to_string()]
+    } else {
+        let userdata = root.join("userdata");
+        if let Ok(user_entries) = std::fs::read_dir(&userdata) {
+            user_entries
+                .flatten()
+                .filter(|e| e.path().is_dir())
+                .filter_map(|e| e.file_name().to_str().map(str::to_string))
+                .filter(|name| name.chars().all(|c| c.is_ascii_digit()))
+                .collect()
+        } else {
+            Vec::new()
+        }
+    };
+
+    let mut seen_shortcut_ids = std::collections::BTreeSet::new();
+    for id3 in &accounts {
+        if let Ok(shortcuts) = crate::steam::shortcuts::load_shortcuts(root, id3) {
+            for sc in shortcuts {
+                if !seen_shortcut_ids.insert(sc.app_id) {
+                    continue;
+                }
+                let install_path = sc
+                    .install_dir
+                    .as_deref()
+                    .filter(|s| !s.is_empty())
+                    .map(PathBuf::from)
+                    .or_else(|| {
+                        sc.exe
+                            .as_deref()
+                            .and_then(|e| Path::new(e).parent().map(|p| p.to_path_buf()))
+                    });
+
+                let (size_on_disk, folder_exists, installed) = if let Some(ref dir) = install_path {
+                    let exists = dir.is_dir();
+                    let size = if exists { dir_size(dir, 4) } else { 0 };
+                    let has_exe = sc
+                        .exe
+                        .as_deref()
+                        .map(|e| Path::new(e).is_file())
+                        .unwrap_or(false);
+                    (size, exists, exists || has_exe)
+                } else {
+                    (0, false, false)
+                };
+
+                let library_path = install_path
+                    .as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "External".into());
+
+                games.push(GamePlacement {
+                    app_id: sc.app_id,
+                    name: sc.name,
+                    library_path,
+                    install_dir: install_path.map(|p| p.display().to_string()),
+                    size_on_disk,
+                    installed,
+                    folder_exists,
+                    platform: Some(sc.platform),
+                });
+            }
+        }
     }
 
     games.sort_by_key(|a| std::cmp::Reverse(a.size_on_disk));

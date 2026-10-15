@@ -10,10 +10,10 @@
 //! appid → platform mapping is persisted so the Library can keep grouping
 //! shortcuts by their source storefront.
 
-mod detectors;
+pub mod detectors;
 
 #[cfg(windows)]
-mod registry;
+pub mod registry;
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -171,6 +171,9 @@ pub struct PlatformGame {
     pub launch_uri: Option<String>,
     /// Which local source produced this entry (for transparency in the UI).
     pub source: Option<String>,
+    /// Specific console platform for emulated games (GameCube, Wii, PlayStation, etc.).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub console: Option<String>,
 }
 
 /// Per-platform scan summary, so the UI can explain what was (not) found.

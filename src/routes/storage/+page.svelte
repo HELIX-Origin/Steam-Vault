@@ -51,7 +51,15 @@
   $: disks = report?.disks ?? [];
   $: games = report?.games ?? [];
   $: shownGames = games.filter((game) => {
-    if (libraryFilter && game.libraryPath !== libraryFilter) return false;
+    if (libraryFilter === "steam" && game.platform !== "steam") return false;
+    if (libraryFilter === "non-steam" && game.platform === "steam") return false;
+    if (
+      libraryFilter &&
+      libraryFilter !== "steam" &&
+      libraryFilter !== "non-steam" &&
+      game.libraryPath !== libraryFilter
+    )
+      return false;
     const search = gameSearch.trim().toLowerCase();
     return !search || game.name.toLowerCase().includes(search);
   });
@@ -285,7 +293,9 @@
   <div class="glass-strong toolbar">
     <input bind:value={gameSearch} placeholder="Search games…" style="max-width:240px" />
     <select bind:value={libraryFilter} style="max-width:320px">
-      <option value="">All libraries</option>
+      <option value="">All libraries & platforms</option>
+      <option value="steam">Steam games only</option>
+      <option value="non-steam">Non-Steam / External only</option>
       {#each libraries as entry (entry.path)}
         <option value={entry.path}>{labelFor(entry)}</option>
       {/each}
@@ -297,6 +307,9 @@
       <div class="row game">
         <span class="name">
           {game.name}
+          {#if game.platform && game.platform !== "steam"}
+            <span class="pill pill-dim" style="text-transform:uppercase">{game.platform}</span>
+          {/if}
           {#if !game.installed}<span class="pill pill-dim">not installed</span>{/if}
           {#if game.installed && !game.folderExists}<span class="pill pill-danger">folder missing</span>{/if}
         </span>
@@ -304,13 +317,17 @@
           {libraries.find((library) => library.path === game.libraryPath)?.label?.trim() || game.libraryPath}
         </span>
         <span class="muted-sm size">{formatBytes(game.sizeOnDisk)}</span>
-        <button
-          class="btn btn-ghost"
-          onclick={() => openGameMove(game)}
-          disabled={busy || !game.folderExists || libraries.length < 2}
-        >
-          Move…
-        </button>
+        {#if game.platform === "steam"}
+          <button
+            class="btn btn-ghost"
+            onclick={() => openGameMove(game)}
+            disabled={busy || !game.folderExists || libraries.length < 2}
+          >
+            Move…
+          </button>
+        {:else}
+          <span class="muted-sm" style="width:4.5rem;text-align:right">External</span>
+        {/if}
       </div>
     {/each}
     {#if shownGames.length === 0}

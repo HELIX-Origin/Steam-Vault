@@ -3,11 +3,28 @@
   import { api, errorMessage } from "$lib/api";
   import { STEAM_LANGUAGES, setLocale, syncWithSettingsLanguage, t } from "$lib/i18n";
   import { error, install, settings } from "$lib/stores";
-  import type { Settings } from "$lib/types";
+  import type { CatalogStats, Settings } from "$lib/types";
 
   let form: Settings | null = null;
+  let catalogStats: CatalogStats | null = null;
+  let syncingCatalog = false;
+  let catalogSyncMsg: string | null = null;
   let busy = false;
   let saved = false;
+
+  async function syncOnline() {
+    syncingCatalog = true;
+    catalogSyncMsg = null;
+    try {
+      const count = await api.syncOnlineCatalog();
+      catalogStats = await api.getCatalogStats();
+      catalogSyncMsg = `Synced ${count} games from official community catalog.`;
+    } catch (e) {
+      catalogSyncMsg = errorMessage(e);
+    } finally {
+      syncingCatalog = false;
+    }
+  }
 
   /** Non-Steam sources surfaced in Settings (mirrors the backend platform ids). */
   const platformList: { id: string; label: string }[] = [
@@ -84,7 +101,12 @@
 
   onMount(async () => {
     try {
-      const [loaded, detected] = await Promise.all([api.getSettings(), api.detectSteam()]);
+      const [loaded, detected, stats] = await Promise.all([
+        api.getSettings(),
+        api.detectSteam(),
+        api.getCatalogStats().catch(() => null)
+      ]);
+      catalogStats = stats;
       settings.set(loaded);
       form = { ...loaded };
       if (loaded.language) {
@@ -285,6 +307,32 @@
         Writes go to <code>cloud-storage-namespace-1.json</code> and <code>shortcuts.vdf</code>. Changes require
         Steam to be closed, and are reversible from the local backup folder.
       </p>
+    </section>
+
+    <section class="glass-strong card">
+      <h2 class="section-title">Local Game Catalog & Cache</h2>
+      <div class="kv">
+        <div>
+          <strong>Catalog Games</strong>
+          <p class="muted-sm">Indexed titles and executables for instant offline disambiguation.</p>
+        </div>
+        <span>{catalogStats?.totalGames ?? 0} games</span>
+      </div>
+      <div class="kv">
+        <div>
+          <strong>Cached Metadata</strong>
+          <p class="muted-sm">Locally stored store and community metadata records.</p>
+        </div>
+        <span>{catalogStats?.totalMetadataCached ?? 0} records</span>
+      </div>
+      <div class="row" style="margin-top: 1rem; gap: 0.75rem; align-items: center;">
+        <button class="btn mini primary" onclick={syncOnline} disabled={syncingCatalog}>
+          {syncingCatalog ? "Syncing…" : "Sync Online Catalog"}
+        </button>
+        {#if catalogSyncMsg}
+          <span class="muted-sm">{catalogSyncMsg}</span>
+        {/if}
+      </div>
     </section>
   </div>
 {:else}

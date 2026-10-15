@@ -25,6 +25,7 @@ pub struct NewShortcut {
     pub icon: String,
     pub launch_options: String,
     pub platform: Platform,
+    pub tags: Vec<String>,
 }
 
 /// The result of importing one or more platform games as shortcuts.
@@ -66,11 +67,23 @@ pub fn load_shortcuts(root: &Path, id3: &str) -> AppResult<Vec<Game>> {
         let hidden = entry.get_i32("IsHidden").unwrap_or(0) != 0;
         let last_played = entry.get_i32("LastPlayTime").map(|value| value as i64);
 
+        let mut collections = Vec::new();
+        if let Some(tags_node) = entry.get("tags") {
+            for (_, val) in tags_node.as_object().into_iter().flatten() {
+                if let Some(tag_str) = val.as_str() {
+                    if !tag_str.is_empty() {
+                        collections.push(tag_str.to_string());
+                    }
+                }
+            }
+        }
+
         games.push(Game {
             app_id,
             name,
             kind: GameKind::Shortcut,
             installed: true,
+            collections,
             hidden,
             last_played,
             shortcut_id: Some(app_id),
@@ -149,6 +162,7 @@ pub fn add_shortcuts(
             &candidate.launch_options,
             false,
             0,
+            &candidate.tags,
         );
         shortcuts.push((next_index.to_string(), Bvdf::Object(fields)));
         next_index += 1;
@@ -157,6 +171,7 @@ pub fn add_shortcuts(
             name: candidate.name.clone(),
             kind: GameKind::Shortcut,
             installed: true,
+            collections: candidate.tags.clone(),
             shortcut_id: Some(app_id),
             exe: Some(candidate.exe.clone()),
             start_dir: Some(candidate.start_dir.clone()),
@@ -210,6 +225,7 @@ pub fn save_shortcuts(root: &Path, id3: &str, games: &[Game]) -> AppResult<()> {
                 "",
                 game.hidden,
                 game.last_played.unwrap_or(0),
+                &game.collections,
             );
             (index.to_string(), Bvdf::Object(fields))
         })
@@ -237,7 +253,14 @@ fn build_fields(
     launch_options: &str,
     hidden: bool,
     last_played: i64,
+    tags: &[String],
 ) -> Vec<(String, Bvdf)> {
+    let tag_entries: Vec<(String, Bvdf)> = tags
+        .iter()
+        .enumerate()
+        .map(|(i, t)| (i.to_string(), Bvdf::String(t.clone())))
+        .collect();
+
     vec![
         ("appid".into(), Bvdf::Int(app_id as i32)),
         ("AppName".into(), Bvdf::String(name.to_string())),
@@ -256,7 +279,7 @@ fn build_fields(
         ("Devkit".into(), Bvdf::Int(0)),
         ("DevkitGameID".into(), Bvdf::String(String::new())),
         ("LastPlayTime".into(), Bvdf::Int(last_played as i32)),
-        ("tags".into(), Bvdf::Object(Vec::new())),
+        ("tags".into(), Bvdf::Object(tag_entries)),
     ]
 }
 
