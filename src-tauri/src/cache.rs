@@ -351,6 +351,42 @@ impl MetadataCache {
         serde_json::from_str(&json).ok()
     }
 
+    /// Search the local game catalog by keyword query.
+    pub fn search_catalog(&self, query: &str, limit: usize) -> Vec<AppMeta> {
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            return Vec::new();
+        }
+        let norm = normalize_catalog_key(trimmed);
+        let pattern = format!("%{}%", trimmed.to_lowercase());
+        let norm_pattern = format!("%{norm}%");
+
+        let mut stmt = match self.conn.prepare(
+            "SELECT meta_json FROM (
+                SELECT meta_json, 1 as rank FROM game_catalog
+                WHERE normalized_title LIKE ?1 OR LOWER(title) LIKE ?2
+                UNION
+                SELECT g.meta_json, 2 as rank FROM game_catalog g
+                JOIN catalog_lookups l ON g.id = l.catalog_id
+                WHERE l.lookup_key LIKE ?1 OR LOWER(l.lookup_key) LIKE ?2
+             ) ORDER BY rank LIMIT ?3",
+        ) {
+            Ok(s) => s,
+            Err(_) => return Vec::new(),
+        };
+
+        let rows = stmt.query_map(params![norm_pattern, pattern, limit as i64], |row| {
+            row.get::<_, String>(0)
+        });
+        let Ok(rows) = rows else {
+            return Vec::new();
+        };
+
+        rows.filter_map(|r| r.ok())
+            .filter_map(|json| serde_json::from_str(&json).ok())
+            .collect()
+    }
+
     /// Insert or update a game entry in the local catalog and index its lookups.
     pub fn upsert_catalog_entry(
         &mut self,

@@ -13,10 +13,6 @@
     { href: "/", key: "nav.dashboard", icon: "◈" },
     { href: "/library", key: "nav.library", icon: "▤" },
     { href: "/storage", key: "nav.storage", icon: "▥" },
-    { href: "/artwork", key: "nav.artwork", icon: "❖" },
-    { href: "/collections", key: "nav.collections", icon: "❐" },
-    { href: "/platforms", key: "nav.platforms", icon: "⬡" },
-    { href: "/organize", key: "nav.organize", icon: "⊞" },
     { href: "/settings", key: "nav.settings", icon: "⚙" }
   ];
 

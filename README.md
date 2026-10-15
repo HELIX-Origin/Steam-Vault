@@ -45,18 +45,19 @@ SvelteKit frontend) that targets **stable, documented data sources** rather than
 
 | Provider | Key required | Purpose |
 | --- | --- | --- |
-| **Community Game Catalog** | ❌ No | Curated offline database with multi-platform OS & console hardware |
-| **Steam Store** (`appdetails`) | ❌ No | Genres, developers, publishers, release dates, feature flags |
+| **Steam Store** (`appdetails`) | ❌ No | Genres, developers, publishers, release dates, feature flags, covers, screenshots |
 | **Steam Store Search** | ❌ No | Match non-Steam & indie titles to official Steam app IDs |
-| **Steam Web API** | ✅ Yes | Owned games, playtime, player summaries |
-| **SteamGridDB** | ✅ Yes | Grids, heroes, logos, icons (especially for non-Steam games) |
-| **IGDB (Twitch)** | ✅ Yes | Rich metadata: summary, genres, companies, cover |
-| **VNDB** | ❌ No | Visual novel developers, publishers, release dates, tags, covers |
-| **PCGamingWiki** | ❌ No | Engine, developers, publishers, release dates |
+| **GOG Store & Galaxy** | ❌ No | Official GOG covers, heroes, and metadata |
+| **PCGamingWiki** | ❌ No | Engine, developers, publishers, release dates, taxonomy genres, box art |
+| **Wikipedia** | ❌ No | Infobox wikitext parser & high-res `pageimages` box art |
+| **Libretro Thumbnails** | ❌ No | Open emulation box art, snaps, and title screens across 24+ consoles |
+| **VNDB** | ❌ No | Visual novel developers, publishers, release dates, tags, covers, Japanese titles |
 | **Local Game Sniffer** | ❌ No | itch.io manifests, Ren'Py, RPG Maker, and PE VersionInfo headers |
-| **Wikipedia** | ❌ No | Infobox wikitext parser for console games, developers, publishers, genres, release year, and summaries |
+| **SteamGridDB** | ✅ Yes (Optional) | Grids, heroes, logos, icons (especially for non-Steam games) |
+| **IGDB (Twitch)** | ✅ Yes (Optional) | Rich metadata: summary, genres, companies, cover |
+| **Steam Web API** | ✅ Yes (Optional) | Owned games, playtime, player summaries |
 
-> **Note:** RAWG support is intentionally **not** included (the service is defunct).
+> **Note on RAWG:** Support is intentionally **not** included (the service is defunct).
 >
 > 💡 **Architectural Direction:** Steam Vault is progressively migrating metadata resolution to rely **solely on official sources** (local launcher manifests, GOG Galaxy DB, Epic manifests, Xbox packages, and official store APIs) and our open **Community Game Catalogue** (`Steam-Vault-Catalogue`). Furthermore, even the **Steam Web API key is planned to be completely optional**, as Steam Vault is designed to read the user's authenticated local Steam installation directly (`appinfo.vdf`, `packageinfo.vdf`, `localconfig.vdf`) to discover all owned games from their authenticated account—mirroring the zero-friction, keyless architecture established across GOG, Epic, Xbox, and itch.io.
 

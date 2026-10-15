@@ -445,13 +445,16 @@ pub async fn ensure_steam_metadata(
     state: &AppState,
     app_ids: &[u32],
     want_tags: bool,
+    force: bool,
 ) -> MetadataSyncResult {
     let mut unique: Vec<u32> = app_ids.iter().copied().filter(|id| *id != 0).collect();
     unique.sort_unstable();
     unique.dedup();
 
     // Split into entries we can reuse and entries we must fetch.
-    let missing: Vec<u32> = {
+    let missing: Vec<u32> = if force {
+        unique.clone()
+    } else {
         let cache = state.cache.lock().expect("cache lock poisoned");
         unique
             .iter()
@@ -547,6 +550,7 @@ pub async fn ensure_game_metadata(
     state: &AppState,
     games: &[&Game],
     want_tags: bool,
+    force: bool,
 ) -> MetadataSyncResult {
     let settings = state.settings_snapshot();
     let client = metadata::http_client();
@@ -557,7 +561,7 @@ pub async fn ensure_game_metadata(
         .map(|game| game.app_id)
         .collect();
 
-    let mut result = ensure_steam_metadata(state, &steam_ids, want_tags).await;
+    let mut result = ensure_steam_metadata(state, &steam_ids, want_tags, force).await;
 
     // For any Steam games where store details were unavailable, try catalog first, then PCGamingWiki fallback
     let missing_steam: Vec<(String, u32)> = {
@@ -566,9 +570,10 @@ pub async fn ensure_game_metadata(
             .iter()
             .filter(|g| {
                 g.kind == GameKind::Steam
-                    && cache
-                        .get("steam-store", g.app_id, Some(CACHE_MAX_AGE_SECS))
-                        .is_none()
+                    && (force
+                        || cache
+                            .get("steam-store", g.app_id, Some(CACHE_MAX_AGE_SECS))
+                            .is_none())
             })
             .map(|g| (g.name.clone(), g.app_id))
             .collect()
@@ -609,7 +614,9 @@ pub async fn ensure_game_metadata(
             continue;
         }
 
-        let is_cached = {
+        let is_cached = if force {
+            false
+        } else {
             let cache = state.cache.lock().expect("cache lock poisoned");
             cache
                 .get("shortcut-meta", game.app_id, Some(CACHE_MAX_AGE_SECS))
@@ -817,17 +824,250 @@ pub async fn ensure_game_metadata(
     result
 }
 
-/// Warm (or refresh) store metadata for the whole local library.
+/// Warm (or refresh) store metadata for the whole local library across all supported providers.
 #[tauri::command]
 pub async fn sync_library_metadata(
     account_id3: Option<String>,
+    force: Option<bool>,
+    auto_artwork: Option<bool>,
     state: State<'_, AppState>,
 ) -> AppResult<MetadataSyncResult> {
     let root = steam_root(&state)?;
     let account = resolve_account(&root, &state, account_id3);
     let games = collect_library(&root, account.as_deref())?;
     let refs: Vec<&Game> = games.iter().collect();
-    Ok(ensure_game_metadata(&state, &refs, false).await)
+    let is_force = force.unwrap_or(false);
+    let result = ensure_game_metadata(&state, &refs, false, is_force).await;
+
+    if auto_artwork.unwrap_or(false) {
+        if let Some(ref acc) = account {
+            for game in &games {
+                let _ = fetch_and_apply_artwork_for_game(
+                    &state,
+                    &root,
+                    acc,
+                    game.app_id,
+                    &game.name,
+                )
+                .await;
+            }
+        }
+    }
+
+    Ok(result)
+}
+
+/// Refresh metadata and artwork references for an individual game on demand.
+#[tauri::command]
+pub async fn refresh_game_metadata(
+    app_id: u32,
+    force: Option<bool>,
+    account_id3: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<Option<AppMeta>> {
+    let root = steam_root(&state)?;
+    let account = resolve_account(&root, &state, account_id3);
+    let games = collect_library(&root, account.as_deref())?;
+    let Some(game) = games.into_iter().find(|g| g.app_id == app_id) else {
+        return Ok(None);
+    };
+
+    let client = metadata::http_client();
+    let settings = state.settings_snapshot();
+    let mut resolved: Option<AppMeta> = None;
+
+    // 1. Steam Storefront (for Steam games)
+    if game.kind == GameKind::Steam && game.app_id != 0 {
+        if let Ok(map) = metadata::steam_store::fetch_app_details(
+            &client,
+            &[game.app_id],
+            &settings.country_code,
+            &settings.language,
+        )
+        .await
+        {
+            if let Some(meta) = map.get(&game.app_id) {
+                resolved = Some(meta.clone());
+            }
+        }
+    }
+
+    // 2. Catalogue lookup (local SQLite cache + online catalogue fallback)
+    if resolved.is_none() {
+        let cat_opt = {
+            let cache = state.cache.lock().expect("cache lock poisoned");
+            if let Some(exe_str) = game.exe.as_deref() {
+                cache
+                    .find_catalog_by_exe(exe_str)
+                    .or_else(|| cache.find_catalog_by_title(&game.name))
+            } else {
+                cache.find_catalog_by_title(&game.name)
+            }
+        };
+        if let Some(meta) = cat_opt {
+            resolved = Some(meta);
+        } else if let Some(online_meta) = fetch_online_catalog_entry(&client, &game.name).await {
+            resolved = Some(online_meta);
+        }
+    }
+
+    // 3. Steam Search fallback (for non-Steam games that exist on Steam Store)
+    if resolved
+        .as_ref()
+        .map_or(true, |m| m.developers.is_empty() || m.publishers.is_empty())
+    {
+        if let Ok(Some(steam_id)) = metadata::steam_search::find_steam_app_id(
+            &client,
+            &game.name,
+            &settings.country_code,
+            &settings.language,
+        )
+        .await
+        {
+            if let Ok(map) = metadata::steam_store::fetch_app_details(
+                &client,
+                &[steam_id],
+                &settings.country_code,
+                &settings.language,
+            )
+            .await
+            {
+                if let Some(store_meta) = map.get(&steam_id) {
+                    if let Some(ref mut cur) = resolved {
+                        if cur.developers.is_empty() {
+                            cur.developers = store_meta.developers.clone();
+                        }
+                        if cur.publishers.is_empty() {
+                            cur.publishers = store_meta.publishers.clone();
+                        }
+                        if cur.release_year.is_none() {
+                            cur.release_year = store_meta.release_year;
+                        }
+                        if cur.short_description.is_none() {
+                            cur.short_description = store_meta.short_description.clone();
+                        }
+                        for g in &store_meta.genres {
+                            if !cur.genres.contains(g) {
+                                cur.genres.push(g.clone());
+                            }
+                        }
+                    } else {
+                        resolved = Some(store_meta.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    // 4. PCGamingWiki lookup
+    if resolved
+        .as_ref()
+        .map_or(true, |m| m.developers.is_empty() || m.publishers.is_empty())
+    {
+        if let Ok(Some(wiki_meta)) =
+            metadata::extra::pcgamingwiki_lookup(&client, &game.name).await
+        {
+            if let Some(ref mut cur) = resolved {
+                if cur.developers.is_empty() {
+                    cur.developers = wiki_meta.developers;
+                }
+                if cur.publishers.is_empty() {
+                    cur.publishers = wiki_meta.publishers;
+                }
+                if cur.release_year.is_none() {
+                    cur.release_year = wiki_meta.release_year;
+                }
+                for g in wiki_meta.genres {
+                    if !cur.genres.contains(&g) {
+                        cur.genres.push(g);
+                    }
+                }
+            } else {
+                resolved = Some(wiki_meta);
+            }
+        }
+    }
+
+    // 5. Wikipedia lookup
+    if resolved.as_ref().map_or(true, |m| {
+        m.developers.is_empty() || m.publishers.is_empty() || m.genres.is_empty()
+    }) {
+        if let Ok(Some(wp_meta)) =
+            metadata::extra::wikipedia_game_lookup(&client, &game.name).await
+        {
+            if let Some(ref mut cur) = resolved {
+                if cur.developers.is_empty() {
+                    cur.developers = wp_meta.developers;
+                }
+                if cur.publishers.is_empty() {
+                    cur.publishers = wp_meta.publishers;
+                }
+                if cur.release_year.is_none() {
+                    cur.release_year = wp_meta.release_year;
+                }
+                if cur.short_description.is_none() {
+                    cur.short_description = wp_meta.short_description;
+                }
+                for g in wp_meta.genres {
+                    if !cur.genres.contains(&g) {
+                        cur.genres.push(g);
+                    }
+                }
+            } else {
+                resolved = Some(wp_meta);
+            }
+        }
+    }
+
+    // 6. VNDB lookup
+    if resolved
+        .as_ref()
+        .map_or(true, |m| m.developers.is_empty() || m.genres.is_empty())
+    {
+        if let Ok(Some(vndb_meta)) = metadata::vndb::vndb_lookup(&client, &game.name).await {
+            if let Some(ref mut cur) = resolved {
+                if cur.developers.is_empty() {
+                    cur.developers = vndb_meta.developers;
+                }
+                if cur.publishers.is_empty() {
+                    cur.publishers = vndb_meta.publishers;
+                }
+                if cur.release_year.is_none() {
+                    cur.release_year = vndb_meta.release_year;
+                }
+                for g in vndb_meta.genres {
+                    if !cur.genres.contains(&g) {
+                        cur.genres.push(g);
+                    }
+                }
+            } else {
+                resolved = Some(vndb_meta);
+            }
+        }
+    }
+
+    if let Some(mut final_meta) = resolved {
+        final_meta.app_id = game.app_id;
+        final_meta.fetched_at = Some(chrono::Utc::now().timestamp());
+        let mut cache = state.cache.lock().expect("cache lock poisoned");
+        if game.kind == GameKind::Steam {
+            cache.put("steam-store", game.app_id, &final_meta);
+        } else {
+            cache.put("shortcut-meta", game.app_id, &final_meta);
+            cache.put("steam-store", game.app_id, &final_meta);
+        }
+        let platform_label = game.platform.label();
+        cache.upsert_catalog_entry(
+            &game.name,
+            &final_meta,
+            Some(platform_label),
+            game.exe.as_deref(),
+        );
+        let _ = cache.save();
+        Ok(Some(final_meta))
+    } else {
+        Ok(None)
+    }
 }
 
 #[tauri::command]
@@ -969,7 +1209,7 @@ pub async fn compute_autocats(
         .any(|autocat| autocat.enabled && autocat.kind.needs_tags());
     if wants_metadata || wants_tags {
         let refs: Vec<&Game> = games.iter().collect();
-        ensure_game_metadata(&state, &refs, wants_tags).await;
+        ensure_game_metadata(&state, &refs, wants_tags, false).await;
     }
 
     let cache = state.cache.lock().expect("cache lock poisoned");
@@ -1071,18 +1311,21 @@ pub async fn fetch_and_apply_artwork_for_game(
 
     let portrait_missing =
         !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::GridPortrait).present;
+    let landscape_missing =
+        !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::GridLandscape).present;
     let hero_missing = !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::Hero).present;
     let logo_missing = !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::Logo).present;
     let icon_missing = !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::Icon).present;
 
-    if !portrait_missing && !hero_missing && !logo_missing && !icon_missing {
+    if !portrait_missing && !landscape_missing && !hero_missing && !logo_missing && !icon_missing {
         return 0;
     }
 
     // 1. SteamGridDB resolution if API key is configured
     if let Some(ref key) = settings.steamgriddb_api_key.filter(|k| !k.is_empty()) {
         let slots_to_fetch = [
-            (portrait_missing, ArtworkSlot::GridPortrait, "grids"),
+            (portrait_missing, ArtworkSlot::GridPortrait, "grids_portrait"),
+            (landscape_missing, ArtworkSlot::GridLandscape, "grids_landscape"),
             (hero_missing, ArtworkSlot::Hero, "heroes"),
             (logo_missing, ArtworkSlot::Logo, "logos"),
             (icon_missing, ArtworkSlot::Icon, "icons"),
@@ -1520,7 +1763,7 @@ pub async fn compute_categorization(
     let wants_metadata = request.kind.needs_metadata();
     let wants_tags = request.kind.needs_tags();
     if request.fetch_metadata && (wants_metadata || wants_tags) {
-        ensure_game_metadata(&state, &scoped, wants_tags).await;
+        ensure_game_metadata(&state, &scoped, wants_tags, false).await;
     }
 
     let autocat = build_autocat(&request);
@@ -1881,11 +2124,12 @@ pub async fn steamgriddb_for_game(
     app_id: u32,
     name: String,
     kind: String,
+    nsfw: Option<bool>,
     state: State<'_, AppState>,
 ) -> AppResult<Vec<metadata::steamgriddb::SgdbAsset>> {
     let key = require_key(&state, "steamgriddb")?;
     let client = metadata::http_client();
-    metadata::steamgriddb::for_game(&client, &key, app_id, &name, &kind).await
+    metadata::steamgriddb::for_game_with_nsfw(&client, &key, app_id, &name, &kind, nsfw.unwrap_or(false)).await
 }
 
 /// Automatically fetch missing custom artwork for shortcuts or specified games.
@@ -2008,6 +2252,12 @@ pub fn get_catalog_stats(state: State<'_, AppState>) -> CatalogStats {
 }
 
 #[tauri::command]
+pub fn search_catalog(term: String, state: State<'_, AppState>) -> AppResult<Vec<AppMeta>> {
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    Ok(cache.search_catalog(&term, 20))
+}
+
+#[tauri::command]
 pub fn export_catalog_archive(path: String, state: State<'_, AppState>) -> AppResult<usize> {
     let cache = state.cache.lock().expect("cache lock poisoned");
     let bytes = cache.export_catalog_compressed()?;
@@ -2126,6 +2376,10 @@ pub async fn fetch_online_catalog_entry(
             .and_then(|m| m.get("capsuleImage"))
             .and_then(|v| v.as_str())
             .map(String::from),
+        locales: val
+            .get("locales")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
         fetched_at: Some(chrono::Utc::now().timestamp()),
         ..Default::default()
     })

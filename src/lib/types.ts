@@ -101,10 +101,12 @@ export interface AppMeta {
   capsuleImage: string | null;
   heroImage?: string | null;
   logoImage?: string | null;
+  iconImage?: string | null;
   userScore: number | null;
   fetchedAt: number | null;
   screenshots?: string[];
   movies?: string[];
+  locales?: Record<string, { title?: string; shortDescription?: string | null; aliases?: string[] }>;
 }
 
 export interface MediaItem {

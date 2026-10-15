@@ -16,15 +16,17 @@ combines several sources, and only three of them require an API key.
 | Provider | Key | Endpoint | Provides |
 | :--- | :--- | :--- | :--- |
 | **Community Game Catalog** | No | *Local seed* & GitHub Releases | Curated offline catalog, multi-platform OS (`windows`, `macos`, `linux`), console hardware, and canonical metadata |
-| **Steam Store** | No | `store.steampowered.com/api/appdetails` | Genres, developers, publishers, release date, feature flags |
+| **Steam Store** | No | `store.steampowered.com/api/appdetails` | Genres, developers, publishers, release date, feature flags, covers, screenshots |
 | **Steam Store Search** | No | `store.steampowered.com/api/storesearch` | Search non-Steam & indie titles to match official Steam app IDs |
-| **Steam Web API** | Yes | `IPlayerService/GetOwnedGames` | Owned games, playtime, player summaries |
-| **SteamGridDB** | Yes | `www.steamgriddb.com/api/v2` | Grids, heroes, logos, icons |
-| **IGDB (Twitch)** | Yes | `api.igdb.com/v4` | Summary, genres, companies, cover |
-| **VNDB** | No | `api.vndb.org/kana/vn` | Visual novel developers, publishers, release dates, tags, covers |
-| **PCGamingWiki** | No | `www.pcgamingwiki.com/w/api.php` | Engine, developers, publishers, release dates |
+| **GOG Store & Galaxy** | No | `embed.gog.com` & local Galaxy DB | Official GOG vertical covers, hero backgrounds, and publisher data |
+| **PCGamingWiki** | No | `www.pcgamingwiki.com/w/api.php` | Engine, developers, publishers, release dates, taxonomy genres, box art |
+| **Wikipedia** | No | `en.wikipedia.org/w/api.php` | Infobox wikitext parser & high-res `pageimages` box art |
+| **Libretro Thumbnails** | No | `thumbnails.libretro.com` CDN | Open emulation box art, snaps, and title screens across 24+ consoles |
+| **VNDB** | No | `api.vndb.org/kana/vn` | Visual novel developers, publishers, release dates, tags, covers, Japanese titles |
 | **Local Game Sniffer** | No | *Local disk* | itch `receipt.json`, Ren'Py signatures, RPG Maker data, PE VersionInfo |
-| **Wikipedia** | No | `en.wikipedia.org/w/api.php` | Infobox wikitext parser: developers, publishers, genres, release year, console platforms, and summaries |
+| **SteamGridDB** | Yes (Optional) | `www.steamgriddb.com/api/v2` | Grids, heroes, logos, icons (especially for non-Steam shortcuts) |
+| **IGDB (Twitch)** | Yes (Optional) | `api.igdb.com/v4` | Summary, genres, companies, cover |
+| **Steam Web API** | Yes (Optional) | `IPlayerService/GetOwnedGames` | Owned games, playtime, player summaries |
 
 > **Note:** **RAWG is not supported.** The service is defunct and no RAWG provider exists by design.
 

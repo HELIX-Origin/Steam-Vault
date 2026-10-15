@@ -141,4 +141,6 @@ pub struct AppMeta {
     pub screenshots: Vec<String>,
     #[serde(default)]
     pub movies: Vec<String>,
+    #[serde(default)]
+    pub locales: std::collections::HashMap<String, serde_json::Value>,
 }

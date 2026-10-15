@@ -40,18 +40,25 @@ This is the same location Steam's own **Customize** screen writes to. Because it
 the same system covers **non-Steam shortcuts**, whose synthetic app ids have no store page of their
 own.
 
-## 🌐 Applying art from SteamGridDB
+## 🌐 Applying art from Multiple Providers
 
-1. Open **Artwork** and pick a game from the list on the left.
-2. Next to the slot you want, choose **Browse…**.
-3. SteamGridDB results appear as thumbnails; click one to apply it.
+1. Open **Artwork** (or click **Manage → Artwork** from any game details page).
+2. Choose the visual slot you want to configure: **Portrait**, **Landscape**, **Hero Banner**, **Logo**, or **Icon**.
+3. Use the **Keyword Search** bar to search by game title (e.g. "Chrono Trigger", "Doom", "Super Mario 64").
+4. Filter by artwork provider using the provider dropdown:
+   - **Community Catalogue** (curated vertical & horizontal covers, heroes, logos, icons)
+   - **GOG Store & Galaxy** (official high-res vertical box covers and background banners)
+   - **PCGamingWiki** (box art & infobox covers)
+   - **Wikipedia** (high-res box art covers from encyclopedic pages)
+   - **Libretro Emulation** (console box arts, gameplay snaps, and title screens across 24+ platforms)
+   - **VNDB** (visual novel covers & Japanese title art)
+   - **SteamGridDB** (community grids, heroes, logos, icons)
+   - **Steam Store** (official store capsules & banners)
+   - **IGDB** (cover art)
+5. Filter by animated/static artwork or toggle **Safe Search** (NSFW filtering).
+6. Click any card to apply it instantly to your Steam library. Dead or unreachable CDN links are filtered out automatically so you never see broken image cards.
 
-SteamGridDB requires an API key — add one in [Settings & API Keys](Settings-and-API-Keys.md). Without
-a key you can still apply art from a local file.
-
-**How matching works:** for a real Steam game Steam Vault looks artwork up by its **exact app id**
-(so you get the right game, not a search result). For a **non-Steam shortcut** — which has no store
-page — it searches SteamGridDB by name and prefers an exact title match.
+SteamGridDB and IGDB optionally use API keys configured in [Settings & API Keys](Settings-and-API-Keys.md). All other providers work 100% keyless out of the box.
 
 ## ⚡ Automatic Artwork Fetching
 

@@ -2,11 +2,11 @@
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
   import { t } from "$lib/i18n";
-  import { error, settings } from "$lib/stores";
+  import { error, settings, customNames } from "$lib/stores";
   import type { ArtworkSlotId, GameArtwork, SgdbAsset } from "$lib/types";
   import "$styles/artwork.scss";
 
-  type SgdbKind = "grids" | "heroes" | "logos" | "icons";
+  type SgdbKind = "grids" | "grids_portrait" | "grids_landscape" | "heroes" | "logos" | "icons";
   type Filter = "all" | "missing" | "complete";
 
   let report: GameArtwork[] = [];
@@ -20,12 +20,17 @@
   let browser: { slot: ArtworkSlotId; kind: SgdbKind } | null = null;
   let assets: SgdbAsset[] = [];
   let assetsLoading = false;
+  let webSearchAvailable = false;
   let fileSlot: ArtworkSlotId | null = null;
   let filePath = "";
 
-  onMount(() => refresh());
+  let hasKey = false;
+$: hasKey = Boolean($settings?.steamgriddbApiKey);
 
-  $: hasKey = Boolean($settings?.steamgriddbApiKey);
+  let shown: GameArtwork[] = [];
+  let customSearchTerm = "";
+  let dimensionChoice: ArtworkSlotId = "gridPortrait";
+  let safeSearchEnabled = true;
   $: shown = report.filter((game) => {
     if (filter === "missing" && game.applied === 5) return false;
     if (filter === "complete" && game.applied < 5) return false;
@@ -52,10 +57,28 @@
 
   /** The SteamGridDB asset kind that fills a given Steam slot. */
   function kindFor(slot: ArtworkSlotId): SgdbKind {
+    if (slot === "gridLandscape") return "grids_landscape";
     if (slot === "hero") return "heroes";
     if (slot === "logo") return "logos";
     if (slot === "icon") return "icons";
-    return "grids";
+    return "grids_portrait";
+  }
+
+  function recommendedDims(slot: ArtworkSlotId): string {
+    switch (slot) {
+      case "gridPortrait":
+        return "600×900 (2:3)";
+      case "gridLandscape":
+        return "920×430 (~2.14:1)";
+      case "hero":
+        return "1920×620 (~3.1:1)";
+      case "logo":
+        return "Transparent PNG";
+      case "icon":
+        return "256×256 (1:1)";
+      default:
+        return "";
+    }
   }
 
   function labelOf(slot: ArtworkSlotId): string {
@@ -94,6 +117,55 @@
     );
     previews = next;
   }
+  
+  // Fetch fallback artwork from alternative metadata providers
+  async function fetchAlternativeAssets(kind: SgdbKind): Promise<SgdbAsset[]> {
+    const assets: SgdbAsset[] = [];
+    // 1. Steam Store metadata
+    try {
+      const metas = await api.fetchSteamStoreMetadata([selected!.appId]);
+      const meta = metas[0];
+      if (meta) {
+        let url: string | undefined;
+        switch (kind) {
+          case "heroes":
+            url = meta.heroImage ?? undefined;
+            break;
+          case "logos":
+            url = meta.logoImage ?? undefined;
+            break;
+          case "grids":
+          case "grids_portrait":
+          case "grids_landscape":
+            url = meta.headerImage ?? undefined;
+            break;
+          default:
+            url = undefined;
+        }
+        if (url) {
+          assets.push({ id: Date.now(), url, thumb: null, width: null, height: null, style: null, mime: null });
+        }
+      }
+    } catch {}
+    // 2. IGDB cover image fallback
+    
+    if (assets.length === 0 && $settings?.igdbClientId && $settings?.igdbClientSecret) {
+      try {
+        const games = await api.igdbSearch(selected!.name);
+        if (games?.length) {
+          const cover = games[0].cover?.url;
+          if (cover) {
+            const resolved = cover.replace("t_thumb", "t_original");
+            assets.push({ id: Date.now() + 1, url: resolved, thumb: null, width: null, height: null, style: null, mime: null });
+          }
+        }
+      } catch {}
+    }
+
+
+    // Additional providers (PCGamingWiki, Wikipedia, VNDB) can be added here.
+    return assets;
+  }
 
   async function selectGame(game: GameArtwork) {
     selected = game;
@@ -112,8 +184,15 @@
     assetsLoading = true;
     try {
       assets = await api.steamGridDbForGame(selected.appId, selected.name, kindFor(slot));
+      if (assets.length === 0) {
+        // Attempt to fetch from alternative metadata providers.
+        const fallback = await fetchAlternativeAssets(kindFor(slot));
+        assets = fallback;
+      }
+      webSearchAvailable = assets.length === 0;
     } catch (e) {
       error.set(errorMessage(e));
+      webSearchAvailable = false;
     } finally {
       assetsLoading = false;
     }
@@ -124,20 +203,88 @@
     filePath = "";
   }
 
+  // Expected dimensions for each artwork slot (width x height). Returns null for slots that accept any size.
+  function getExpectedDimensions(slot: ArtworkSlotId): { width: number; height: number } | null {
+    switch (slot) {
+      case "gridPortrait":
+        return { width: 600, height: 900 };
+      case "gridLandscape":
+        return { width: 920, height: 430 };
+      case "hero":
+        return { width: 1920, height: 620 };
+      case "logo":
+        return null; // any size PNG accepted
+      case "icon":
+        return null; // any size accepted (will never be rejected)
+      default:
+        return null;
+    }
+  }
+
+  // Validate image dimensions (except slots that allow any size). Returns true if dimensions are within tolerance.
+  async function validateImage(url: string, slot: ArtworkSlotId): Promise<boolean> {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const expected = getExpectedDimensions(slot);
+        if (!expected) {
+          resolve(true);
+          return;
+        }
+        const tolerance = 20; // pixels tolerance
+        const ok =
+          Math.abs(img.width - expected.width) <= tolerance &&
+          Math.abs(img.height - expected.height) <= tolerance;
+        resolve(ok);
+      };
+      img.onerror = () => resolve(false);
+      img.src = url;
+    });
+  }
+
   async function applyUrl(slot: ArtworkSlotId, url: string) {
     if (!selected) return;
+    const trimmed = url.trim();
+    if (!trimmed) {
+      notice = "Error applying artwork: URL is empty";
+      return;
+    }
+    // Strip query string to get a clean image URL
+    const cleanUrl = trimmed.split("?")[0];
+
+    // HEAD request to ensure URL is reachable and is an image
+    try {
+      const resp = await fetch(cleanUrl, { method: "HEAD" });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const ct = resp.headers.get("content-type") ?? "";
+      if (!ct.startsWith("image/")) throw new Error(`Content‑type ${ct} not an image`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      notice = `Error applying artwork: URL validation failed – ${msg}`;
+      return;
+    }
+
+    // Dimension check (skip for icon slot)
+    if (slot !== "icon") {
+      const dimsOk = await validateImage(cleanUrl, slot);
+      if (!dimsOk) {
+        notice = `Error applying artwork: Image dimensions do not match required size for ${slot}.`;
+        return;
+      }
+    }
+
     const appId = selected.appId;
     busy = true;
     busyLabel = "Applying artwork…";
     notice = null;
     try {
-      const outcome = await api.applyArtworkFromUrl(appId, slot, url);
-      notice = `${labelOf(slot)} applied (${formatBytes(outcome.bytes)})${
-        outcome.backup ? " · previous image backed up" : ""
-      }.`;
+      const outcome = await api.applyArtworkFromUrl(appId, slot, cleanUrl);
+      notice = `${labelOf(slot)} applied (${formatBytes(outcome.bytes)})${outcome.backup ? " · previous image backed up" : ""}.`;
       await refresh(appId);
     } catch (e) {
-      error.set(errorMessage(e));
+      const msg = errorMessage(e);
+      notice = `Error applying artwork: ${msg}`;
+      error.set(null);
     } finally {
       busy = false;
     }
@@ -156,10 +303,19 @@
       filePath = "";
       await refresh(appId);
     } catch (e) {
-      error.set(errorMessage(e));
+      const msg = errorMessage(e);
+      notice = `Error applying artwork: ${msg}`;
+      error.set(null);
     } finally {
       busy = false;
     }
+  }
+
+  // UI helper to generate a web image search URL
+  function webSearchUrl(): string {
+    if (!selected) return "";
+    const query = encodeURIComponent(`${selected.name} game artwork`);
+    return `https://www.google.com/search?tbm=isch&q=${query}`;
   }
 
   async function removeSlot(slot: ArtworkSlotId) {
@@ -271,7 +427,7 @@
       <div class="slots">
         {#each game.slots as slot (slot.slot)}
           <div class="slot">
-            <div class="thumb">
+            <div class="thumb thumb-{slot.slot}">
               {#if previews[previewKey(game.appId, slot.slot)]}
                 <img src={previews[previewKey(game.appId, slot.slot)]} alt={slot.label} />
               {:else}
@@ -280,7 +436,10 @@
             </div>
             <div class="slot-body">
               <div class="row-between">
-                <span class="slot-name">{slot.label}</span>
+                <div class="slot-header-info">
+                  <span class="slot-name">{slot.label}</span>
+                  <span class="slot-spec">{recommendedDims(slot.slot)}</span>
+                </div>
                 {#if slot.present}<span class="pill">{formatBytes(slot.bytes)}</span>{/if}
               </div>
               <div class="row slot-actions">
@@ -317,8 +476,12 @@
         {@const current = browser}
         <div class="browser">
           <div class="row-between">
-            <div class="section-title" style="margin:0">SteamGridDB · {labelOf(current.slot)}</div>
+            <div class="browser-header-title">
+              <div class="section-title" style="margin:0">SteamGridDB · {labelOf(current.slot)}</div>
+              <span class="browser-spec">{recommendedDims(current.slot)}</span>
+            </div>
             <button class="btn btn-ghost" onclick={() => (browser = null)}>Close</button>
+<button class="btn btn-ghost" title="Search the web" onclick={() => window.open(webSearchUrl(), "_blank")} aria-label="Search the web">🌐</button>
           </div>
           {#if !hasKey}
             <p class="muted-sm" style="margin:0.6rem 0 0">
@@ -326,23 +489,29 @@
             </p>
           {:else if assetsLoading}
             <p class="muted-sm" style="margin:0.6rem 0 0">Searching SteamGridDB…</p>
-          {:else if assets.length === 0}
-            <p class="muted-sm" style="margin:0.6rem 0 0">
-              No matching artwork found. Try a local file instead.
-            </p>
+                      {:else if assets.length === 0}
+              <p class="muted-sm" style="margin:0.6rem 0 0">
+                No matching artwork found. Try a local file instead.
+              </p>
+              {#if webSearchAvailable}
+                <button class="btn btn-ghost" onclick={() => window.open(webSearchUrl(), "_blank")}>Search the web</button>
+              {/if}
           {:else}
-            <div class="assets">
+            <div class="assets slot-{current.slot}">
               {#each assets as asset (asset.id)}
                 <button
+                  type="button"
                   class="asset"
                   onclick={() => applyUrl(current.slot, asset.url)}
                   disabled={busy}
                   title="Apply this artwork"
                 >
-                  <img src={asset.thumb || asset.url} alt="" loading="lazy" />
-                  {#if asset.width && asset.height}
-                    <span class="asset-size">{asset.width}×{asset.height}</span>
-                  {/if}
+                  <div class="asset-thumb-wrap aspect-{current.slot}">
+                    <img src={asset.thumb || asset.url} alt="" loading="lazy" />
+                    {#if asset.width && asset.height}
+                      <span class="asset-size">{asset.width}×{asset.height}</span>
+                    {/if}
+                  </div>
                 </button>
               {/each}
             </div>

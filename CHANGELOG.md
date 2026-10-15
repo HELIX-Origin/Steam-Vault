@@ -5,6 +5,28 @@ All notable changes to Steam Vault are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-15
+
+### Added
+
+- **Multi-Provider Metadata & Artwork Pipeline Parity**:
+  - Full metadata & artwork engine expansion across Community Catalogue, Steam Store, GOG, PCGamingWiki, Wikipedia (with high-res box art pageimages), Libretro Emulation Thumbnails, VNDB, SteamGridDB, and IGDB.
+  - Implemented `refresh_game_metadata` command cascading across providers and merging results into offline SQLite cache.
+  - Added "Fetch & Refresh Library Metadata" UI block in Settings under Preferences & Offline Cache with live status indicators, auto-artwork toggle, and online catalogue sync trigger.
+  - Added per-game "Refresh Metadata" button on game details topbar and in Manage modal with live spin feedback toast.
+- **Steam-Parity Keyword Artwork Search & Broken Link Filtering**:
+  - Artwork manager search is keyword-driven across all 5 visual slots (grid portrait, grid landscape, hero banner, logo, icon).
+  - Expanded visual provider filter dropdown (All, Catalogue, GOG, Wikipedia, PCGamingWiki, VNDB, Emulation, SteamGridDB, Steam, IGDB, Metadata).
+  - Client-side error removal (`onerror`) so dead/blocked CDN URLs are automatically culled, preventing broken cards.
+- **Custom Display Name Override & Management Modal**:
+  - Modal sub-window allowing users to specify custom display names for any game (persisted locally and seamlessly displayed across topbar, cards, and heroes).
+- **Cross-Repo i18n & Multilingual Metadata Integration**:
+  - Multi-language game metadata support (`locales`) for localized titles and descriptions matching active user language.
+  - Unified 30-language Steam platform i18n support with reactive translations for all new actions.
+- **Settings Navigation & Layout Consolidation**:
+  - Consolidated Collections, Platforms & Launchers, and Library Organization into modular, dedicated section tabs within `/settings`.
+  - Streamlined top navigation focusing on core library workflows.
+
 ## [1.1.1] - 2026-10-15
 
 ### Fixed

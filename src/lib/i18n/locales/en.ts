@@ -91,7 +91,14 @@ export const en: TranslationDictionary = {
     collections: "Assigned Collections",
     favorite: "Favorite",
     unfavorite: "Unfavorite",
-    sourcePlatform: "Source Storefront"
+    sourcePlatform: "Source Storefront",
+    refreshMetadata: "Refresh Metadata",
+    refreshingMetadata: "Refreshing metadata…",
+    metadataRefreshed: "Metadata updated successfully.",
+    customDisplayName: "Display Name Override",
+    customDisplayNameHelp: "Personalize how this game appears in your library.",
+    searchArtwork: "Search Artwork",
+    keywordSearchPlaceholder: "Search keywords (e.g. Doom, Chrono Trigger, Zelda)…"
   },
   organize: {
     title: "Organize Collections",
@@ -166,7 +173,17 @@ export const en: TranslationDictionary = {
     missing: "Missing",
     uploadCustom: "Upload Image",
     removeArtwork: "Remove Artwork",
-    apiKeyNotice: "Requires SteamGridDB API key configured in Settings for automated retrieval."
+    apiKeyNotice: "Requires SteamGridDB API key configured in Settings for automated retrieval.",
+    allProviders: "All Providers",
+    communityCatalogue: "Community Catalogue",
+    pcgamingwiki: "PCGamingWiki",
+    wikipedia: "Wikipedia",
+    vndb: "VNDB",
+    emulation: "Emulation / Retro",
+    steamGridDb: "SteamGridDB",
+    steamStore: "Steam Store",
+    igdb: "IGDB",
+    gog: "GOG"
   },
   settings: {
     title: "Settings",
@@ -187,6 +204,13 @@ export const en: TranslationDictionary = {
     nonSteamSources: "Non-Steam Sources",
     sourcesHelp: "Choose which storefronts are scanned. Use Find Folders to auto-discover library paths.",
     saveSettings: "Save Settings",
-    savedSuccess: "Settings saved successfully."
+    savedSuccess: "Settings saved successfully.",
+    refreshMetadata: "Fetch & Refresh Library Metadata",
+    refreshMetadataHelp: "Enrich missing metadata, tags, and artwork across all games using multiple providers.",
+    refreshMetadataRunning: "Refreshing metadata across library…",
+    refreshMetadataSuccess: "Successfully refreshed library metadata.",
+    alsoFetchArtwork: "Also fetch and apply missing artwork slots",
+    catalogSync: "Sync Online Catalog",
+    catalogSyncHelp: "Sync offline disambiguation index from the community catalogue."
   }
 };

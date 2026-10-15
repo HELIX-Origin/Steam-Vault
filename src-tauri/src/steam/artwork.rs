@@ -33,7 +33,7 @@ const MAX_ARTWORK_BYTES: usize = 64 * 1024 * 1024;
 const MAX_PREVIEW_BYTES: u64 = 12 * 1024 * 1024;
 
 /// Image extensions Steam reads from `config/grid`, in preference order.
-const KNOWN_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
+const KNOWN_EXTENSIONS: [&str; 4] = ["png", "jpg", "jpeg", "ico"];
 
 /// One of the five custom-artwork slots Steam supports per game.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -371,18 +371,28 @@ pub fn read_data_url(dir: &Path, app_id: u32, slot: ArtworkSlot) -> AppResult<Op
         .as_deref()
     {
         Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("ico") => "image/x-icon",
+        Some("webp") => "image/webp",
         _ => "image/png",
     };
     Ok(Some(format!("data:{mime};base64,{}", base64(&bytes))))
 }
 
-/// Identify a PNG or JPEG from its magic bytes.
+/// Identify a PNG, JPEG, WebP, or ICO from its magic bytes.
 fn sniff_extension(bytes: &[u8]) -> Option<&'static str> {
     if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]) {
         return Some("png");
     }
     if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
         return Some("jpg");
+    }
+    // WebP: RIFFxxxxWEBP (Steam's Chromium CEF displays this as png)
+    if bytes.starts_with(b"RIFF") && bytes.len() >= 12 && &bytes[8..12] == b"WEBP" {
+        return Some("png");
+    }
+    // Windows Icon (.ico)
+    if bytes.starts_with(&[0x00, 0x00, 0x01, 0x00]) {
+        return Some("ico");
     }
     None
 }

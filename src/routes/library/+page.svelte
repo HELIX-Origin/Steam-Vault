@@ -2,9 +2,9 @@
   import "$styles/library.scss";
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
-  import { t } from "$lib/i18n";
-  import { collections, error, games, loading } from "$lib/stores";
-  import type { AppMeta, Game, MediaItem, Platform } from "$lib/types";
+  import { t, locale, activeLanguage } from "$lib/i18n";
+  import { collections, error, games, loading, customNames, settings } from "$lib/stores";
+  import type { AppMeta, ArtworkSlotId, Game, MediaItem, Platform } from "$lib/types";
 
   // Display & layout state
   let viewMode: "grid" | "list" = "grid";
@@ -38,6 +38,56 @@
   let actionFeedback: string | null = null;
   let customArtworks: Record<number, string> = {};
   let failedAppIds = new Set<number>();
+
+  // Manage Modal State (Display Name + Artwork Manager)
+  let modalTab: "general" | "artwork" = "general";
+  let modalCustomName = "";
+  let modalFeedback: string | null = null;
+  let selectedSlotId: ArtworkSlotId = "gridPortrait";
+  let modalSearchTerm = "";
+  let modalProviderFilter: "all" | "catalogue" | "gog" | "wikipedia" | "pcgamingwiki" | "vndb" | "emulation" | "steamgriddb" | "steam" | "igdb" | "metadata" = "all";
+  let modalTypeFilter: "all" | "static" | "animated" = "all";
+  let modalSafeSearch = true;
+  let failedImageIds = new Set<string | number>();
+
+  function handleImageError(id: string | number) {
+    failedImageIds = new Set(failedImageIds).add(id);
+  }
+  let modalDirectUrl = "";
+  let modalDirectFile = "";
+  let modalArtworkLoading = false;
+  let modalArtworkSlots: Record<ArtworkSlotId, { present: boolean; bytes: number; path: string | null }> = {
+    gridPortrait: { present: false, bytes: 0, path: null },
+    gridLandscape: { present: false, bytes: 0, path: null },
+    hero: { present: false, bytes: 0, path: null },
+    logo: { present: false, bytes: 0, path: null },
+    icon: { present: false, bytes: 0, path: null }
+  };
+  let modalArtworkPreviews: Record<ArtworkSlotId, string | null> = {
+    gridPortrait: null,
+    gridLandscape: null,
+    hero: null,
+    logo: null,
+    icon: null
+  };
+  let modalArtworkAssets: Array<{
+    id: string | number;
+    url: string;
+    thumb?: string | null;
+    width?: number | null;
+    height?: number | null;
+    provider: string;
+    nsfw?: boolean;
+    animated?: boolean;
+  }> = [];
+
+  const artworkSlots: { id: ArtworkSlotId; label: string; desc: string; dims: string; kind: "grids_portrait" | "grids_landscape" | "heroes" | "logos" | "icons" }[] = [
+    { id: "gridPortrait", label: "Portrait Grid", desc: "Library capsule cover", dims: "600×900", kind: "grids_portrait" },
+    { id: "gridLandscape", label: "Landscape Grid", desc: "Horizontal banner", dims: "920×430", kind: "grids_landscape" },
+    { id: "hero", label: "Hero Banner", desc: "Background hero banner", dims: "1920×620", kind: "heroes" },
+    { id: "logo", label: "Logo", desc: "Title logo overlay", dims: "Transparent PNG", kind: "logos" },
+    { id: "icon", label: "Icon", desc: "Square game icon", dims: "256×256", kind: "icons" }
+  ];
 
   const platformLabels: Record<string, string> = {
     steam: "Steam",
@@ -93,10 +143,41 @@
     }
   });
 
+  function getDisplayName(game: Game | null | undefined): string {
+    if (!game) return "";
+    return $customNames[game.appId] || game.name || `App ${game.appId}`;
+  }
+
+  function getLocalizedTitle(game: Game | null | undefined, meta?: AppMeta | null): string {
+    if (!game) return "";
+    if ($customNames[game.appId]) return $customNames[game.appId];
+    if (meta?.locales) {
+      const lang = $locale.toLowerCase();
+      const steamLang = $activeLanguage.steamCode.toLowerCase();
+      const match = meta.locales[lang] || meta.locales[steamLang] || meta.locales[lang.split("-")[0]];
+      if (match?.title) return match.title;
+    }
+    return game.name || `App ${game.appId}`;
+  }
+
+  function getLocalizedDescription(meta?: AppMeta | null): string {
+    if (!meta) return "";
+    if (meta.locales) {
+      const lang = $locale.toLowerCase();
+      const steamLang = $activeLanguage.steamCode.toLowerCase();
+      const match = meta.locales[lang] || meta.locales[steamLang] || meta.locales[lang.split("-")[0]];
+      if (match?.shortDescription) return match.shortDescription;
+    }
+    return meta.shortDescription || "";
+  }
+
   // Filter and sort computation
   $: filtered = $games
     .filter((game) => {
-      if (search && !game.name.toLowerCase().includes(search.toLowerCase())) return false;
+      const name = getDisplayName(game).toLowerCase();
+      const rawName = (game.name || "").toLowerCase();
+      const q = search.trim().toLowerCase();
+      if (q && !name.includes(q) && !rawName.includes(q)) return false;
       if (installFilter === "installed" && !game.installed) return false;
       if (installFilter === "uninstalled" && game.installed) return false;
       if (platformFilter !== "all" && game.platform !== platformFilter) return false;
@@ -108,9 +189,9 @@
     .sort((a, b) => {
       switch (sortBy) {
         case "name-asc":
-          return a.name.localeCompare(b.name);
+          return getDisplayName(a).localeCompare(getDisplayName(b));
         case "name-desc":
-          return b.name.localeCompare(a.name);
+          return getDisplayName(b).localeCompare(getDisplayName(a));
         case "playtime-desc":
           return (b.playtimeMinutes ?? 0) - (a.playtimeMinutes ?? 0);
         case "playtime-asc":
@@ -440,8 +521,37 @@
           mediaItems = buildMediaGallery(game, gameMeta);
         }
       }
+      if (!gameMeta) {
+        const fallbackMeta = await api.refreshGameMetadata(game.appId, false).catch(() => null);
+        if (fallbackMeta) {
+          gameMeta = fallbackMeta;
+          mediaItems = buildMediaGallery(game, gameMeta);
+        }
+      }
     } catch (e) {
       console.warn("Failed to fetch detailed metadata for game", e);
+    } finally {
+      loadingMeta = false;
+    }
+  }
+
+  async function refreshCurrentGameMetadata(game: Game) {
+    loadingMeta = true;
+    actionFeedback = null;
+    try {
+      const refreshed = await api.refreshGameMetadata(game.appId, true);
+      if (refreshed) {
+        gameMeta = refreshed;
+        mediaItems = buildMediaGallery(game, gameMeta);
+        actionFeedback = $t("library.metadataRefreshed");
+        setTimeout(() => {
+          if (actionFeedback === $t("library.metadataRefreshed")) actionFeedback = null;
+        }, 3000);
+      } else {
+        actionFeedback = "No metadata found across providers.";
+      }
+    } catch (e) {
+      actionFeedback = errorMessage(e);
     } finally {
       loadingMeta = false;
     }
@@ -457,15 +567,460 @@
     activeLightboxMedia = null;
   }
 
+  function formatBytes(bytes: number | null | undefined): string {
+    if (!bytes) return "0 B";
+    const units = ["B", "KB", "MB"];
+    let value = bytes;
+    let unit = 0;
+    while (value >= 1024 && unit < units.length - 1) {
+      value /= 1024;
+      unit += 1;
+    }
+    return `${value.toFixed(value >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+  }
+
+  function slotToKind(slot: ArtworkSlotId): "grids_portrait" | "grids_landscape" | "heroes" | "logos" | "icons" {
+    if (slot === "gridLandscape") return "grids_landscape";
+    if (slot === "hero") return "heroes";
+    if (slot === "logo") return "logos";
+    if (slot === "icon") return "icons";
+    return "grids_portrait";
+  }
+
+  function slotLabel(slot: ArtworkSlotId): string {
+    return artworkSlots.find((s) => s.id === slot)?.label ?? slot;
+  }
+
+  function saveCustomName(game: Game) {
+    const trimmed = modalCustomName.trim();
+    if (!trimmed) return;
+    customNames.update((names) => {
+      names[game.appId] = trimmed;
+      return names;
+    });
+    modalFeedback = `Display name set to "${trimmed}"`;
+    setTimeout(() => (modalFeedback = null), 3000);
+  }
+
+  function resetCustomName(game: Game) {
+    customNames.update((names) => {
+      delete names[game.appId];
+      return names;
+    });
+    modalCustomName = game.name;
+    modalFeedback = "Reset display name to default.";
+    setTimeout(() => (modalFeedback = null), 3000);
+  }
+
+  async function loadModalArtwork(game: Game) {
+    modalArtworkLoading = true;
+    modalDirectUrl = "";
+    modalDirectFile = "";
+    try {
+      const artReports = await api.getArtwork(undefined, [game.appId]).catch(() => []);
+      const art = artReports.find((r) => r.appId === game.appId);
+      if (art) {
+        for (const s of art.slots) {
+          modalArtworkSlots[s.slot] = {
+            present: s.present,
+            bytes: s.bytes,
+            path: s.path
+          };
+        }
+      }
+      for (const slotKey of ["gridPortrait", "gridLandscape", "hero", "logo", "icon"] as ArtworkSlotId[]) {
+        if (modalArtworkSlots[slotKey]?.present) {
+          modalArtworkPreviews[slotKey] = await api.readArtwork(game.appId, slotKey).catch(() => null);
+        } else {
+          modalArtworkPreviews[slotKey] = null;
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to load artwork slots", e);
+    } finally {
+      modalArtworkLoading = false;
+    }
+    await searchArtworkAssets(game);
+  }
+
+  async function searchArtworkAssets(game: Game) {
+    modalArtworkLoading = true;
+    modalArtworkAssets = [];
+    failedImageIds = new Set();
+    const term = modalSearchTerm.trim() || game.name;
+    const currentSlot = selectedSlotId;
+    const sgdbKind = slotToKind(currentSlot);
+
+    const gathered: Array<{
+      id: string | number;
+      url: string;
+      thumb?: string | null;
+      width?: number | null;
+      height?: number | null;
+      provider: string;
+      nsfw?: boolean;
+      animated?: boolean;
+    }> = [];
+
+    const seenUrls = new Set<string>();
+
+    function addCandidate(
+      url: string | null | undefined,
+      provider: string,
+      thumb?: string | null,
+      width?: number | null,
+      height?: number | null,
+      animated?: boolean
+    ) {
+      if (!url) return;
+      let clean = url.trim();
+      if (clean.startsWith("//")) clean = "https:" + clean;
+      if (!clean.startsWith("http://") && !clean.startsWith("https://") && !clean.startsWith("data:")) return;
+      if (seenUrls.has(clean)) return;
+      seenUrls.add(clean);
+      gathered.push({
+        id: `${provider}-${clean}`,
+        url: clean,
+        thumb: thumb ? (thumb.startsWith("//") ? "https:" + thumb : thumb) : clean,
+        width,
+        height,
+        provider,
+        animated
+      });
+    }
+
+    // 1. Community Game Catalogue (Curated & Cross-Platform)
+    if (modalProviderFilter === "all" || modalProviderFilter === "catalogue") {
+      try {
+        const localResults = await api.searchCatalog(term).catch(() => []);
+        for (const cat of localResults) {
+          if (currentSlot === "gridPortrait") addCandidate(cat.capsuleImage || cat.headerImage, `Catalogue: ${cat.name || 'Local'}`);
+          else if (currentSlot === "gridLandscape") addCandidate(cat.headerImage || cat.capsuleImage, `Catalogue: ${cat.name || 'Local'}`);
+          else if (currentSlot === "hero") addCandidate(cat.heroImage || cat.headerImage, `Catalogue: ${cat.name || 'Local'}`);
+          else if (currentSlot === "logo") addCandidate(cat.logoImage, `Catalogue: ${cat.name || 'Local'}`);
+          else if (currentSlot === "icon") addCandidate(cat.iconImage, `Catalogue: ${cat.name || 'Local'}`);
+        }
+
+        const catEntry = await api.fetchOnlineGameEntry(term).catch(() => null);
+        if (catEntry) {
+          if (currentSlot === "gridPortrait") addCandidate(catEntry.capsuleImage || catEntry.headerImage, `Catalogue: ${catEntry.name || 'Online'}`);
+          else if (currentSlot === "gridLandscape") addCandidate(catEntry.headerImage || catEntry.capsuleImage, `Catalogue: ${catEntry.name || 'Online'}`);
+          else if (currentSlot === "hero") addCandidate(catEntry.heroImage || catEntry.headerImage, `Catalogue: ${catEntry.name || 'Online'}`);
+          else if (currentSlot === "logo") addCandidate(catEntry.logoImage, `Catalogue: ${catEntry.name || 'Online'}`);
+          else if (currentSlot === "icon") addCandidate(catEntry.iconImage, `Catalogue: ${catEntry.name || 'Online'}`);
+        }
+      } catch (e) {
+        console.warn("Catalogue search error", e);
+      }
+    }
+
+    // 2. GOG Store & Galaxy Catalogue (Keyless, official vertical covers & heroes)
+    if (modalProviderFilter === "all" || modalProviderFilter === "gog") {
+      try {
+        const gogRes = await fetch(`https://catalog.gog.com/v1/catalog?query=${encodeURIComponent(term)}&limit=4`);
+        if (gogRes.ok) {
+          const gogData = await gogRes.json();
+          for (const prod of (gogData.products || [])) {
+            if (currentSlot === "gridPortrait") addCandidate(prod.coverVertical, `GOG: ${prod.title}`);
+            else if (currentSlot === "gridLandscape") addCandidate(prod.coverHorizontal || prod.coverVertical, `GOG: ${prod.title}`);
+            else if (currentSlot === "hero") addCandidate(prod.galaxyBackgroundImage || prod.coverHorizontal, `GOG: ${prod.title}`);
+            else if (currentSlot === "logo") addCandidate(prod.logo, `GOG: ${prod.title}`);
+          }
+        }
+      } catch (e) {
+        console.warn("GOG search error", e);
+      }
+    }
+
+    // 3. Wikipedia & Retro Emulation Box Art (Keyless covers for console/retro titles)
+    if (modalProviderFilter === "all" || modalProviderFilter === "wikipedia") {
+      try {
+        const wikiSearchRes = await fetch(
+          `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(term + " video game")}&format=json&origin=*`
+        );
+        if (wikiSearchRes.ok) {
+          const wikiData = await wikiSearchRes.json();
+          const pageTitle = wikiData.query?.search?.[0]?.title;
+          if (pageTitle) {
+            const imgRes = await fetch(
+              `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(pageTitle)}&prop=pageimages&pithumbsize=1000&format=json&origin=*`
+            );
+            if (imgRes.ok) {
+              const imgData = await imgRes.json();
+              const pages = imgData.query?.pages || {};
+              const first = Object.values(pages)[0] as any;
+              if (first?.thumbnail?.source) {
+                if (currentSlot === "gridPortrait" || currentSlot === "gridLandscape" || currentSlot === "hero") {
+                  addCandidate(first.thumbnail.source, `Wikipedia: ${pageTitle}`, first.thumbnail.source, first.thumbnail.width, first.thumbnail.height);
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Wikipedia search error", e);
+      }
+    }
+
+    // 4. VNDB (Visual Novel Database - Keyless, visual novels, Ren'Py, anime)
+    if (modalProviderFilter === "all" || modalProviderFilter === "vndb") {
+      try {
+        const vndbMeta = await api.vndbLookup(term).catch(() => null);
+        if (vndbMeta) {
+          if (vndbMeta.headerImage) {
+            if (currentSlot === "gridPortrait" || currentSlot === "gridLandscape") {
+              addCandidate(vndbMeta.headerImage, "VNDB Cover");
+            }
+          }
+          if (vndbMeta.screenshots) {
+            for (const ss of vndbMeta.screenshots) {
+              if (currentSlot === "hero" || currentSlot === "gridLandscape") {
+                addCandidate(ss, "VNDB Screenshot");
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("VNDB search error", e);
+      }
+    }
+
+    // 5. SteamGridDB (Grids, Heroes, Logos, Icons with NSFW toggle support)
+    if (modalProviderFilter === "all" || modalProviderFilter === "steamgriddb") {
+      try {
+        const sgdbAssets = await api.steamGridDbForGame(
+          game.appId,
+          term,
+          sgdbKind,
+          !modalSafeSearch
+        ).catch(() => []);
+
+        for (const asset of sgdbAssets) {
+          const isAnim = Boolean(asset.mime?.includes("gif") || asset.mime?.includes("webp") || asset.url.endsWith(".gif"));
+          if (modalTypeFilter === "static" && isAnim) continue;
+          if (modalTypeFilter === "animated" && !isAnim) continue;
+
+          addCandidate(asset.url, "SteamGridDB", asset.thumb, asset.width, asset.height, isAnim);
+        }
+      } catch (e) {
+        console.warn("SteamGridDB search error", e);
+      }
+    }
+
+    // 6. Steam Store & Search (Official high-res assets for Steam-indexed titles)
+    if (modalProviderFilter === "all" || modalProviderFilter === "steam") {
+      try {
+        const steamMatches = await api.steamStoreSearch(term).catch(() => []);
+        const appIdsToQuery = new Set<number>();
+        if (game.appId && game.appId < 0x80000000 && game.kind === "steam") {
+          appIdsToQuery.add(game.appId);
+        }
+        for (const sm of steamMatches.slice(0, 3)) {
+          appIdsToQuery.add(sm.id);
+        }
+
+        for (const appId of appIdsToQuery) {
+          if (currentSlot === "gridPortrait") {
+            addCandidate(`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/library_600x900.jpg`, "Steam Store", undefined, 600, 900);
+          } else if (currentSlot === "gridLandscape") {
+            addCandidate(`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/header.jpg`, "Steam Store", undefined, 460, 215);
+            addCandidate(`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/capsule_616x353.jpg`, "Steam Store", undefined, 616, 353);
+          } else if (currentSlot === "hero") {
+            addCandidate(`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/library_hero.jpg`, "Steam Store", undefined, 1920, 620);
+          } else if (currentSlot === "logo") {
+            addCandidate(`https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/logo.png`, "Steam Store");
+          }
+        }
+      } catch (e) {
+        console.warn("Steam Store search error", e);
+      }
+    }
+
+    // 7. IGDB (Twitch API for keyed setup)
+    if (modalProviderFilter === "all" || modalProviderFilter === "igdb") {
+      try {
+        const igdbGames = await api.igdbSearch(term).catch(() => []);
+        for (const ig of igdbGames.slice(0, 5)) {
+          const cover = ig.cover?.url ? (ig.cover.url.startsWith("//") ? "https:" + ig.cover.url : ig.cover.url).replace("t_thumb", "t_cover_big") : null;
+          if (cover && (currentSlot === "gridPortrait" || currentSlot === "gridLandscape")) {
+            addCandidate(cover, `IGDB: ${ig.name}`);
+          }
+        }
+      } catch (e) {
+        console.warn("IGDB search error", e);
+      }
+    }
+
+    // 8. PCGamingWiki (Cover art and promotional box art)
+    if (modalProviderFilter === "all" || modalProviderFilter === "pcgamingwiki") {
+      try {
+        const pcgwMeta = await api.pcgamingwikiLookup(term).catch(() => null);
+        if (pcgwMeta?.headerImage) {
+          if (currentSlot === "gridPortrait" || currentSlot === "gridLandscape") {
+            addCandidate(pcgwMeta.headerImage, "PCGamingWiki Cover");
+          }
+        }
+      } catch (e) {
+        console.warn("PCGamingWiki search error", e);
+      }
+    }
+
+    // 9. Emulation & Retro (Libretro Thumbnails CDN across console systems)
+    if (modalProviderFilter === "all" || modalProviderFilter === "emulation") {
+      try {
+        const retroSystems = [
+          "Nintendo - Super Nintendo Entertainment System",
+          "Nintendo - Nintendo Entertainment System",
+          "Nintendo - Nintendo 64",
+          "Nintendo - GameCube",
+          "Nintendo - Wii",
+          "Nintendo - Game Boy Advance",
+          "Nintendo - Game Boy",
+          "Nintendo - Game Boy Color",
+          "Nintendo - Nintendo DS",
+          "Sony - PlayStation",
+          "Sony - PlayStation 2",
+          "Sony - PlayStation Portable",
+          "Sega - Mega Drive - Genesis",
+          "Sega - Dreamcast"
+        ];
+        const cleanRetroName = term.replace(/[&*/:`\\<>?|]/g, "_").trim();
+        for (const sys of retroSystems) {
+          const encSys = encodeURIComponent(sys);
+          const encTitle = encodeURIComponent(cleanRetroName);
+          const base = `https://thumbnails.libretro.com/${encSys}`;
+          if (currentSlot === "gridPortrait" || currentSlot === "gridLandscape") {
+            addCandidate(`${base}/Named_Boxarts/${encTitle}.png`, `Libretro: ${sys}`);
+          } else if (currentSlot === "hero") {
+            addCandidate(`${base}/Named_Snaps/${encTitle}.png`, `Libretro: ${sys} Snap`);
+          } else if (currentSlot === "logo") {
+            addCandidate(`${base}/Named_Titles/${encTitle}.png`, `Libretro: ${sys} Title`);
+          }
+        }
+      } catch (e) {
+        console.warn("Emulation search error", e);
+      }
+    }
+
+    // 10. Metadata Screenshots & Local Artwork
+    if (modalProviderFilter === "all" || modalProviderFilter === "metadata") {
+      if (gameMeta?.screenshots && (currentSlot === "hero" || currentSlot === "gridLandscape")) {
+        for (const ss of gameMeta.screenshots) {
+          addCandidate(ss, "Game Screenshot");
+        }
+      }
+      if (currentSlot === "icon" && game.icon) {
+        addCandidate(game.icon, "Installed Icon", game.icon, 256, 256);
+      }
+    }
+
+    modalArtworkAssets = gathered;
+    modalArtworkLoading = false;
+  }
+
+  function selectArtworkSlot(game: Game, slot: ArtworkSlotId) {
+    selectedSlotId = slot;
+    modalDirectUrl = "";
+    modalDirectFile = "";
+    searchArtworkAssets(game);
+  }
+
+  async function applyArtwork(game: Game, slot: ArtworkSlotId, url: string) {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    modalFeedback = "Applying artwork…";
+    try {
+      const outcome = await api.applyArtworkFromUrl(game.appId, slot, trimmed);
+      modalFeedback = `${slotLabel(slot)} applied (${formatBytes(outcome.bytes)})!`;
+      setTimeout(() => (modalFeedback = null), 4000);
+
+      const dataUrl = await api.readArtwork(game.appId, slot).catch(() => null);
+      modalArtworkPreviews[slot] = dataUrl;
+      modalArtworkSlots[slot] = {
+        present: true,
+        bytes: outcome.bytes,
+        path: outcome.path
+      };
+
+      if (slot === "gridPortrait" || slot === "gridLandscape") {
+        if (dataUrl) {
+          customArtworks[game.appId] = dataUrl;
+          customArtworks = { ...customArtworks };
+        }
+      }
+    } catch (e) {
+      modalFeedback = `Error applying artwork: ${errorMessage(e)}`;
+    }
+  }
+
+  async function applyArtworkFile(game: Game, slot: ArtworkSlotId, path: string) {
+    const trimmed = path.trim().replace(/^["']|["']$/g, "");
+    if (!trimmed) return;
+    modalFeedback = "Applying artwork from file…";
+    try {
+      const outcome = await api.applyArtworkFromFile(game.appId, slot, trimmed);
+      modalFeedback = `${slotLabel(slot)} applied from file (${formatBytes(outcome.bytes)})!`;
+      setTimeout(() => (modalFeedback = null), 4000);
+
+      const dataUrl = await api.readArtwork(game.appId, slot).catch(() => null);
+      modalArtworkPreviews[slot] = dataUrl;
+      modalArtworkSlots[slot] = {
+        present: true,
+        bytes: outcome.bytes,
+        path: outcome.path
+      };
+
+      if (slot === "gridPortrait" || slot === "gridLandscape") {
+        if (dataUrl) {
+          customArtworks[game.appId] = dataUrl;
+          customArtworks = { ...customArtworks };
+        }
+      }
+      modalDirectFile = "";
+    } catch (e) {
+      modalFeedback = `Error applying file: ${errorMessage(e)}`;
+    }
+  }
+
+  async function removeArtwork(game: Game, slot: ArtworkSlotId) {
+    modalFeedback = "Removing artwork…";
+    try {
+      await api.removeArtwork(game.appId, slot);
+      modalFeedback = `${slotLabel(slot)} removed.`;
+      setTimeout(() => (modalFeedback = null), 3000);
+
+      modalArtworkPreviews[slot] = null;
+      modalArtworkSlots[slot] = {
+        present: false,
+        bytes: 0,
+        path: null
+      };
+
+      if (slot === "gridPortrait" || slot === "gridLandscape") {
+        delete customArtworks[game.appId];
+        customArtworks = { ...customArtworks };
+      }
+    } catch (e) {
+      modalFeedback = `Error removing artwork: ${errorMessage(e)}`;
+    }
+  }
+
   function openManageModal(game: Game, e?: Event) {
     if (e) e.stopPropagation();
     managingGame = game;
+    modalCustomName = $customNames[game.appId] ?? game.name;
+    modalSearchTerm = $customNames[game.appId] ?? game.name;
+    selectedSlotId = "gridPortrait";
+    modalTab = "general";
+    modalFeedback = null;
     showManageModal = true;
+    loadModalArtwork(game);
   }
 
   function closeManageModal() {
     showManageModal = false;
     managingGame = null;
+    modalFeedback = null;
   }
 
   // Game action triggers
@@ -537,7 +1092,7 @@
           ← {$t("nav.library")}
         </button>
         <span class="muted">/</span>
-        <h2 class="game-top-title">{selectedGame.name || `App ${selectedGame.appId}`}</h2>
+        <h2 class="game-top-title">{getLocalizedTitle(selectedGame, gameMeta)}</h2>
         <span class="pill pill-accent2">{platformLabels[selectedGame.platform] || selectedGame.platform}</span>
         {#if selectedGame.installed}
           <span class="pill pill-ok">Installed</span>
@@ -562,6 +1117,16 @@
             Install
           </button>
         {/if}
+
+        <button
+          class="btn btn-ghost"
+          onclick={() => refreshCurrentGameMetadata(selectedGame!)}
+          title={$t("library.refreshMetadata")}
+          disabled={loadingMeta}
+        >
+          <span class:spin={loadingMeta}>🔄</span>
+          <span>{loadingMeta ? $t("library.refreshingMetadata") : $t("library.refreshMetadata")}</span>
+        </button>
 
         <button class="btn btn-ghost" onclick={() => openManageModal(selectedGame!)} title="Manage Game Options">
           ⚙ Manage
@@ -600,9 +1165,9 @@
           </div>
         {/if}
         <div class="hero-meta">
-          <h1 class="hero-title">{selectedGame.name || `App ${selectedGame.appId}`}</h1>
-          {#if gameMeta?.shortDescription}
-            <p class="hero-desc">{gameMeta.shortDescription}</p>
+          <h1 class="hero-title">{getLocalizedTitle(selectedGame, gameMeta)}</h1>
+          {#if getLocalizedDescription(gameMeta)}
+            <p class="hero-desc">{getLocalizedDescription(gameMeta)}</p>
           {/if}
           <div class="row hero-tags">
             <span class="pill pill-accent">{platformLabels[selectedGame.platform]}</span>
@@ -953,7 +1518,7 @@
                   <div class="fallback-glow"></div>
                   <div class="fallback-content">
                     <span class="fallback-icon">{getPlatformIcon(game.platform)}</span>
-                    <span class="fallback-title">{game.name || `App ${game.appId}`}</span>
+                    <span class="fallback-title">{getDisplayName(game)}</span>
                     <span class="fallback-platform">{platformLabels[game.platform] || game.platform}</span>
                   </div>
                 </div>
@@ -981,7 +1546,7 @@
 
               <!-- Card Bottom Info -->
               <div class="card-info">
-                <div class="card-title" title={game.name}>{game.name || `App ${game.appId}`}</div>
+                <div class="card-title" title={getDisplayName(game)}>{getDisplayName(game)}</div>
                 <div class="card-meta">
                   <div class="card-meta-left">
                     <span class="muted-sm">{formatPlaytime(game.playtimeMinutes)}</span>
@@ -1066,7 +1631,7 @@
               {/if}
 
               <span class="name">
-                {game.name || `App ${game.appId}`}
+                {getDisplayName(game)}
                 {#if game.kind === "shortcut"}
                   <!-- svelte-ignore a11y_click_events_have_key_events -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1279,107 +1844,331 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="modal glass-strong card" onclick={(e) => e.stopPropagation()}>
       <div class="row-between modal-head">
-        <h2 class="section-title">Manage: {targetGame.name}</h2>
+        <div class="row" style="gap:0.75rem;align-items:center">
+          <h2 class="section-title" style="margin:0">Manage: {getDisplayName(targetGame)}</h2>
+          <button
+            class="btn mini"
+            style="display:inline-flex;align-items:center;gap:0.35rem;"
+            title={$t("library.refreshMetadata")}
+            onclick={() => refreshCurrentGameMetadata(targetGame)}
+            disabled={loadingMeta}
+          >
+            <span class:spin={loadingMeta}>🔄</span>
+            <span>{loadingMeta ? $t("library.refreshingMetadata") : $t("library.refreshMetadata")}</span>
+          </button>
+          {#if modalFeedback}
+            <span class="pill pill-accent">{modalFeedback}</span>
+          {/if}
+          {#if actionFeedback}
+            <span class="pill pill-ok">{actionFeedback}</span>
+          {/if}
+        </div>
         <button class="btn btn-ghost" onclick={closeManageModal}>✕</button>
       </div>
 
+      <!-- Modal Tabs: General Settings vs Artwork Manager -->
+      <div class="modal-nav-tabs">
+        <button
+          class="modal-nav-btn"
+          class:active={modalTab === "general"}
+          onclick={() => (modalTab = "general")}
+        >
+          ⚙️ General Settings
+        </button>
+        <button
+          class="modal-nav-btn"
+          class:active={modalTab === "artwork"}
+          onclick={() => {
+            modalTab = "artwork";
+            loadModalArtwork(targetGame);
+          }}
+        >
+          🎨 Artwork Manager
+        </button>
+      </div>
+
       <div class="modal-body">
-        <!-- Folder Management -->
-        <div class="manage-group">
-          <span class="group-label">Local Files & Installation</span>
-          <div class="row" style="gap:0.5rem">
-            <button
-              class="btn"
-              onclick={() => handleOpenFolder(targetGame)}
-              disabled={!targetGame.installDir && !targetGame.startDir}
-            >
-              📂 Open Game Folder
-            </button>
-            {#if targetGame.installed}
-              <button class="btn btn-danger" onclick={() => handleUninstall(targetGame)}>
-                🗑️ Uninstall Game
-              </button>
-            {:else}
-              <button class="btn btn-primary" onclick={() => handleInstall(targetGame)}>
-                ⬇️ Install Game
-              </button>
-            {/if}
+        {#if modalTab === "general"}
+          <!-- Display Name Customization -->
+          <div class="manage-group">
+            <span class="group-label">Custom Display Name</span>
+            <div class="name-input-row">
+              <input
+                type="text"
+                bind:value={modalCustomName}
+                placeholder="Enter custom game title…"
+                onkeydown={(e) => e.key === "Enter" && saveCustomName(targetGame)}
+              />
+              <button class="btn btn-primary" onclick={() => saveCustomName(targetGame)}>Save Name</button>
+              {#if $customNames[targetGame.appId]}
+                <button class="btn btn-ghost" onclick={() => resetCustomName(targetGame)} title="Reset to original name">
+                  Reset
+                </button>
+              {/if}
+            </div>
+            <p class="muted-sm">Custom titles update your library grid, search, and launcher without modifying local game files.</p>
           </div>
-        </div>
 
-        <!-- Platform assignment -->
-        <div class="manage-group">
-          <span class="group-label">Storefront Platform Tag</span>
-          <select
-            class="platform-select-modal"
-            value={targetGame.platform}
-            onchange={(e) => setPlatform(targetGame, e.currentTarget.value)}
-          >
-            {#each platformOptions as opt}
-              <option value={opt.id}>{opt.label}</option>
-            {/each}
-          </select>
-          <p class="muted-sm" style="margin-top:0.35rem">
-            Assigns this game to a specific storefront catalogue for grouping and metadata.
-          </p>
-        </div>
+          <!-- Folder Management -->
+          <div class="manage-group">
+            <span class="group-label">Local Files & Installation</span>
+            <div class="row" style="gap:0.5rem">
+              <button
+                class="btn"
+                onclick={() => handleOpenFolder(targetGame)}
+                disabled={!targetGame.installDir && !targetGame.startDir}
+              >
+                📂 Open Game Folder
+              </button>
+              {#if targetGame.installed}
+                <button class="btn btn-danger" onclick={() => handleUninstall(targetGame)}>
+                  🗑️ Uninstall Game
+                </button>
+              {:else}
+                <button class="btn btn-primary" onclick={() => handleInstall(targetGame)}>
+                  ⬇️ Install Game
+                </button>
+              {/if}
+            </div>
+          </div>
 
-        <!-- Collections Assignment -->
-        <div class="manage-group">
-          <span class="group-label">Category / Collection Assignment</span>
-          <div class="row" style="gap:0.5rem">
-            <select bind:value={targetCollection} style="flex:1">
-              {#each $collections as col (col.id)}
-                <option value={col.name}>{col.name}</option>
+          <!-- Platform assignment -->
+          <div class="manage-group">
+            <span class="group-label">Storefront Platform Tag</span>
+            <select
+              class="platform-select-modal"
+              value={targetGame.platform}
+              onchange={(e) => setPlatform(targetGame, e.currentTarget.value)}
+            >
+              {#each platformOptions as opt}
+                <option value={opt.id}>{opt.label}</option>
               {/each}
             </select>
-            <button
-              class="btn btn-primary"
-              onclick={() => {
-                selected = new Set([targetGame.appId]);
-                assign("add");
-              }}
-            >
-              Add
-            </button>
-            <button
-              class="btn btn-danger"
-              onclick={() => {
-                selected = new Set([targetGame.appId]);
-                assign("remove");
-              }}
-            >
-              Remove
-            </button>
+            <p class="muted-sm">
+              Assigns this game to a specific storefront catalogue for grouping and metadata.
+            </p>
           </div>
-        </div>
 
-        <!-- Artwork management link -->
-        <div class="manage-group">
-          <span class="group-label">Artwork Customization</span>
-          <div class="row" style="gap:0.5rem">
-            <a class="btn" href="/artwork">
-              🎨 Open in Artwork Manager
-            </a>
-          </div>
-        </div>
-
-        <!-- Launch specifics -->
-        <div class="manage-group">
-          <span class="group-label">Launch Protocol & Parameters</span>
-          <div class="info-table">
-            <div class="info-row full-width">
-              <span class="muted">Launch URI:</span>
-              <span class="code-val">{targetGame.launchUri || `steam://run/${targetGame.appId}`}</span>
+          <!-- Collections Assignment -->
+          <div class="manage-group">
+            <span class="group-label">Category / Collection Assignment</span>
+            <div class="row" style="gap:0.5rem">
+              <select bind:value={targetCollection} style="flex:1">
+                {#each $collections as col (col.id)}
+                  <option value={col.name}>{col.name}</option>
+                {/each}
+              </select>
+              <button
+                class="btn btn-primary"
+                onclick={() => {
+                  selected = new Set([targetGame.appId]);
+                  assign("add");
+                }}
+              >
+                Add
+              </button>
+              <button
+                class="btn btn-danger"
+                onclick={() => {
+                  selected = new Set([targetGame.appId]);
+                  assign("remove");
+                }}
+              >
+                Remove
+              </button>
             </div>
-            {#if targetGame.installUri}
-              <div class="info-row full-width">
-                <span class="muted">Install URI:</span>
-                <span class="code-val">{targetGame.installUri}</span>
-              </div>
-            {/if}
           </div>
-        </div>
+
+          <!-- Launch specifics -->
+          <div class="manage-group">
+            <span class="group-label">Launch Protocol & Parameters</span>
+            <div class="info-table">
+              <div class="info-row full-width">
+                <span class="muted">Launch URI:</span>
+                <span class="code-val">{targetGame.launchUri || `steam://run/${targetGame.appId}`}</span>
+              </div>
+              {#if targetGame.installUri}
+                <div class="info-row full-width">
+                  <span class="muted">Install URI:</span>
+                  <span class="code-val">{targetGame.installUri}</span>
+                </div>
+              {/if}
+            </div>
+          </div>
+        {:else if modalTab === "artwork"}
+          <!-- Complete Tabbed Artwork Manager (Steam Parity with Multi-Provider Support) -->
+          <div class="art-manager-wrap">
+            <!-- Steam Artwork Slot Tabs -->
+            <div class="art-type-tabs">
+              {#each artworkSlots as s (s.id)}
+                <button
+                  type="button"
+                  class="art-type-btn"
+                  class:active={selectedSlotId === s.id}
+                  onclick={() => selectArtworkSlot(targetGame, s.id)}
+                >
+                  <span>{s.label}</span>
+                  <span class="tab-spec">{s.dims}</span>
+                </button>
+              {/each}
+            </div>
+
+            <!-- Current Active Slot Banner -->
+            <div class="art-current-panel">
+              <div class="current-thumb-box">
+                {#if modalArtworkPreviews[selectedSlotId]}
+                  <img src={modalArtworkPreviews[selectedSlotId]} alt={slotLabel(selectedSlotId)} />
+                {:else}
+                  <span class="no-thumb">🖼️</span>
+                {/if}
+              </div>
+              <div class="current-meta">
+                <div class="row-between">
+                  <span class="current-title">{slotLabel(selectedSlotId)}</span>
+                  {#if modalArtworkSlots[selectedSlotId]?.present}
+                    <span class="pill pill-ok">Custom Applied ({formatBytes(modalArtworkSlots[selectedSlotId].bytes)})</span>
+                  {:else}
+                    <span class="pill pill-dim">Using Default Asset</span>
+                  {/if}
+                </div>
+                <div class="current-actions-row">
+                  <input
+                    type="text"
+                    bind:value={modalDirectUrl}
+                    placeholder="Apply direct image URL…"
+                    style="flex:1;min-width:140px;padding:0.35rem 0.5rem;font-size:0.8rem;background:var(--bg-1);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm)"
+                  />
+                  <button
+                    class="btn btn-primary"
+                    disabled={!modalDirectUrl.trim() || modalArtworkLoading}
+                    onclick={() => applyArtwork(targetGame, selectedSlotId, modalDirectUrl)}
+                  >
+                    Apply URL
+                  </button>
+                  <input
+                    type="text"
+                    bind:value={modalDirectFile}
+                    placeholder="Local file path…"
+                    style="flex:1;min-width:140px;padding:0.35rem 0.5rem;font-size:0.8rem;background:var(--bg-1);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm)"
+                  />
+                  <button
+                    class="btn"
+                    disabled={!modalDirectFile.trim() || modalArtworkLoading}
+                    onclick={() => applyArtworkFile(targetGame, selectedSlotId, modalDirectFile)}
+                  >
+                    Apply File
+                  </button>
+                  {#if modalArtworkSlots[selectedSlotId]?.present}
+                    <button
+                      class="btn btn-danger"
+                      onclick={() => removeArtwork(targetGame, selectedSlotId)}
+                      disabled={modalArtworkLoading}
+                    >
+                      Remove
+                    </button>
+                  {/if}
+                </div>
+              </div>
+            </div>
+
+            <!-- Search & Filters Toolbar -->
+            <div class="art-search-toolbar">
+              <div class="search-input-row">
+                <input
+                  type="text"
+                  bind:value={modalSearchTerm}
+                  placeholder={$t("library.keywordSearchPlaceholder")}
+                  onkeydown={(e) => e.key === "Enter" && searchArtworkAssets(targetGame)}
+                />
+                <button
+                  class="btn btn-primary"
+                  onclick={() => searchArtworkAssets(targetGame)}
+                  disabled={modalArtworkLoading}
+                >
+                  {modalArtworkLoading ? $t("common.loading") : "🔍 " + $t("common.search")}
+                </button>
+              </div>
+              <div class="search-filters-row">
+                <select bind:value={modalProviderFilter} onchange={() => searchArtworkAssets(targetGame)}>
+                  <option value="all">{$t("artwork.allProviders")}</option>
+                  <option value="catalogue">{$t("artwork.communityCatalogue")}</option>
+                  <option value="gog">{$t("artwork.gog")}</option>
+                  <option value="wikipedia">{$t("artwork.wikipedia")}</option>
+                  <option value="pcgamingwiki">{$t("artwork.pcgamingwiki")}</option>
+                  <option value="vndb">{$t("artwork.vndb")}</option>
+                  <option value="emulation">{$t("artwork.emulation")}</option>
+                  <option value="steamgriddb">{$t("artwork.steamGridDb")}</option>
+                  <option value="steam">{$t("artwork.steamStore")}</option>
+                  <option value="igdb">{$t("artwork.igdb")}</option>
+                  <option value="metadata">Game Screenshots &amp; Local Art</option>
+                </select>
+
+                <select bind:value={modalTypeFilter} onchange={() => searchArtworkAssets(targetGame)}>
+                  <option value="all">All Visual Types</option>
+                  <option value="static">Static Art Only</option>
+                  <option value="animated">Animated (GIF / WebP)</option>
+                </select>
+
+                <label class="safe-search-label" class:nsfw-active={!modalSafeSearch}>
+                  <input
+                    type="checkbox"
+                    bind:checked={modalSafeSearch}
+                    onchange={() => searchArtworkAssets(targetGame)}
+                  />
+                  <span>Safe Search {modalSafeSearch ? "Enabled (SFW)" : "Disabled (NSFW Allowed)"}</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Artwork Results Grid -->
+            <div class="art-results-container">
+              <div class="results-header">
+                <span class="muted-sm">
+                  {modalArtworkAssets.filter((a) => !failedImageIds.has(a.id)).length} artwork results found. Click any card to apply immediately.
+                </span>
+              </div>
+              {#if modalArtworkLoading}
+                <p class="muted-sm" style="padding:1rem;text-align:center">Loading artwork options across metadata providers…</p>
+              {:else if modalArtworkAssets.filter((a) => !failedImageIds.has(a.id)).length === 0}
+                <div class="empty-state glass" style="padding:1.5rem">
+                  <p class="muted-sm">No artwork found for "{modalSearchTerm || targetGame.name}". Try searching different keywords or select another provider.</p>
+                </div>
+              {:else}
+                <div class="art-results-grid slot-{selectedSlotId}">
+                  {#each modalArtworkAssets.filter((a) => !failedImageIds.has(a.id)) as asset (asset.id + "-" + asset.url)}
+                    <button
+                      type="button"
+                      class="art-card"
+                      onclick={() => applyArtwork(targetGame, selectedSlotId, asset.url)}
+                      title="Apply {asset.provider} artwork ({asset.width ? `${asset.width}×${asset.height}` : 'Custom'})"
+                    >
+                      <div class="art-preview-wrap aspect-{selectedSlotId}">
+                        <img
+                          src={asset.thumb || asset.url}
+                          alt=""
+                          loading="lazy"
+                          onerror={() => handleImageError(asset.id)}
+                        />
+                        <div class="art-badges-row">
+                          <span class="badge-tag">{asset.provider}</span>
+                          {#if asset.width && asset.height}
+                            <span class="badge-tag">{asset.width}×{asset.height}</span>
+                          {/if}
+                          {#if asset.animated}
+                            <span class="badge-tag" style="background:#8b5cf6">GIF</span>
+                          {/if}
+                        </div>
+                        <div class="card-apply-overlay">
+                          <span>✓ Click to Apply</span>
+                        </div>
+                      </div>
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </div>
+        {/if}
       </div>
 
       <div class="modal-footer row-between">

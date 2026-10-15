@@ -104,9 +104,21 @@ export const api = {
   getOwnedLibrary: () => invoke<OwnedLibrary>("get_owned_library"),
   refreshOwnedGames: () => invoke<OwnedLibrary>("refresh_owned_games"),
 
-  // Warm the store-metadata cache for the whole library.
-  syncLibraryMetadata: (accountId3?: string) =>
-    invoke<MetadataSyncResult>("sync_library_metadata", { accountId3: accountId3 ?? null }),
+  // Warm (or refresh) the store-metadata cache for the whole library.
+  syncLibraryMetadata: (accountId3?: string, force?: boolean, autoArtwork?: boolean) =>
+    invoke<MetadataSyncResult>("sync_library_metadata", {
+      accountId3: accountId3 ?? null,
+      force: force ?? false,
+      autoArtwork: autoArtwork ?? false
+    }),
+
+  // Refresh metadata for a specific game on demand across all providers.
+  refreshGameMetadata: (appId: number, force?: boolean, accountId3?: string) =>
+    invoke<AppMeta | null>("refresh_game_metadata", {
+      appId,
+      force: force ?? true,
+      accountId3: accountId3 ?? null
+    }),
 
   // Create collections from a chosen sorting option.
   computeCategorization: (request: CategorizeRequest, accountId3?: string) =>
@@ -155,8 +167,9 @@ export const api = {
   steamGridDbForGame: (
     appId: number,
     name: string,
-    kind: "grids" | "heroes" | "logos" | "icons",
-  ) => invoke<SgdbAsset[]>("steamgriddb_for_game", { appId, name, kind }),
+    kind: "grids" | "grids_portrait" | "grids_landscape" | "heroes" | "logos" | "icons",
+    nsfw?: boolean,
+  ) => invoke<SgdbAsset[]>("steamgriddb_for_game", { appId, name, kind, nsfw: nsfw ?? false }),
   autoFetchArtworkForGames: (appIds?: number[], accountId3?: string) =>
     invoke<number>("auto_fetch_artwork_for_games", {
       appIds: appIds ?? null,
@@ -185,6 +198,7 @@ export const api = {
   getEsDeSystems: () => invoke<EsDeSystemInfo[]>("get_es_de_systems"),
   scaffoldEsDeDirectories: (targetPath: string) =>
     invoke<string[]>("scaffold_es_de_directories", { targetPath }),
+  searchCatalog: (term: string) => invoke<AppMeta[]>("search_catalog", { term }),
 };
 
 /** Normalize an unknown thrown value into a readable message. */

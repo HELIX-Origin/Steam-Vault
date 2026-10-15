@@ -108,6 +108,13 @@ export interface TranslationDictionary {
     favorite: string;
     unfavorite: string;
     sourcePlatform: string;
+    refreshMetadata: string;
+    refreshingMetadata: string;
+    metadataRefreshed: string;
+    customDisplayName: string;
+    customDisplayNameHelp: string;
+    searchArtwork: string;
+    keywordSearchPlaceholder: string;
   };
   organize: {
     title: string;
@@ -183,6 +190,16 @@ export interface TranslationDictionary {
     uploadCustom: string;
     removeArtwork: string;
     apiKeyNotice: string;
+    allProviders: string;
+    communityCatalogue: string;
+    pcgamingwiki: string;
+    wikipedia: string;
+    vndb: string;
+    emulation: string;
+    steamGridDb: string;
+    steamStore: string;
+    igdb: string;
+    gog: string;
   };
   settings: {
     title: string;
@@ -204,5 +221,12 @@ export interface TranslationDictionary {
     sourcesHelp: string;
     saveSettings: string;
     savedSuccess: string;
+    refreshMetadata: string;
+    refreshMetadataHelp: string;
+    refreshMetadataRunning: string;
+    refreshMetadataSuccess: string;
+    alsoFetchArtwork: string;
+    catalogSync: string;
+    catalogSyncHelp: string;
   };
 }

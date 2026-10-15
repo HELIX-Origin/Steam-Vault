@@ -124,10 +124,15 @@ async fn list_assets(client: &reqwest::Client, key: &str, path: &str) -> AppResu
 }
 
 /// Map a friendly artwork kind to its SteamGridDB route segment and default
-/// query. Grids default to the portrait `600x900` capsule.
+/// query. Grids support portrait (`600x900,342x482`) and landscape (`460x215,920x430`).
 fn route(kind: &str) -> AppResult<(&'static str, Option<&'static str>)> {
     match kind {
-        "grids" => Ok(("grids", Some("dimensions=600x900"))),
+        "grids" | "grids_portrait" | "portrait" => {
+            Ok(("grids", Some("dimensions=600x900,342x482")))
+        }
+        "grids_landscape" | "landscape" | "landscapes" => {
+            Ok(("grids", Some("dimensions=460x215,920x430")))
+        }
         "heroes" => Ok(("heroes", None)),
         "logos" => Ok(("logos", None)),
         "icons" => Ok(("icons", None)),
@@ -142,11 +147,22 @@ pub async fn for_steam_app(
     kind: &str,
     app_id: u32,
 ) -> AppResult<Vec<SgdbAsset>> {
+    for_steam_app_with_query(client, key, kind, app_id, "nsfw=false").await
+}
+
+pub async fn for_steam_app_with_query(
+    client: &reqwest::Client,
+    key: &str,
+    kind: &str,
+    app_id: u32,
+    extra_query: &str,
+) -> AppResult<Vec<SgdbAsset>> {
     let (segment, query) = route(kind)?;
-    let path = match query {
-        Some(query) => format!("{segment}/steam/{app_id}?{query}"),
-        None => format!("{segment}/steam/{app_id}"),
+    let query_str = match query {
+        Some(query) => format!("{query}&{extra_query}"),
+        None => extra_query.to_string(),
     };
+    let path = format!("{segment}/steam/{app_id}?{query_str}");
     list_assets(client, key, &path).await
 }
 
@@ -157,11 +173,22 @@ pub async fn for_game_id(
     kind: &str,
     game_id: u32,
 ) -> AppResult<Vec<SgdbAsset>> {
+    for_game_id_with_query(client, key, kind, game_id, "nsfw=false").await
+}
+
+pub async fn for_game_id_with_query(
+    client: &reqwest::Client,
+    key: &str,
+    kind: &str,
+    game_id: u32,
+    extra_query: &str,
+) -> AppResult<Vec<SgdbAsset>> {
     let (segment, query) = route(kind)?;
-    let path = match query {
-        Some(query) => format!("{segment}/game/{game_id}?{query}"),
-        None => format!("{segment}/game/{game_id}"),
+    let query_str = match query {
+        Some(query) => format!("{query}&{extra_query}"),
+        None => extra_query.to_string(),
     };
+    let path = format!("{segment}/game/{game_id}?{query_str}");
     list_assets(client, key, &path).await
 }
 
@@ -178,14 +205,50 @@ pub async fn for_game(
     name: &str,
     kind: &str,
 ) -> AppResult<Vec<SgdbAsset>> {
-    if app_id != 0 && app_id < SHORTCUT_APP_ID_BASE {
-        return for_steam_app(client, key, kind, app_id).await;
+    for_game_with_nsfw(client, key, app_id, name, kind, false).await
+}
+
+pub async fn for_game_with_nsfw(
+    client: &reqwest::Client,
+    key: &str,
+    app_id: u32,
+    name: &str,
+    kind: &str,
+    allow_nsfw: bool,
+) -> AppResult<Vec<SgdbAsset>> {
+    let nsfw_query = if allow_nsfw { "nsfw=any&humor=any" } else { "nsfw=false" };
+    let mut results: Vec<SgdbAsset> = Vec::new();
+    let mut seen_ids = std::collections::HashSet::new();
+
+    // 1. If keyword search query is provided, query SteamGridDB autocomplete for that term
+    let clean_name = name.trim();
+    if !clean_name.is_empty() {
+        if let Ok(matches) = search_games(client, key, clean_name).await {
+            // Check top 3 matches for keywords
+            for game in matches.iter().take(3) {
+                if let Ok(assets) = for_game_id_with_query(client, key, kind, game.id, nsfw_query).await {
+                    for a in assets {
+                        if seen_ids.insert(a.id) {
+                            results.push(a);
+                        }
+                    }
+                }
+            }
+        }
     }
-    let matches = search_games(client, key, name).await?;
-    let Some(game) = pick_match(&matches, name) else {
-        return Ok(Vec::new());
-    };
-    for_game_id(client, key, kind, game.id).await
+
+    // 2. Also check direct Steam app ID if it's a real steam game (< SHORTCUT_APP_ID_BASE)
+    if app_id != 0 && app_id < SHORTCUT_APP_ID_BASE {
+        if let Ok(assets) = for_steam_app_with_query(client, key, kind, app_id, nsfw_query).await {
+            for a in assets {
+                if seen_ids.insert(a.id) {
+                    results.push(a);
+                }
+            }
+        }
+    }
+
+    Ok(results)
 }
 
 /// Prefer an exact (case-insensitive) name match, else the first result.
@@ -203,7 +266,8 @@ mod tests {
     #[test]
     fn route_rejects_unknown_kinds() {
         assert!(route("grids").is_ok());
-        assert_eq!(route("grids").unwrap().1, Some("dimensions=600x900"));
+        assert_eq!(route("grids").unwrap().1, Some("dimensions=600x900,342x482"));
+        assert_eq!(route("grids_landscape").unwrap().1, Some("dimensions=460x215,920x430"));
         assert_eq!(route("logos").unwrap().1, None);
         assert!(route("banners").is_err());
     }

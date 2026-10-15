@@ -4,19 +4,28 @@
   import { STEAM_LANGUAGES, setLocale, syncWithSettingsLanguage, t } from "$lib/i18n";
   import { collections, error, games, install, settings } from "$lib/stores";
   import type { CatalogStats, EmulatorConfig, Settings } from "$lib/types";
+  import CollectionsSection from "$lib/components/settings/CollectionsSection.svelte";
+  import PlatformsSection from "$lib/components/settings/PlatformsSection.svelte";
+  import OrganizeSection from "$lib/components/settings/OrganizeSection.svelte";
   import "$styles/settings.scss";
 
-  let form: Settings | null = null;
-  let catalogStats: CatalogStats | null = null;
-  let syncingCatalog = false;
-  let catalogSyncMsg: string | null = null;
-  let busy = false;
-  let saved = false;
+  type SettingsTab = "general" | "collections" | "platforms" | "organize";
+  let activeTab = $state<SettingsTab>("general");
 
-  let emulatorConfigs: EmulatorConfig[] = [];
-  let scaffoldPath = "";
-  let scaffolding = false;
-  let scaffoldMsg: string | null = null;
+  let form = $state<Settings | null>(null);
+  let catalogStats = $state<CatalogStats | null>(null);
+  let syncingCatalog = $state(false);
+  let catalogSyncMsg = $state<string | null>(null);
+  let syncingLibraryMeta = $state(false);
+  let syncLibraryAutoArtwork = $state(true);
+  let syncLibraryMsg = $state<string | null>(null);
+  let busy = $state(false);
+  let saved = $state(false);
+
+  let emulatorConfigs = $state<EmulatorConfig[]>([]);
+  let scaffoldPath = $state("");
+  let scaffolding = $state(false);
+  let scaffoldMsg = $state<string | null>(null);
 
   const popularEmulators = [
     { name: "EmulationStation (ES-DE)", exe: "ES-DE.exe" },
@@ -92,6 +101,20 @@
     }
   }
 
+  async function refreshAllMetadata() {
+    syncingLibraryMeta = true;
+    syncLibraryMsg = null;
+    try {
+      const res = await api.syncLibraryMetadata(form?.accountId3 ?? undefined, true, syncLibraryAutoArtwork);
+      syncLibraryMsg = `Updated ${res.fetched} games (${res.cached} cached, ${res.unavailable} unresolved).`;
+      catalogStats = await api.getCatalogStats().catch(() => null);
+    } catch (e) {
+      syncLibraryMsg = errorMessage(e);
+    } finally {
+      syncingLibraryMeta = false;
+    }
+  }
+
   /** Non-Steam sources surfaced in Settings (mirrors the backend platform ids). */
   const platformList: { id: string; label: string }[] = [
     { id: "gog", label: "GOG" },
@@ -108,8 +131,8 @@
   ];
 
   type SourceRow = { id: string; label: string; enabled: boolean; roots: string[] };
-  let sources: SourceRow[] = [];
-  let finding: string | null = null;
+  let sources = $state<SourceRow[]>([]);
+  let finding = $state<string | null>(null);
 
   /** Project saved preferences onto the fixed platform list. */
   function buildSources() {
@@ -145,7 +168,7 @@
     sources = [...sources];
   }
 
-  /** Autofill a platform's detected library folders, like the Steam Auto-detect. */
+  /** Autofill a platform's detected library folders. */
   async function findFolders(source: SourceRow) {
     finding = source.id;
     try {
@@ -165,8 +188,21 @@
     }
   }
 
+  function setTab(tab: SettingsTab) {
+    activeTab = tab;
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    window.history.replaceState({}, "", url.toString());
+  }
+
   onMount(async () => {
     try {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab") as SettingsTab | null;
+      if (tabParam && ["general", "collections", "platforms", "organize"].includes(tabParam)) {
+        activeTab = tabParam;
+      }
+
       const [loaded, detected, stats] = await Promise.all([
         api.getSettings(),
         api.detectSteam(),
@@ -250,398 +286,231 @@
   }
 </script>
 
-<div class="row-between" style="margin-bottom:1.1rem">
+<div class="row-between" style="margin-bottom:1rem">
   <div>
     <h1>{$t("settings.title")}</h1>
     <p class="muted">{$t("settings.subtitle")}</p>
   </div>
-  <div class="row">
-    {#if saved}<span class="pill">{$t("common.saved")}</span>{/if}
-    <button class="btn btn-primary" disabled={busy || !form} onclick={save}>{busy ? $t("common.saving") : $t("common.save")}</button>
+  <div class="row" style="align-items:center;gap:0.75rem">
+    {#if saved}<span class="pill pill-ok">{$t("common.saved")}</span>{/if}
+    <button class="btn btn-primary" disabled={busy || !form} onclick={save}>
+      {busy ? $t("common.saving") : $t("common.save")}
+    </button>
   </div>
 </div>
 
-{#if form}
-  <div class="grid two">
-    <section class="glass-strong card">
-      <h2 class="section-title">{$t("settings.steamFolder")}</h2>
-      <div class="field">
-        <label for="root">{$t("settings.steamFolder")}</label>
-        <input id="root" bind:value={form.steamRoot} placeholder="C:\Program Files (x86)\Steam" />
-      </div>
-      <button class="btn" onclick={detect}>{$t("settings.autoDetect")}</button>
-      {#if $install}
-        <div class="kv"><span class="muted">{$t("settings.librariesCount")}</span><span>{$install.libraries.length}</span></div>
-        <div class="kv"><span class="muted">{$t("settings.accountsCount")}</span><span>{$install.accounts.length}</span></div>
-      {/if}
-    </section>
+<!-- Section Navigation Tabs -->
+<div class="settings-nav-tabs">
+  <button class="tab-btn" class:active={activeTab === "general"} onclick={() => setTab("general")}>
+    <span class="tab-icon">⚙️</span>
+    <span>{$t("settings.title")} &amp; Storage</span>
+  </button>
+  <button class="tab-btn" class:active={activeTab === "collections"} onclick={() => setTab("collections")}>
+    <span class="tab-icon">❐</span>
+    <span>{$t("nav.collections")}</span>
+  </button>
+  <button class="tab-btn" class:active={activeTab === "platforms"} onclick={() => setTab("platforms")}>
+    <span class="tab-icon">⬡</span>
+    <span>{$t("nav.platforms")}</span>
+  </button>
+  <button class="tab-btn" class:active={activeTab === "organize"} onclick={() => setTab("organize")}>
+    <span class="tab-icon">⊞</span>
+    <span>{$t("nav.organize")}</span>
+  </button>
+</div>
 
-    <section class="glass-strong card">
-      <h2 class="section-title">{$t("settings.activeAccount")}</h2>
-      <div class="field">
-        <label for="account">{$t("settings.activeAccount")}</label>
-        <select id="account" bind:value={form.accountId3}>
-          <option value={null}>Automatic (first found)</option>
-          {#each $install?.accounts ?? [] as account (account.id3)}
-            <option value={account.id3}>
-              {(account.personaName ?? account.accountName) || "Unknown"} ({account.id3})
-            </option>
-          {/each}
-        </select>
-      </div>
-      <div class="row" style="gap:1rem">
-        <div class="field" style="flex:1">
-          <label for="cc">{$t("settings.storeCountry")}</label>
-          <input id="cc" bind:value={form.countryCode} placeholder="us" />
+{#if form}
+  {#if activeTab === "general"}
+    <div class="settings-grid">
+      <!-- Steam Folder & Active Account -->
+      <section class="glass-strong card">
+        <div class="row-between" style="align-items:center;margin-bottom:0.75rem">
+          <h2 class="section-title" style="margin:0">{$t("settings.steamFolder")}</h2>
+          <button class="btn mini" onclick={detect}>{$t("settings.autoDetect")}</button>
         </div>
-        <div class="field" style="flex:1">
-          <label for="lang">{$t("settings.language")}</label>
-          <select
-            id="lang"
-            bind:value={form.language}
-            onchange={(e) => {
-              if (form) {
-                form.language = e.currentTarget.value;
-                setLocale(e.currentTarget.value);
-              }
-            }}
-          >
-            {#each STEAM_LANGUAGES as lang (lang.id)}
-              <option value={lang.id}>
-                {lang.nativeName} ({lang.name})
+        <div class="field">
+          <label for="root">Steam Installation Directory</label>
+          <input id="root" bind:value={form.steamRoot} placeholder="C:\Program Files (x86)\Steam" />
+        </div>
+        <div class="field">
+          <label for="account">{$t("settings.activeAccount")}</label>
+          <select id="account" bind:value={form.accountId3}>
+            <option value={null}>Automatic (first found)</option>
+            {#each $install?.accounts ?? [] as account (account.id3)}
+              <option value={account.id3}>
+                {(account.personaName ?? account.accountName) || "Unknown"} ({account.id3})
               </option>
             {/each}
           </select>
         </div>
-      </div>
-    </section>
-
-    <section class="glass-strong card">
-      <div class="row-between" style="align-items:center;margin-bottom:0.4rem">
-        <h2 class="section-title" style="margin:0">API keys</h2>
-        <span class="pill" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Keyless Architecture</span>
-      </div>
-      <p class="muted-sm" style="margin-bottom:0.75rem">
-        Steam Vault uses local storefront integrations (Steam, GOG, Epic, Xbox, itch) and the offline Community Game Catalogue. No third-party API keys are required for daily organizing or game launching.
-      </p>
-      <div class="field">
-        <label for="steamkey">Steam Web API key <span class="muted-xs">(Optional — for remote whole-library sync)</span></label>
-        <input id="steamkey" type="password" bind:value={form.steamApiKey} placeholder="Optional — steamcommunity.com/dev/apikey" />
-      </div>
-      <div class="field">
-        <label for="sgdb">SteamGridDB key <span class="muted-xs">(Optional legacy fallback)</span></label>
-        <input id="sgdb" type="password" bind:value={form.steamgriddbApiKey} placeholder="SteamGridDB API key" />
-      </div>
-      <div class="field">
-        <label for="igdbid">IGDB (Twitch) client id <span class="muted-xs">(Optional legacy fallback)</span></label>
-        <input id="igdbid" bind:value={form.igdbClientId} placeholder="Twitch client id" />
-      </div>
-      <div class="field">
-        <label for="igdbsec">IGDB (Twitch) client secret <span class="muted-xs">(Optional legacy fallback)</span></label>
-        <input id="igdbsec" type="password" bind:value={form.igdbClientSecret} placeholder="Twitch client secret" />
-      </div>
-    </section>
-
-    <section class="glass-strong card">
-      <div class="row-between" style="align-items:center;margin-bottom:0.4rem">
-        <h2 class="section-title" style="margin:0">Storage &amp; Drive Overview</h2>
-        <a href="/storage" class="btn mini primary" style="text-decoration:none">Open Storage Manager ↗</a>
-      </div>
-      <p class="muted-sm">
-        Summary of detected Steam storage drives and registered library folders across your device.
-      </p>
-      <div class="kv">
-        <span class="muted">Registered Steam Libraries</span>
-        <span>{$install?.libraries.length ?? 0} folders</span>
-      </div>
-      <div class="kv">
-        <span class="muted">Installed Games Tracked</span>
-        <span>{$games.filter((g) => g.installed).length} games</span>
-      </div>
-      <div class="folder-list" style="margin-top:0.75rem">
-        {#each $install?.libraries ?? [] as lib}
-          <div class="folder-row" style="padding:0.4rem 0.6rem;background:rgba(255,255,255,0.03);border-radius:6px">
-            <span style="font-family:monospace;font-size:0.8rem;color:var(--text)">{lib.path}</span>
-            <span class="pill" style="font-size:0.65rem">{lib.appIds.length} apps</span>
+        <div class="row" style="gap:1rem">
+          <div class="field" style="flex:1">
+            <label for="cc">{$t("settings.storeCountry")}</label>
+            <input id="cc" bind:value={form.countryCode} placeholder="us" />
           </div>
-        {/each}
-      </div>
-    </section>
-
-    <section class="glass-strong card">
-      <div class="row-between" style="align-items:center;margin-bottom:0.4rem">
-        <h2 class="section-title" style="margin:0">Organization &amp; Scopes</h2>
-        <a href="/organize" class="btn mini primary" style="text-decoration:none">Open Library Organizer ↗</a>
-      </div>
-      <p class="muted-sm">
-        Multi-scope auto-categorization and Depressurizer-style custom rule builder.
-      </p>
-      <div class="kv">
-        <span class="muted">Active Steam Collections</span>
-        <span>{$collections.length} collections</span>
-      </div>
-      <div class="kv">
-        <span class="muted">Total Games in Library</span>
-        <span>{$games.length} games</span>
-      </div>
-      <div class="kv">
-        <span class="muted">Supported Scopes</span>
-        <span>Genre, Developer, Publisher, Year, Platform, Custom Rules</span>
-      </div>
-    </section>
-
-    <section class="glass-strong card">
-      <h2 class="section-title">Storefront & Platform Integrations</h2>
-      <p class="muted-sm">
-        Automatically detect games from installed launchers and storefront integrations. Toggle each platform on or off. All default and user installation locations are automatically discovered through each platform's own configuration.
-      </p>
-      <div class="integrations-grid">
-        {#each sources.filter((s) => s.id !== "other" && s.id !== "emulator") as source (source.id)}
-          <label class="integration-item">
-            <input
-              type="checkbox"
-              checked={source.enabled}
-              onchange={(event) => {
-                source.enabled = event.currentTarget.checked;
-                sources = [...sources];
+          <div class="field" style="flex:1">
+            <label for="lang">{$t("settings.language")}</label>
+            <select
+              id="lang"
+              bind:value={form.language}
+              onchange={(e) => {
+                if (form) {
+                  form.language = e.currentTarget.value;
+                  setLocale(e.currentTarget.value);
+                }
               }}
-            />
-            <div class="integration-label">
-              <strong>{source.label}</strong>
-              <span class="muted-xs">{source.enabled ? "Active" : "Disabled"}</span>
-            </div>
-          </label>
-        {/each}
-      </div>
-    </section>
-
-    {#if sources.find((s) => s.id === "other")}
-      {#each [sources.find((s) => s.id === "other")!] as other (other.id)}
-      <section class="glass-strong card">
-        <div class="source-head" style="margin-bottom:0.5rem">
-          <div>
-            <h2 class="section-title">Local & Standalone Games</h2>
-            <p class="muted-sm">
-              Manual path entries for local games that have no custom installer or launcher. Steam Vault scans these folders for games and executables using the folder name as the game title.
-            </p>
-          </div>
-          <label class="row" style="gap:0.5rem;margin:0;cursor:pointer">
-            <input
-              type="checkbox"
-              checked={other.enabled}
-              style="width:auto"
-              onchange={(event) => {
-                other.enabled = event.currentTarget.checked;
-                sources = [...sources];
-              }}
-            />
-            <strong>Enabled</strong>
-          </label>
-        </div>
-        {#if other.roots.length === 0}
-          <p class="muted-sm" style="margin:0.25rem 0">No local game folders configured.</p>
-        {/if}
-        <div class="folder-list">
-          {#each other.roots as folder, index}
-            <div class="folder-row">
-              <input
-                placeholder="C:\Games\Standalone"
-                value={folder}
-                oninput={(event) => setRoot(other, index, event.currentTarget.value)}
-              />
-              <button class="btn mini" title="Remove folder" onclick={() => removeRoot(other, index)}>×</button>
-            </div>
-          {/each}
-          <button class="btn mini add" onclick={() => addRoot(other)}>＋ Add folder</button>
-        </div>
-      </section>
-      {/each}
-    {/if}
-
-    {#if sources.find((s) => s.id === "emulator")}
-      {#each [sources.find((s) => s.id === "emulator")!] as emuSource (emuSource.id)}
-      <section class="glass-strong card full-width">
-        <div class="source-head" style="margin-bottom:0.5rem">
-          <div>
-            <div class="row" style="gap:0.6rem;align-items:center">
-              <h2 class="section-title" style="margin:0">EmulationStation (ES-DE) &amp; ROM Directories</h2>
-              <span class="pill" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Manual Configuration Policy</span>
-            </div>
-            <p class="muted-sm" style="margin-top:0.35rem">
-              Steam Vault uses <strong>EmulationStation Desktop Edition (ES-DE)</strong> as the primary supported method for organizing, launching, and managing ROMs.
-              Automatic disk sweeps are disabled to respect user privacy and prevent unauthorized scans. Explicitly add your emulator executables and ROM folders below.
-            </p>
-          </div>
-          <label class="row" style="gap:0.5rem;margin:0;cursor:pointer">
-            <input
-              type="checkbox"
-              checked={emuSource.enabled}
-              style="width:auto"
-              onchange={(event) => {
-                emuSource.enabled = event.currentTarget.checked;
-                sources = [...sources];
-              }}
-            />
-            <strong>Enabled</strong>
-          </label>
-        </div>
-
-        <!-- ES-DE Directory Scaffolding Box -->
-        <div class="rom-dirs-box" style="margin-top:0.75rem">
-          <div class="row-between" style="align-items:center;margin-bottom:0.35rem">
-            <div>
-              <strong style="font-size:0.88rem">Scaffold Standard ES-DE ROMs Directory Structure</strong>
-              <p class="muted-xs" style="margin:0.15rem 0 0">
-                Initializes the official <a href="https://github.com/retrogamecorps/ES-DE-Directories" target="_blank" rel="noreferrer" style="color:var(--accent)">ES-DE directory layout</a> (50+ console system folders with systeminfo.txt guides) inside your chosen folder.
-              </p>
-            </div>
-            <span class="pill" style="font-size:0.68rem">ES-DE Standard</span>
-          </div>
-          <div class="row" style="gap:0.5rem;margin-top:0.5rem">
-            <input
-              style="flex:1"
-              placeholder="e.g. D:\Emulation or E:\ROMs"
-              bind:value={scaffoldPath}
-            />
-            <button
-              class="btn mini primary"
-              disabled={scaffolding || !scaffoldPath.trim()}
-              onclick={scaffoldEsDe}
             >
-              {scaffolding ? "Scaffolding…" : "Scaffold Directory"}
-            </button>
+              {#each STEAM_LANGUAGES as lang (lang.id)}
+                <option value={lang.id}>
+                  {lang.nativeName} ({lang.name})
+                </option>
+              {/each}
+            </select>
           </div>
-          {#if scaffoldMsg}
-            <p class="muted-xs" style="margin-top:0.4rem;color:var(--accent)">{scaffoldMsg}</p>
-          {/if}
         </div>
+        {#if $install}
+          <div class="kv" style="margin-top:0.5rem"><span class="muted">{$t("settings.librariesCount")}</span><span>{$install.libraries.length} folders</span></div>
+          <div class="kv"><span class="muted">{$t("settings.accountsCount")}</span><span>{$install.accounts.length} accounts</span></div>
+        {/if}
+      </section>
 
-        <!-- Configured Emulators List -->
-        <div style="margin-top:1.1rem">
-          <div class="row-between" style="align-items:center;margin-bottom:0.5rem">
-            <h3 style="font-size:0.95rem;margin:0;font-weight:600">Configured Emulators &amp; Executables</h3>
-            <button class="btn mini" onclick={addEmulatorConfig}>＋ Add Emulator</button>
-          </div>
-
-          {#if emulatorConfigs.length === 0}
-            <p class="muted-sm" style="margin:0.35rem 0">
-              No emulators configured yet. Click "Add Emulator" to register EmulationStation (ES-DE) or standalone emulators (Dolphin, PCSX2, RetroArch, etc.).
-            </p>
-          {/if}
-
-          {#each emulatorConfigs as emu, index (emu.id)}
-            <div class="emulator-card">
-              <div class="emulator-header">
-                <div class="emulator-title">
-                  <select
-                    style="font-weight:600;padding:0.3rem 0.5rem;border-radius:4px"
-                    bind:value={emu.name}
-                  >
-                    {#each popularEmulators as pop}
-                      <option value={pop.name}>{pop.name}</option>
-                    {/each}
-                  </select>
-                </div>
-                <button
-                  class="btn mini danger-ghost"
-                  title="Remove this emulator"
-                  onclick={() => removeEmulatorConfig(index)}
-                >
-                  ✕ Remove
-                </button>
-              </div>
-
-              <div class="emulator-grid">
-                <div class="field" style="margin:0">
-                  <label for={"emu-exe-" + emu.id}>Executable Path</label>
-                  <input
-                    id={"emu-exe-" + emu.id}
-                    placeholder="e.g. C:\Emulation\ES-DE\ES-DE.exe"
-                    bind:value={emu.executablePath}
-                  />
-                </div>
-                <div class="field" style="margin:0">
-                  <label for={"emu-args-" + emu.id}>Launch Options / Arguments (Optional)</label>
-                  <input
-                    id={"emu-args-" + emu.id}
-                    placeholder="Default launch options (leave empty for standard)"
-                    bind:value={emu.defaultArgs}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div class="row-between" style="align-items:center;margin-bottom:0.3rem">
-                  <span class="muted-xs" style="font-weight:600">ROM Folders Scanned for this Emulator</span>
-                  <button class="btn mini" style="font-size:0.75rem;padding:0.2rem 0.45rem" onclick={() => addEmulatorRomDir(emu)}>＋ Add ROM folder</button>
-                </div>
-                <div class="folder-list" style="margin-top:0.2rem">
-                  {#each emu.romDirectories as romDir, dirIdx}
-                    <div class="folder-row">
-                      <input
-                        placeholder="e.g. D:\ROMs\gc or D:\Emulation\ROMs"
-                        value={romDir}
-                        oninput={(e) => setEmulatorRomDir(emu, dirIdx, e.currentTarget.value)}
-                      />
-                      <button
-                        class="btn mini"
-                        title="Remove ROM folder"
-                        onclick={() => removeEmulatorRomDir(emu, dirIdx)}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  {/each}
-                  {#if emu.romDirectories.length === 0}
-                    <p class="muted-xs" style="margin:0">No ROM folders added for this emulator.</p>
-                  {/if}
-                </div>
-              </div>
+      <!-- Storage & Drive Overview -->
+      <section class="glass-strong card">
+        <div class="row-between" style="align-items:center;margin-bottom:0.4rem">
+          <h2 class="section-title" style="margin:0">Storage &amp; Drive Overview</h2>
+          <a href="/storage" class="btn mini primary" style="text-decoration:none">Open Storage Manager ↗</a>
+        </div>
+        <p class="muted-sm">
+          Summary of detected Steam storage drives and registered library folders across your device.
+        </p>
+        <div class="kv">
+          <span class="muted">Registered Steam Libraries</span>
+          <span>{$install?.libraries.length ?? 0} folders</span>
+        </div>
+        <div class="kv">
+          <span class="muted">Installed Games Tracked</span>
+          <span>{$games.filter((g) => g.installed).length} games</span>
+        </div>
+        <div class="folder-list" style="margin-top:0.75rem">
+          {#each $install?.libraries ?? [] as lib}
+            <div class="folder-row" style="padding:0.4rem 0.6rem;background:rgba(255,255,255,0.03);border-radius:6px;justify-content:space-between">
+              <span style="font-family:monospace;font-size:0.8rem;color:var(--text);overflow:hidden;text-overflow:ellipsis">{lib.path}</span>
+              <span class="pill" style="font-size:0.65rem">{lib.appIds.length} apps</span>
             </div>
           {/each}
         </div>
       </section>
-      {/each}
-    {/if}
 
-    <section class="glass-strong card">
-      <h2 class="section-title">Preferences</h2>
-      <label class="row" style="gap:0.5rem;margin-bottom:1rem">
-        <input type="checkbox" bind:checked={form.autoBackup} style="width:auto" />
-        Back up Steam files before writing
-      </label>
-      <p class="muted-sm">
-        Writes go to <code>cloud-storage-namespace-1.json</code> and <code>shortcuts.vdf</code>. Changes require
-        Steam to be closed, and are reversible from the local backup folder.
-      </p>
-    </section>
+      <!-- API Keys -->
+      <section class="glass-strong card">
+        <div class="row-between" style="align-items:center;margin-bottom:0.4rem">
+          <h2 class="section-title" style="margin:0">API &amp; Storefront Keys</h2>
+          <span class="pill" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Keyless Architecture</span>
+        </div>
+        <p class="muted-sm" style="margin-bottom:0.75rem">
+          Steam Vault uses local storefront integrations (Steam, GOG, Epic, Xbox, itch) and the offline Community Game Catalogue. Third-party API keys are strictly optional.
+        </p>
+        <div class="field">
+          <label for="steamkey">Steam Web API Key <span class="muted-xs">(Optional remote sync)</span></label>
+          <input id="steamkey" type="password" bind:value={form.steamApiKey} placeholder="Optional — steamcommunity.com/dev/apikey" />
+        </div>
+        <div class="field">
+          <label for="sgdb">SteamGridDB Key <span class="muted-xs">(Optional fallback)</span></label>
+          <input id="sgdb" type="password" bind:value={form.steamgriddbApiKey} placeholder="SteamGridDB API key" />
+        </div>
+        <div class="row" style="gap:1rem">
+          <div class="field" style="flex:1">
+            <label for="igdbid">IGDB Client ID <span class="muted-xs">(Optional)</span></label>
+            <input id="igdbid" bind:value={form.igdbClientId} placeholder="Twitch client ID" />
+          </div>
+          <div class="field" style="flex:1">
+            <label for="igdbsec">IGDB Secret <span class="muted-xs">(Optional)</span></label>
+            <input id="igdbsec" type="password" bind:value={form.igdbClientSecret} placeholder="Twitch client secret" />
+          </div>
+        </div>
+      </section>
 
-    <section class="glass-strong card">
-      <h2 class="section-title">Local Game Catalog & Cache</h2>
-      <div class="kv">
-        <div>
-          <strong>Catalog Games</strong>
-          <p class="muted-sm">Indexed titles and executables for instant offline disambiguation.</p>
+      <!-- Preferences & Offline Cache -->
+      <section class="glass-strong card">
+        <h2 class="section-title" style="margin-bottom:0.5rem">Preferences &amp; Offline Cache</h2>
+        <label class="row" style="gap:0.5rem;margin-bottom:1rem;cursor:pointer">
+          <input type="checkbox" bind:checked={form.autoBackup} style="width:auto" />
+          <span>Back up Steam files before writing</span>
+        </label>
+        <p class="muted-sm" style="margin-bottom:1rem">
+          Writes go to <code>cloud-storage-namespace-1.json</code> and <code>shortcuts.vdf</code>. Changes require Steam to be closed, and are reversible from the local backup folder.
+        </p>
+        <div class="kv">
+          <div>
+            <strong>Catalog Games Indexed</strong>
+            <p class="muted-xs" style="margin:0">Instant offline game disambiguation.</p>
+          </div>
+          <span>{catalogStats?.totalGames ?? 0} games</span>
         </div>
-        <span>{catalogStats?.totalGames ?? 0} games</span>
-      </div>
-      <div class="kv">
-        <div>
-          <strong>Cached Metadata</strong>
-          <p class="muted-sm">Locally stored store and community metadata records.</p>
+        <div class="kv">
+          <div>
+            <strong>Cached Metadata Records</strong>
+            <p class="muted-xs" style="margin:0">Locally stored metadata records.</p>
+          </div>
+          <span>{catalogStats?.totalMetadataCached ?? 0} records</span>
         </div>
-        <span>{catalogStats?.totalMetadataCached ?? 0} records</span>
-      </div>
-      <div class="row" style="margin-top: 1rem; gap: 0.75rem; align-items: center;">
-        <button class="btn mini primary" onclick={syncOnline} disabled={syncingCatalog}>
-          {syncingCatalog ? "Syncing…" : "Sync Online Catalog"}
-        </button>
-        {#if catalogSyncMsg}
-          <span class="muted-sm">{catalogSyncMsg}</span>
-        {/if}
-      </div>
-    </section>
-  </div>
+        <div class="row" style="margin-top: 1rem; gap: 0.75rem; align-items: center;">
+          <button class="btn mini" onclick={syncOnline} disabled={syncingCatalog}>
+            {syncingCatalog ? $t("common.loading") : $t("settings.catalogSync")}
+          </button>
+          {#if catalogSyncMsg}
+            <span class="muted-sm">{catalogSyncMsg}</span>
+          {/if}
+        </div>
+
+        <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+          <div class="row-between" style="align-items: center; margin-bottom: 0.35rem;">
+            <strong style="font-size: 0.95rem;">{$t("settings.refreshMetadata")}</strong>
+            {#if syncingLibraryMeta}
+              <span class="pill pill-warn">{$t("settings.refreshMetadataRunning")}</span>
+            {/if}
+          </div>
+          <p class="muted-xs" style="margin-bottom: 0.75rem;">
+            {$t("settings.refreshMetadataHelp")}
+          </p>
+          <label class="row" style="gap: 0.5rem; margin-bottom: 0.75rem; cursor: pointer;">
+            <input type="checkbox" bind:checked={syncLibraryAutoArtwork} style="width: auto;" />
+            <span class="muted-sm">{$t("settings.alsoFetchArtwork")}</span>
+          </label>
+          <div class="row" style="gap: 0.75rem; align-items: center;">
+            <button class="btn mini primary" onclick={refreshAllMetadata} disabled={syncingLibraryMeta}>
+              {syncingLibraryMeta ? $t("settings.refreshMetadataRunning") : $t("settings.refreshMetadata")}
+            </button>
+            {#if syncLibraryMsg}
+              <span class="muted-sm">{syncLibraryMsg}</span>
+            {/if}
+          </div>
+        </div>
+      </section>
+    </div>
+  {:else if activeTab === "collections"}
+    <CollectionsSection />
+  {:else if activeTab === "platforms"}
+    <PlatformsSection
+      bind:sources
+      bind:emulatorConfigs
+      {popularEmulators}
+      bind:scaffoldPath
+      bind:scaffolding
+      bind:scaffoldMsg
+      {scaffoldEsDe}
+      {addEmulatorConfig}
+      {removeEmulatorConfig}
+      {addEmulatorRomDir}
+      {removeEmulatorRomDir}
+      {setEmulatorRomDir}
+      {addRoot}
+      {removeRoot}
+      {setRoot}
+    />
+  {:else if activeTab === "organize"}
+    <OrganizeSection />
+  {/if}
 {:else}
   <p class="muted">Loading settings…</p>
 {/if}
