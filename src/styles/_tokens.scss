@@ -1,0 +1,163 @@
+// Steam Vault — Design Tokens & Platform Theme Maps
+// HELIX Origin Obsidian Design System
+
+@use "sass:map";
+
+// Platform Theme Definitions
+$platforms: (
+  steam: (
+    bg1: #10253f,
+    bg2: #07101c,
+    accent: #38bdf8,
+    accent-rgb: (56, 189, 248),
+  ),
+  itch: (
+    bg1: #2b1118,
+    bg2: #0d0608,
+    accent: #fa5c5c,
+    accent-rgb: (250, 92, 92),
+  ),
+  gog: (
+    bg1: #261238,
+    bg2: #0e0716,
+    accent: #a855f7,
+    accent-rgb: (168, 85, 247),
+  ),
+  epic: (
+    bg1: #1a1a24,
+    bg2: #09090d,
+    accent: #3b82f6,
+    accent-rgb: (59, 130, 246),
+  ),
+  xbox: (
+    bg1: #0e2918,
+    bg2: #05120a,
+    accent: #22c55e,
+    accent-rgb: (34, 197, 94),
+  ),
+  ubisoft: (
+    bg1: #0c1a2f,
+    bg2: #040912,
+    accent: #0284c7,
+    accent-rgb: (2, 132, 199),
+  ),
+  ea: (
+    bg1: #2a1114,
+    bg2: #0d0506,
+    accent: #ef4444,
+    accent-rgb: (239, 68, 68),
+  ),
+  battlenet: (
+    bg1: #0d1e38,
+    bg2: #040812,
+    accent: #0074e0,
+    accent-rgb: (0, 116, 224),
+  ),
+  amazon: (
+    bg1: #291e0a,
+    bg2: #0d0903,
+    accent: #f59e0b,
+    accent-rgb: (245, 158, 11),
+  ),
+  rockstar: (
+    bg1: #281f08,
+    bg2: #0c0902,
+    accent: #eab308,
+    accent-rgb: (234, 179, 8),
+  ),
+  emulator: (
+    bg1: #2b0e20,
+    bg2: #0d040a,
+    accent: #ec4899,
+    accent-rgb: (236, 72, 153),
+  ),
+  other: (
+    bg1: #141b24,
+    bg2: #080c12,
+    accent: #64748b,
+    accent-rgb: (100, 116, 139),
+  ),
+);
+
+// CSS Custom Properties Export
+:root {
+  // Base Palette
+  --bg-0: #030712;
+  --bg-1: #070e1c;
+  --bg-2: #0c182c;
+
+  // Glass Panels
+  --panel: rgba(14, 25, 44, 0.52);
+  --panel-subtle: rgba(14, 25, 44, 0.32);
+  --panel-strong: rgba(18, 32, 56, 0.74);
+  --panel-hover: rgba(28, 48, 80, 0.58);
+  --panel-active: rgba(36, 62, 102, 0.7);
+
+  // Borders & Glows
+  --border: rgba(135, 195, 250, 0.13);
+  --border-subtle: rgba(135, 195, 250, 0.08);
+  --border-strong: rgba(135, 195, 250, 0.28);
+  --border-glow: rgba(56, 189, 248, 0.45);
+
+  // Typography
+  --text: #f0f6fc;
+  --text-dim: #9bb2c9;
+  --text-mute: #63778f;
+
+  // Brand Accents
+  --accent: #38bdf8;
+  --accent-hover: #60a5fa;
+  --accent-rgb: 56, 189, 248;
+  --accent-2: #a855f7;
+  --accent-2-rgb: 168, 85, 247;
+  --danger: #f87171;
+  --ok: #34d399;
+  --warn: #fbbf24;
+
+  // Radius Scales
+  --radius: 14px;
+  --radius-sm: 8px;
+  --radius-lg: 20px;
+  --radius-pill: 9999px;
+
+  // Shadows & Elevation
+  --shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.28);
+  --shadow: 0 16px 42px rgba(0, 0, 0, 0.44);
+  --shadow-elevated: 0 24px 64px rgba(0, 0, 0, 0.58), 0 0 1px 1px rgba(135, 195, 250, 0.15);
+
+  // Blur Strengths
+  --blur: 18px;
+  --blur-strong: 26px;
+
+  // Highlights
+  --glass-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+  --glass-highlight-strong: inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
+
+  // Card & Cover Tokens
+  --card-cover-aspect: 600 / 900;
+  --card-bg: rgba(14, 25, 44, 0.45);
+  --card-action-size: 24px;
+  --card-check-size: 22px;
+  --badge-bg: rgba(6, 14, 26, 0.85);
+
+  // Details & Media Gallery Tokens
+  --hero-min-height: 260px;
+  --hero-capsule-width: 130px;
+  --hero-capsule-height: 195px;
+  --media-aspect-ratio: 16 / 9;
+  --gallery-thumb-size: 72px;
+
+  // Platform Variables Generated from SCSS Map
+  @each $name, $props in $platforms {
+    $bg1: map.get($props, bg1);
+    $bg2: map.get($props, bg2);
+    $accent: map.get($props, accent);
+    $rgb: map.get($props, accent-rgb);
+
+    --platform-#{$name}-gradient: linear-gradient(160deg, #{$bg1} 0%, #{$bg2} 100%);
+    --platform-#{$name}-accent: #{$accent};
+    --platform-#{$name}-glow: radial-gradient(circle at 50% 45%, rgba(#{$rgb}, 0.22), transparent 65%);
+  }
+
+  color-scheme: dark;
+}

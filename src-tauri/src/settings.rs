@@ -29,6 +29,9 @@ pub struct Settings {
     /// Non-Steam source detection preferences (enable flags + extra folders).
     #[serde(default)]
     pub platform_sources: Vec<crate::platforms::PlatformSource>,
+    /// Explicitly configured emulators and their ROM directories.
+    #[serde(default)]
+    pub emulator_configs: Vec<crate::platforms::EmulatorConfig>,
 }
 
 fn default_true() -> bool {
@@ -49,6 +52,7 @@ impl Default for Settings {
             auto_backup: true,
             auto_cats: Vec::new(),
             platform_sources: Vec::new(),
+            emulator_configs: Vec::new(),
         }
     }
 }

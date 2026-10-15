@@ -133,6 +133,7 @@
     margin-top: 0.2rem;
     letter-spacing: -0.02em;
     background: linear-gradient(135deg, #ffffff, var(--accent));
+    background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }

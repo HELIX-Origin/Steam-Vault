@@ -45,6 +45,19 @@ fn default_true() -> bool {
     true
 }
 
+/// User-configured emulator executable and ROM directories.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct EmulatorConfig {
+    pub id: String,
+    pub name: String,
+    pub executable_path: String,
+    #[serde(default)]
+    pub rom_directories: Vec<String>,
+    #[serde(default)]
+    pub default_args: Option<String>,
+}
+
 /// Options controlling one [`scan_all`] pass.
 #[derive(Debug, Clone, Default)]
 pub struct ScanConfig {
@@ -52,6 +65,8 @@ pub struct ScanConfig {
     pub sources: Vec<PlatformSource>,
     /// Also look on every mounted drive for well-known game folders.
     pub include_other_drives: bool,
+    /// Explicitly configured emulators and their ROM directories.
+    pub emulator_configs: Vec<EmulatorConfig>,
 }
 
 impl ScanConfig {

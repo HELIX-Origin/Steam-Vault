@@ -129,8 +129,16 @@ pub struct AppMeta {
     pub header_image: Option<String>,
     #[serde(default, alias = "capsule_image")]
     pub capsule_image: Option<String>,
+    #[serde(default, alias = "hero_image")]
+    pub hero_image: Option<String>,
+    #[serde(default, alias = "logo_image")]
+    pub logo_image: Option<String>,
     #[serde(default, alias = "user_score")]
     pub user_score: Option<f64>,
     #[serde(default, alias = "fetched_at")]
     pub fetched_at: Option<i64>,
+    #[serde(default)]
+    pub screenshots: Vec<String>,
+    #[serde(default)]
+    pub movies: Vec<String>,
 }

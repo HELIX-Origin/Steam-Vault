@@ -1,5 +1,5 @@
 <script lang="ts">
-  import "../app.css";
+  import "$styles/app.scss";
   import { page } from "$app/state";
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";

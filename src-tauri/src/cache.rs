@@ -662,6 +662,7 @@ mod tests {
             capsule_image: None,
             user_score: Some(9.5),
             fetched_at: Some(chrono::Utc::now().timestamp()),
+            ..Default::default()
         };
 
         cache.put("steam-store", 400, &meta);
@@ -699,6 +700,7 @@ mod tests {
             capsule_image: None,
             user_score: Some(8.0),
             fetched_at: Some(chrono::Utc::now().timestamp()),
+            ..Default::default()
         };
 
         cache.upsert_catalog_entry(

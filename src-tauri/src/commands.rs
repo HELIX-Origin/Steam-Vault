@@ -1041,6 +1041,7 @@ pub fn detect_platforms(
     platforms::scan_all(&platforms::ScanConfig {
         sources: settings.platform_sources,
         include_other_drives: include_other_drives.unwrap_or(false),
+        emulator_configs: settings.emulator_configs,
     })
 }
 
@@ -2266,3 +2267,129 @@ fn open_external_target(target: &str) -> AppResult<()> {
 
     Ok(())
 }
+
+/// Supported EmulationStation Desktop Edition (ES-DE) systems.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EsDeSystemInfo {
+    pub folder_name: String,
+    pub system_name: String,
+    pub console_platform: String,
+    pub extensions: Vec<String>,
+}
+
+pub const ES_DE_SYSTEM_DEFS: &[(&str, &str, &str, &[&str])] = &[
+    ("nes", "Nintendo Entertainment System", "NES", &[".nes", ".fds", ".unf", ".unif", ".zip", ".7z"]),
+    ("snes", "Super Nintendo Entertainment System", "Super Nintendo", &[".smc", ".sfc", ".fig", ".swc", ".bs", ".zip", ".7z"]),
+    ("n64", "Nintendo 64", "Nintendo 64", &[".z64", ".n64", ".v64", ".zip", ".7z"]),
+    ("gc", "Nintendo GameCube", "GameCube", &[".iso", ".gcm", ".gcz", ".rvz", ".ciso", ".wbfs"]),
+    ("wii", "Nintendo Wii", "Wii", &[".iso", ".wbfs", ".rvz", ".gcz", ".ciso", ".wad"]),
+    ("wiiu", "Nintendo Wii U", "Wii U", &[".wud", ".wux", ".rpx", ".wua"]),
+    ("switch", "Nintendo Switch", "Nintendo Switch", &[".nsp", ".xci", ".nca"]),
+    ("gb", "Game Boy", "Game Boy", &[".gb", ".zip", ".7z"]),
+    ("gbc", "Game Boy Color", "Game Boy Color", &[".gbc", ".zip", ".7z"]),
+    ("gba", "Game Boy Advance", "Game Boy Advance", &[".gba", ".zip", ".7z"]),
+    ("nds", "Nintendo DS", "Nintendo DS", &[".nds", ".zip", ".7z"]),
+    ("n3ds", "Nintendo 3DS", "Nintendo 3DS", &[".3ds", ".cia", ".cxi", ".cci"]),
+    ("virtualboy", "Nintendo Virtual Boy", "Virtual Boy", &[".vb", ".vboy", ".zip", ".7z"]),
+    ("gameandwatch", "Nintendo Game & Watch", "Game & Watch", &[".mgw", ".zip", ".7z"]),
+    ("psx", "Sony PlayStation", "PlayStation", &[".chd", ".cue", ".iso", ".pbp", ".bin", ".img"]),
+    ("ps2", "Sony PlayStation 2", "PlayStation 2", &[".chd", ".iso", ".cso", ".bin", ".gz"]),
+    ("ps3", "Sony PlayStation 3", "PlayStation 3", &[".iso", ".bin", ".pkg"]),
+    ("psp", "Sony PlayStation Portable", "PlayStation Portable", &[".iso", ".cso", ".chd", ".pbp"]),
+    ("psvita", "Sony PlayStation Vita", "PlayStation Vita", &[".vpk", ".zip"]),
+    ("mastersystem", "Sega Master System", "Sega Master System", &[".sms", ".zip", ".7z"]),
+    ("genesis", "Sega Genesis / Mega Drive", "Sega Genesis", &[".md", ".gen", ".smd", ".bin", ".zip", ".7z"]),
+    ("megadrive", "Sega Mega Drive", "Sega Genesis", &[".md", ".gen", ".smd", ".bin", ".zip", ".7z"]),
+    ("segacd", "Sega CD / Mega CD", "Sega CD", &[".chd", ".cue", ".iso", ".bin"]),
+    ("sega32x", "Sega 32X", "Sega 32X", &[".32x", ".zip", ".7z"]),
+    ("saturn", "Sega Saturn", "Sega Saturn", &[".chd", ".cue", ".iso", ".bin"]),
+    ("dreamcast", "Sega Dreamcast", "Dreamcast", &[".chd", ".gdi", ".cdi", ".cue"]),
+    ("gamegear", "Sega Game Gear", "Sega Game Gear", &[".gg", ".zip", ".7z"]),
+    ("arcade", "Arcade Games", "Arcade", &[".zip", ".7z"]),
+    ("mame", "MAME Arcade", "Arcade", &[".zip", ".7z", ".chd"]),
+    ("fbneo", "FinalBurn Neo", "Arcade", &[".zip", ".7z"]),
+    ("neogeo", "SNK Neo Geo", "Neo Geo", &[".zip", ".7z"]),
+    ("ngp", "SNK Neo Geo Pocket", "Neo Geo Pocket", &[".ngp", ".zip", ".7z"]),
+    ("ngpc", "SNK Neo Geo Pocket Color", "Neo Geo Pocket Color", &[".ngc", ".zip", ".7z"]),
+    ("wonderswan", "Bandai WonderSwan", "WonderSwan", &[".ws", ".zip", ".7z"]),
+    ("wonderswancolor", "Bandai WonderSwan Color", "WonderSwan Color", &[".wsc", ".zip", ".7z"]),
+    ("pcengine", "NEC PC Engine", "TurboGrafx-16", &[".pce", ".zip", ".7z"]),
+    ("pcenginecd", "NEC PC Engine CD", "TurboGrafx-16", &[".chd", ".cue", ".iso"]),
+    ("atari2600", "Atari 2600", "Atari 2600", &[".a26", ".bin", ".zip", ".7z"]),
+    ("atari5200", "Atari 5200", "Atari 5200", &[".a52", ".bin", ".zip", ".7z"]),
+    ("atari7800", "Atari 7800", "Atari 7800", &[".a78", ".bin", ".zip", ".7z"]),
+    ("atarijaguar", "Atari Jaguar", "Atari Jaguar", &[".j64", ".jag", ".zip", ".7z"]),
+    ("atarilynx", "Atari Lynx", "Atari Lynx", &[".lnx", ".zip", ".7z"]),
+    ("atarist", "Atari ST", "Atari ST", &[".st", ".stx", ".msa", ".ipf", ".zip"]),
+    ("3do", "Panasonic 3DO", "3DO", &[".chd", ".cue", ".iso"]),
+    ("colecovision", "ColecoVision", "ColecoVision", &[".col", ".bin", ".zip", ".7z"]),
+    ("intellivision", "Mattel Intellivision", "Intellivision", &[".int", ".bin", ".zip", ".7z"]),
+    ("msx", "MSX", "MSX", &[".rom", ".dsk", ".cas", ".zip", ".7z"]),
+    ("msx2", "MSX2", "MSX2", &[".rom", ".dsk", ".zip", ".7z"]),
+    ("c64", "Commodore 64", "Commodore 64", &[".d64", ".t64", ".prg", ".crt", ".zip"]),
+    ("amiga", "Commodore Amiga", "Amiga", &[".adf", ".hdf", ".ipf", ".lha", ".zip"]),
+    ("dos", "DOS PC", "DOS", &[".exe", ".com", ".bat", ".conf", ".zip"]),
+    ("scummvm", "ScummVM", "ScummVM", &[".scummvm", ".svm"]),
+];
+
+/// Get list of supported EmulationStation Desktop Edition (ES-DE) systems.
+#[tauri::command]
+pub fn get_es_de_systems() -> Vec<EsDeSystemInfo> {
+    ES_DE_SYSTEM_DEFS
+        .iter()
+        .map(|(folder, sys, console, exts)| EsDeSystemInfo {
+            folder_name: folder.to_string(),
+            system_name: sys.to_string(),
+            console_platform: console.to_string(),
+            extensions: exts.iter().map(|e| e.to_string()).collect(),
+        })
+        .collect()
+}
+
+/// Scaffold a standard EmulationStation (ES-DE) ROM directory hierarchy.
+///
+/// Creates standard subdirectories (e.g. `ROMs/gba`, `ROMs/gc`, `ROMs/ps2`)
+/// with a `systeminfo.txt` descriptor inside each system folder, matching
+/// the canonical retrogamecorps/ES-DE-Directories specification.
+#[tauri::command]
+pub fn scaffold_es_de_directories(target_path: String) -> AppResult<Vec<String>> {
+    let base = Path::new(&target_path);
+    if target_path.trim().is_empty() {
+        return Err(AppError::msg("Please specify a target directory to scaffold."));
+    }
+    if !base.exists() {
+        std::fs::create_dir_all(base)?;
+    }
+    let roms_root = if base
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(|s| s.eq_ignore_ascii_case("roms"))
+        .unwrap_or(false)
+    {
+        base.to_path_buf()
+    } else {
+        base.join("ROMs")
+    };
+    std::fs::create_dir_all(&roms_root)?;
+
+    let mut created_dirs = Vec::new();
+    for (dir_name, system_name, console_platform, extensions) in ES_DE_SYSTEM_DEFS {
+        let dir_path = roms_root.join(dir_name);
+        if !dir_path.exists() {
+            std::fs::create_dir_all(&dir_path)?;
+        }
+        let info_file = dir_path.join("systeminfo.txt");
+        if !info_file.exists() {
+            let exts_str = extensions.join(", ");
+            let content = format!(
+                "System: {system_name}\nConsole: {console_platform}\nDirectory: {dir_name}\nSupported Extensions: {exts_str}\nES-DE Compatible: Yes\n"
+            );
+            let _ = std::fs::write(&info_file, content);
+        }
+        created_dirs.push(dir_path.display().to_string());
+    }
+
+    Ok(created_dirs)
+}
+

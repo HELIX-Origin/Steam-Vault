@@ -141,6 +141,7 @@ pub fn vndb_to_app_meta(item: VndbResult) -> AppMeta {
         capsule_image: image_url,
         user_score: None,
         fetched_at: Some(chrono::Utc::now().timestamp()),
+        ..Default::default()
     }
 }
 

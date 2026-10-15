@@ -99,8 +99,19 @@ export interface AppMeta {
   shortDescription: string | null;
   headerImage: string | null;
   capsuleImage: string | null;
+  heroImage?: string | null;
+  logoImage?: string | null;
   userScore: number | null;
   fetchedAt: number | null;
+  screenshots?: string[];
+  movies?: string[];
+}
+
+export interface MediaItem {
+  type: "video" | "image";
+  url: string;
+  thumbnailUrl?: string;
+  title?: string;
 }
 
 export interface ProviderInfo {
@@ -190,6 +201,24 @@ export interface Settings {
   autoBackup: boolean;
   autoCats: AutoCat[];
   platformSources: PlatformSource[];
+  emulatorConfigs?: EmulatorConfig[];
+}
+
+/** User-configured emulator mapping (mirrors the Rust `EmulatorConfig`). */
+export interface EmulatorConfig {
+  id: string;
+  name: string;
+  executablePath: string;
+  romDirectories: string[];
+  defaultArgs?: string | null;
+}
+
+/** Standard ES-DE system definition (mirrors the Rust `EsDeSystemInfo`). */
+export interface EsDeSystemInfo {
+  folderName: string;
+  systemName: string;
+  consolePlatform: string;
+  extensions: string[];
 }
 
 /** Per-platform detection preference (mirrors the Rust `PlatformSource`). */

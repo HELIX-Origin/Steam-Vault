@@ -12,6 +12,7 @@ import type {
   CategorizationPlan,
   CategorizeRequest,
   Collection,
+  EsDeSystemInfo,
   Filter,
   FilterPreset,
   Game,
@@ -179,6 +180,11 @@ export const api = {
   uninstallGame: (appId: number, uninstallUri?: string | null) =>
     invoke<boolean>("uninstall_game", { appId, uninstallUri: uninstallUri ?? null }),
   openGameFolder: (path: string) => invoke<boolean>("open_game_folder", { path }),
+
+  // EmulationStation (ES-DE) Integration & ROM Directory Scaffolding
+  getEsDeSystems: () => invoke<EsDeSystemInfo[]>("get_es_de_systems"),
+  scaffoldEsDeDirectories: (targetPath: string) =>
+    invoke<string[]>("scaffold_es_de_directories", { targetPath }),
 };
 
 /** Normalize an unknown thrown value into a readable message. */

@@ -1,0 +1,73 @@
+// Steam Vault — Reusable SCSS Mixins
+// Glassmorphism, Elevations, Animations, and Layout Utilities
+
+@mixin glass($bg: var(--panel), $blur: var(--blur), $border: var(--border), $shadow: var(--shadow-sm), $highlight: var(--glass-highlight)) {
+  background: $bg;
+  backdrop-filter: blur($blur);
+  -webkit-backdrop-filter: blur($blur);
+  border: 1px solid $border;
+  border-radius: var(--radius);
+  box-shadow: $highlight, $shadow;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.18s ease;
+}
+
+@mixin glass-strong($bg: var(--panel-strong), $blur: var(--blur-strong), $border: var(--border-strong), $shadow: var(--shadow-elevated)) {
+  background: $bg;
+  backdrop-filter: blur($blur);
+  -webkit-backdrop-filter: blur($blur);
+  border: 1px solid $border;
+  border-radius: var(--radius);
+  box-shadow: var(--glass-highlight-strong), $shadow;
+}
+
+@mixin flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@mixin flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+@mixin flex-col {
+  display: flex;
+  flex-direction: column;
+}
+
+@mixin text-ellipsis {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@mixin line-clamp($lines: 2) {
+  display: -webkit-box;
+  -webkit-line-clamp: $lines;
+  line-clamp: $lines;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@mixin scrollbar($size: 8px) {
+  &::-webkit-scrollbar {
+    width: $size;
+    height: $size;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: rgba(135, 195, 250, 0.16);
+    border-radius: var(--radius-pill);
+
+    &:hover {
+      background: rgba(135, 195, 250, 0.32);
+    }
+  }
+}

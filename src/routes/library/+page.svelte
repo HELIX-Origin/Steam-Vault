@@ -1,9 +1,10 @@
 <script lang="ts">
+  import "$styles/library.scss";
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
   import { t } from "$lib/i18n";
   import { collections, error, games, loading } from "$lib/stores";
-  import type { AppMeta, Game, Platform } from "$lib/types";
+  import type { AppMeta, Game, MediaItem, Platform } from "$lib/types";
 
   // Display & layout state
   let viewMode: "grid" | "list" = "grid";
@@ -29,11 +30,14 @@
   let selectedGame: Game | null = null;
   let gameMeta: AppMeta | null = null;
   let loadingMeta = false;
-  let mediaImages: string[] = [];
+  let mediaItems: MediaItem[] = [];
   let selectedGalleryIdx = 0;
-  let activeLightboxImg: string | null = null;
+  let activeLightboxMedia: MediaItem | null = null;
   let showManageModal = false;
+  let managingGame: Game | null = null;
   let actionFeedback: string | null = null;
+  let customArtworks: Record<number, string> = {};
+  let failedAppIds = new Set<number>();
 
   const platformLabels: Record<string, string> = {
     steam: "Steam",
@@ -81,6 +85,7 @@
       games.set(lib);
       collections.set(cols);
       targetCollection = cols[0]?.name ?? null;
+      loadLocalArtwork();
     } catch (e) {
       error.set(errorMessage(e));
     } finally {
@@ -240,6 +245,177 @@
     return `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/logo.png`;
   }
 
+  function getPlatformIcon(platform: string): string {
+    switch (platform) {
+      case "steam": return "🎮";
+      case "gog": return "🌌";
+      case "epic": return "⚡";
+      case "itch": return "👾";
+      case "ubisoft": return "🌀";
+      case "ea": return "⚽";
+      case "battlenet": return "⚔️";
+      case "xbox": return "🟢";
+      case "emulator": return "🕹️";
+      default: return "🎲";
+    }
+  }
+
+  function getGameCover(game: Game): string {
+    if (customArtworks[game.appId]) {
+      return customArtworks[game.appId];
+    }
+    if (game.kind === "shortcut" || game.platform !== "steam") {
+      if (game.icon && (game.icon.startsWith("http") || game.icon.startsWith("data:") || game.icon.startsWith("asset:") || game.icon.startsWith("file:"))) {
+        return game.icon;
+      }
+      return "";
+    }
+    return getCapsuleUrl(game.appId);
+  }
+
+  function getGameHeader(game: Game): string {
+    if (customArtworks[game.appId]) {
+      return customArtworks[game.appId];
+    }
+    if (game.kind === "shortcut" || game.platform !== "steam") {
+      if (game.icon && (game.icon.startsWith("http") || game.icon.startsWith("data:") || game.icon.startsWith("asset:") || game.icon.startsWith("file:"))) {
+        return game.icon;
+      }
+      return "";
+    }
+    return getHeaderUrl(game.appId);
+  }
+
+  function handleCoverError(e: Event, game: Game) {
+    const img = e.currentTarget as HTMLImageElement;
+    const currentSrc = img.src;
+
+    // For non-Steam shortcuts or non-steam platforms, no point querying Steam CDN
+    if (game.kind === "shortcut" || game.platform !== "steam") {
+      failedAppIds.add(game.appId);
+      failedAppIds = new Set(failedAppIds);
+      return;
+    }
+
+    // 1. If library_600x900.jpg failed for a Steam game, fall back to header.jpg
+    if (currentSrc.includes("/library_600x900.jpg")) {
+      img.src = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${game.appId}/header.jpg`;
+      return;
+    }
+
+    // 2. If header.jpg failed, fall back to capsule_616x353.jpg
+    if (currentSrc.includes("/header.jpg")) {
+      img.src = `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${game.appId}/capsule_616x353.jpg`;
+      return;
+    }
+
+    // 3. If game has an icon and we haven't tried it yet
+    if (game.icon && !currentSrc.includes(game.icon) && (game.icon.startsWith("http") || game.icon.startsWith("data:"))) {
+      img.src = game.icon;
+      return;
+    }
+
+    // 4. Everything failed: hide image and reveal the styled fallback container
+    failedAppIds.add(game.appId);
+    failedAppIds = new Set(failedAppIds);
+  }
+
+  async function loadLocalArtwork() {
+    try {
+      const report = await api.getArtwork();
+      const withCustomGrid = report.filter((g) =>
+        g.slots.some((s) => (s.slot === "gridPortrait" || s.slot === "gridLandscape") && s.present)
+      );
+      for (const g of withCustomGrid) {
+        const hasPortrait = g.slots.some((s) => s.slot === "gridPortrait" && s.present);
+        const slot = hasPortrait ? "gridPortrait" : "gridLandscape";
+        api.readArtwork(g.appId, slot).then((dataUrl) => {
+          if (dataUrl) {
+            customArtworks[g.appId] = dataUrl;
+            customArtworks = { ...customArtworks };
+          }
+        }).catch(() => {});
+      }
+    } catch (e) {
+      console.debug("Could not inspect local custom grid artwork:", e);
+    }
+  }
+
+  function buildMediaGallery(game: Game, meta?: AppMeta | null): MediaItem[] {
+    const items: MediaItem[] = [];
+    const seenUrls = new Set<string>();
+
+    // 1. Up to 2 videos first (game trailers / gameplay previews)
+    if (meta?.movies && Array.isArray(meta.movies)) {
+      for (const movieUrl of meta.movies) {
+        if (items.length >= 2) break;
+        if (!movieUrl || seenUrls.has(movieUrl)) continue;
+        seenUrls.add(movieUrl);
+        items.push({
+          type: "video",
+          url: movieUrl,
+          title: "Trailer / Preview"
+        });
+      }
+    }
+
+    // 2. Real screenshots from metadata
+    if (meta?.screenshots && Array.isArray(meta.screenshots)) {
+      for (const ssUrl of meta.screenshots) {
+        if (items.length >= 10) break;
+        if (!ssUrl || seenUrls.has(ssUrl)) continue;
+        seenUrls.add(ssUrl);
+        items.push({
+          type: "image",
+          url: ssUrl,
+          title: "Screenshot"
+        });
+      }
+    }
+
+    // 3. Official Store Artwork (hero, header, capsule, logo) if not already added, capped at 10 items
+    const artworkCandidates: (string | undefined)[] = [];
+    if (meta?.heroImage) artworkCandidates.push(meta.heroImage);
+    if (game.kind === "steam" || game.platform === "steam" || game.appId < 0x80000000) {
+      artworkCandidates.push(getHeroUrl(game.appId));
+    }
+    if (meta?.headerImage) artworkCandidates.push(meta.headerImage);
+    if (game.kind === "steam" || game.platform === "steam" || game.appId < 0x80000000) {
+      artworkCandidates.push(getHeaderUrl(game.appId));
+    }
+    if (meta?.capsuleImage) artworkCandidates.push(meta.capsuleImage);
+    if (game.kind === "steam" || game.platform === "steam" || game.appId < 0x80000000) {
+      artworkCandidates.push(getCapsuleUrl(game.appId));
+    }
+    if (meta?.logoImage) artworkCandidates.push(meta.logoImage);
+    if (game.kind === "steam" || game.platform === "steam" || game.appId < 0x80000000) {
+      artworkCandidates.push(getLogoUrl(game.appId));
+    }
+
+    for (const art of artworkCandidates) {
+      if (items.length >= 10) break;
+      if (!art || seenUrls.has(art)) continue;
+      seenUrls.add(art);
+      items.push({
+        type: "image",
+        url: art,
+        title: "Artwork"
+      });
+    }
+
+    // Strict cap at 10 items without artificial padding or duplicates
+    return items.slice(0, 10);
+  }
+
+  function handleMediaError(idx: number) {
+    if (idx >= 0 && idx < mediaItems.length) {
+      mediaItems = mediaItems.filter((_, i) => i !== idx);
+      if (selectedGalleryIdx >= mediaItems.length) {
+        selectedGalleryIdx = Math.max(0, mediaItems.length - 1);
+      }
+    }
+  }
+
   // Open extensive per-game details view
   async function openGameDetails(game: Game) {
     selectedGame = game;
@@ -247,34 +423,21 @@
     loadingMeta = true;
     selectedGalleryIdx = 0;
     actionFeedback = null;
-    mediaImages = [];
-
-    // Assemble up to 10 media gallery images for this game
-    const defaultImages = [
-      getHeroUrl(game.appId),
-      getCapsuleUrl(game.appId),
-      getHeaderUrl(game.appId),
-      getLogoUrl(game.appId),
-      `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${game.appId}/ss_1.jpg`,
-      `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${game.appId}/ss_2.jpg`,
-      `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${game.appId}/ss_3.jpg`,
-      `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${game.appId}/ss_4.jpg`,
-      `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${game.appId}/ss_5.jpg`,
-      `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${game.appId}/ss_6.jpg`
-    ];
-    mediaImages = defaultImages.slice(0, 10);
+    mediaItems = buildMediaGallery(game, null);
 
     try {
       if (game.kind === "steam" || game.appId < 0x80000000) {
         const metas = await api.fetchSteamStoreMetadata([game.appId]);
         if (metas.length > 0) {
           gameMeta = metas[0];
+          mediaItems = buildMediaGallery(game, gameMeta);
         }
       }
       if (!gameMeta && game.name) {
         const catalogMeta = await api.fetchOnlineGameEntry(game.name).catch(() => null);
         if (catalogMeta) {
           gameMeta = catalogMeta;
+          mediaItems = buildMediaGallery(game, gameMeta);
         }
       }
     } catch (e) {
@@ -288,7 +451,21 @@
     selectedGame = null;
     gameMeta = null;
     showManageModal = false;
+    managingGame = null;
     actionFeedback = null;
+    mediaItems = [];
+    activeLightboxMedia = null;
+  }
+
+  function openManageModal(game: Game, e?: Event) {
+    if (e) e.stopPropagation();
+    managingGame = game;
+    showManageModal = true;
+  }
+
+  function closeManageModal() {
+    showManageModal = false;
+    managingGame = null;
   }
 
   // Game action triggers
@@ -351,10 +528,11 @@
 <!-- PER-GAME EXTENSIVE DETAILS / MANAGEMENT VIEW                               -->
 <!-- ========================================================================= -->
 {#if selectedGame}
+  {@const detailCover = getGameCover(selectedGame)}
   <div class="game-details-view">
     <!-- Sub-page Header bar -->
     <div class="details-topbar glass-strong">
-      <div class="row" style="gap:0.75rem">
+      <div class="row topbar-nav-group">
         <button class="btn btn-ghost" onclick={closeGameDetails} title="Back to Library">
           ← {$t("nav.library")}
         </button>
@@ -368,22 +546,24 @@
         {/if}
       </div>
 
-      <div class="row" style="gap:0.6rem">
+      <div class="row topbar-action-group">
         {#if actionFeedback}
           <span class="pill pill-glow feedback-pill">{actionFeedback}</span>
         {/if}
 
         {#if selectedGame.installed}
           <button class="btn btn-primary play-btn" onclick={() => handleLaunch(selectedGame!)}>
-            ▶ Play
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor" class="btn-glyph"><path d="M4.5 3.2v9.6l8-4.8z" /></svg>
+            Play
           </button>
         {:else}
           <button class="btn btn-primary install-btn" onclick={() => handleInstall(selectedGame!)}>
-            ⬇ Install
+            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="btn-glyph"><path d="M8 2v8m0 0l-3.2-3.2m3.2 3.2l3.2-3.2" /><path d="M2.5 13.5h11" /></svg>
+            Install
           </button>
         {/if}
 
-        <button class="btn btn-ghost" onclick={() => (showManageModal = true)} title="Manage Game Options">
+        <button class="btn btn-ghost" onclick={() => openManageModal(selectedGame!)} title="Manage Game Options">
           ⚙ Manage
         </button>
 
@@ -402,18 +582,23 @@
     <div class="details-hero glass">
       <div
         class="hero-backdrop"
-        style="background-image: url('{getHeroUrl(selectedGame.appId)}'), url('{getHeaderUrl(selectedGame.appId)}');"
+        style="--hero-bg: url('{getHeroUrl(selectedGame.appId)}'); --header-bg: url('{getHeaderUrl(selectedGame.appId)}');"
       ></div>
       <div class="hero-overlay"></div>
       <div class="hero-content">
-        <img
-          class="hero-capsule"
-          src={getCapsuleUrl(selectedGame.appId)}
-          alt={selectedGame.name}
-          onerror={(e) => {
-            (e.currentTarget as HTMLElement).style.display = 'none';
-          }}
-        />
+        {#if detailCover && !failedAppIds.has(selectedGame.appId)}
+          <img
+            class="hero-capsule"
+            src={detailCover}
+            alt={selectedGame.name}
+            onerror={(e) => handleCoverError(e, selectedGame!)}
+          />
+        {:else}
+          <div class="hero-capsule hero-capsule-fallback platform-{selectedGame.platform}">
+            <span class="fallback-icon">{getPlatformIcon(selectedGame.platform)}</span>
+            <span class="fallback-platform">{platformLabels[selectedGame.platform] || selectedGame.platform}</span>
+          </div>
+        {/if}
         <div class="hero-meta">
           <h1 class="hero-title">{selectedGame.name || `App ${selectedGame.appId}`}</h1>
           {#if gameMeta?.shortDescription}
@@ -438,52 +623,96 @@
 
     <!-- Main Content Layout: Gallery + Info Cards -->
     <div class="details-grid">
-      <!-- 10-Image Media Gallery -->
+      <!-- Media Gallery (Videos & Images, Capped at 10) -->
       <section class="glass-strong card media-gallery-card">
-        <div class="row-between" style="margin-bottom:0.75rem">
+        <div class="row-between section-head">
           <div>
             <h3 class="section-title">Media Gallery</h3>
-            <p class="muted-sm">10-image screenshot & artwork showcase. Click any image to view full resolution.</p>
+            <p class="muted-sm">Up to 10 trailers, gameplay previews, screenshots, and artwork. Click to expand.</p>
           </div>
-          <span class="muted-sm">{selectedGalleryIdx + 1} / {mediaImages.length}</span>
+          {#if mediaItems.length > 0}
+            <span class="muted-sm">{selectedGalleryIdx + 1} / {mediaItems.length}</span>
+          {/if}
         </div>
 
-        <!-- Featured Media Display -->
-        <div
-          class="featured-media"
-          role="button"
-          tabindex="0"
-          onclick={() => (activeLightboxImg = mediaImages[selectedGalleryIdx])}
-          onkeydown={(e) => e.key === "Enter" && (activeLightboxImg = mediaImages[selectedGalleryIdx])}
-        >
-          <img
-            src={mediaImages[selectedGalleryIdx]}
-            alt="Game screenshot"
-            onerror={(e) => {
-              (e.currentTarget as HTMLImageElement).src = getHeaderUrl(selectedGame!.appId);
-            }}
-          />
-          <div class="media-zoom-hint">🔍 Expand to Fullscreen</div>
-        </div>
+        {#if mediaItems.length > 0 && mediaItems[selectedGalleryIdx]}
+          {@const currentMedia = mediaItems[selectedGalleryIdx]}
+          <!-- Featured Media Display -->
+          <div class="featured-media" class:video-mode={currentMedia.type === "video"}>
+            {#if currentMedia.type === "video"}
+              <video
+                src={currentMedia.url}
+                controls
+                autoplay
+                muted
+                loop
+                playsinline
+                class="featured-video-player"
+                onerror={() => handleMediaError(selectedGalleryIdx)}
+              >
+                <track kind="captions" />
+              </video>
+              <button
+                class="media-zoom-hint"
+                onclick={() => (activeLightboxMedia = currentMedia)}
+                title="Expand video"
+              >
+                🔍 Fullscreen
+              </button>
+            {:else}
+              <div
+                class="featured-image-wrapper"
+                role="button"
+                tabindex="0"
+                onclick={() => (activeLightboxMedia = currentMedia)}
+                onkeydown={(e) => e.key === "Enter" && (activeLightboxMedia = currentMedia)}
+              >
+                <img
+                  src={currentMedia.url}
+                  alt={currentMedia.title || "Game media"}
+                  onerror={() => handleMediaError(selectedGalleryIdx)}
+                />
+                <div class="media-zoom-hint">🔍 Expand to Fullscreen</div>
+              </div>
+            {/if}
+          </div>
 
-        <!-- 10 Thumbnail Strip -->
-        <div class="gallery-thumbnails">
-          {#each mediaImages as img, idx}
-            <button
-              class="thumb-btn"
-              class:active={selectedGalleryIdx === idx}
-              onclick={() => (selectedGalleryIdx = idx)}
-            >
-              <img
-                src={img}
-                alt="Thumbnail {idx + 1}"
-                onerror={(e) => {
-                  (e.currentTarget as HTMLImageElement).src = getHeaderUrl(selectedGame!.appId);
-                }}
-              />
-            </button>
-          {/each}
-        </div>
+          <!-- Thumbnail Strip (Capped at 10 items) -->
+          <div class="gallery-thumbnails">
+            {#each mediaItems as item, idx}
+              <button
+                class="thumb-btn"
+                class:active={selectedGalleryIdx === idx}
+                class:is-video={item.type === "video"}
+                onclick={() => (selectedGalleryIdx = idx)}
+                title={item.type === "video" ? `Video: ${item.title || "Trailer"}` : (item.title || `Image ${idx + 1}`)}
+              >
+                {#if item.type === "video"}
+                  <div class="thumb-video-wrapper">
+                    <video
+                      src={item.url}
+                      preload="metadata"
+                      muted
+                      playsinline
+                      onerror={() => handleMediaError(idx)}
+                    ></video>
+                    <span class="video-play-badge" aria-hidden="true">▶</span>
+                  </div>
+                {:else}
+                  <img
+                    src={item.url}
+                    alt={item.title || `Thumbnail ${idx + 1}`}
+                    onerror={() => handleMediaError(idx)}
+                  />
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {:else}
+          <div class="no-media-placeholder">
+            <span class="muted">No media preview available for this title.</span>
+          </div>
+        {/if}
       </section>
 
       <!-- Right column: Info Cards -->
@@ -635,144 +864,6 @@
     </div>
   </div>
 
-  <!-- Management Sub-Window Modal -->
-  {#if showManageModal}
-    <div
-      class="modal-backdrop"
-      role="button"
-      tabindex="0"
-      onclick={() => (showManageModal = false)}
-      onkeydown={(e) => e.key === "Escape" && (showManageModal = false)}
-    >
-      <!-- svelte-ignore a11y_click_events_have_key_events -->
-      <!-- svelte-ignore a11y_no_static_element_interactions -->
-      <div class="modal glass-strong card" onclick={(e) => e.stopPropagation()}>
-        <div class="row-between modal-head">
-          <h2 class="section-title">Manage: {selectedGame.name}</h2>
-          <button class="btn btn-ghost" onclick={() => (showManageModal = false)}>✕</button>
-        </div>
-
-        <div class="modal-body">
-          <!-- Folder Management -->
-          <div class="manage-group">
-            <span class="group-label">Local Files & Installation</span>
-            <div class="row" style="gap:0.5rem">
-              <button
-                class="btn"
-                onclick={() => handleOpenFolder(selectedGame!)}
-                disabled={!selectedGame.installDir && !selectedGame.startDir}
-              >
-                📂 Open Game Folder
-              </button>
-              {#if selectedGame.installed}
-                <button class="btn btn-danger" onclick={() => handleUninstall(selectedGame!)}>
-                  🗑️ Uninstall Game
-                </button>
-              {:else}
-                <button class="btn btn-primary" onclick={() => handleInstall(selectedGame!)}>
-                  ⬇️ Install Game
-                </button>
-              {/if}
-            </div>
-          </div>
-
-          <!-- Platform assignment -->
-          <div class="manage-group">
-            <span class="group-label">Storefront Platform Tag</span>
-            <select
-              class="platform-select-modal"
-              value={selectedGame.platform}
-              onchange={(e) => setPlatform(selectedGame!, e.currentTarget.value)}
-            >
-              {#each platformOptions as opt}
-                <option value={opt.id}>{opt.label}</option>
-              {/each}
-            </select>
-            <p class="muted-sm" style="margin-top:0.35rem">
-              Assigns this game to a specific storefront catalogue for grouping and metadata.
-            </p>
-          </div>
-
-          <!-- Collections Assignment -->
-          <div class="manage-group">
-            <span class="group-label">Category / Collection Assignment</span>
-            <div class="row" style="gap:0.5rem">
-              <select bind:value={targetCollection} style="flex:1">
-                {#each $collections as col (col.id)}
-                  <option value={col.name}>{col.name}</option>
-                {/each}
-              </select>
-              <button
-                class="btn btn-primary"
-                onclick={() => {
-                  selected = new Set([selectedGame!.appId]);
-                  assign("add");
-                }}
-              >
-                Add
-              </button>
-              <button
-                class="btn btn-danger"
-                onclick={() => {
-                  selected = new Set([selectedGame!.appId]);
-                  assign("remove");
-                }}
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-
-          <!-- Artwork management link -->
-          <div class="manage-group">
-            <span class="group-label">Artwork Customization</span>
-            <div class="row" style="gap:0.5rem">
-              <a class="btn" href="/artwork">
-                🎨 Open in Artwork Manager
-              </a>
-            </div>
-          </div>
-
-          <!-- Launch specifics -->
-          <div class="manage-group">
-            <span class="group-label">Launch Protocol & Parameters</span>
-            <div class="info-table">
-              <div class="info-row full-width">
-                <span class="muted">Launch URI:</span>
-                <span class="code-val">{selectedGame.launchUri || `steam://run/${selectedGame.appId}`}</span>
-              </div>
-              {#if selectedGame.installUri}
-                <div class="info-row full-width">
-                  <span class="muted">Install URI:</span>
-                  <span class="code-val">{selectedGame.installUri}</span>
-                </div>
-              {/if}
-            </div>
-          </div>
-        </div>
-
-        <div class="modal-footer row-between">
-          <span class="muted-sm">Changes take effect immediately.</span>
-          <button class="btn btn-primary" onclick={() => (showManageModal = false)}>Done</button>
-        </div>
-      </div>
-    </div>
-  {/if}
-
-  <!-- Fullscreen Lightbox Modal -->
-  {#if activeLightboxImg}
-    <div
-      class="lightbox-overlay"
-      role="button"
-      tabindex="0"
-      onclick={() => (activeLightboxImg = null)}
-      onkeydown={(e) => e.key === "Escape" && (activeLightboxImg = null)}
-    >
-      <img src={activeLightboxImg} alt="Enlarged screenshot" class="lightbox-img" />
-      <button class="lightbox-close" onclick={() => (activeLightboxImg = null)}>✕</button>
-    </div>
-  {/if}
-
 <!-- ========================================================================= -->
 <!-- MAIN REDESIGNED LIBRARY VIEW (GRID + RIGHT SIDEBAR)                       -->
 <!-- ========================================================================= -->
@@ -832,11 +923,12 @@
 
       <!-- Main Game View -->
       {#if $loading}
-        <p class="muted" style="padding:2rem">{$t("common.loading")}</p>
+        <p class="muted loading-notice">{$t("common.loading")}</p>
       {:else if viewMode === "grid"}
         <!-- GRID DISPLAY (Default & Primary Layout) -->
         <div class="games-grid">
           {#each filtered as game (game.kind + "-" + game.appId)}
+            {@const coverSrc = getGameCover(game)}
             <div
               class="game-card glass"
               class:selected={selected.has(game.appId)}
@@ -847,54 +939,23 @@
               onkeydown={(e) => e.key === "Enter" && openGameDetails(game)}
             >
               <!-- Card Cover Artwork -->
-              <div class="card-cover-container">
-                <img
-                  class="card-cover"
-                  src={getCapsuleUrl(game.appId)}
-                  alt={game.name}
-                  loading="lazy"
-                  onerror={(e) => {
-                    const target = e.currentTarget as HTMLImageElement;
-                    target.style.display = 'none';
-                    if (target.parentElement) {
-                      target.parentElement.classList.add('has-fallback');
-                    }
-                  }}
-                />
-                <div class="card-cover-fallback">
-                  <span class="fallback-icon">🎮</span>
-                  <span class="fallback-title">{game.name || `App ${game.appId}`}</span>
-                </div>
-
-                <!-- Hover action bar -->
-                <div class="card-hover-overlay">
-                  {#if game.installed}
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <button
-                      class="card-play-btn"
-                      title="Launch Game"
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        handleLaunch(game);
-                      }}
-                    >
-                      ▶
-                    </button>
-                  {:else}
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <button
-                      class="card-play-btn install"
-                      title="Install Game"
-                      onclick={(e) => {
-                        e.stopPropagation();
-                        handleInstall(game);
-                      }}
-                    >
-                      ⬇
-                    </button>
-                  {/if}
+              <div class="card-cover-container" class:has-fallback={!coverSrc || failedAppIds.has(game.appId)}>
+                {#if coverSrc && !failedAppIds.has(game.appId)}
+                  <img
+                    class="card-cover"
+                    src={coverSrc}
+                    alt={game.name}
+                    loading="lazy"
+                    onerror={(e) => handleCoverError(e, game)}
+                  />
+                {/if}
+                <div class="card-cover-fallback platform-{game.platform}">
+                  <div class="fallback-glow"></div>
+                  <div class="fallback-content">
+                    <span class="fallback-icon">{getPlatformIcon(game.platform)}</span>
+                    <span class="fallback-title">{game.name || `App ${game.appId}`}</span>
+                    <span class="fallback-platform">{platformLabels[game.platform] || game.platform}</span>
+                  </div>
                 </div>
 
                 <!-- Select checkbox -->
@@ -922,8 +983,43 @@
               <div class="card-info">
                 <div class="card-title" title={game.name}>{game.name || `App ${game.appId}`}</div>
                 <div class="card-meta">
-                  <span class="muted-sm">{formatPlaytime(game.playtimeMinutes)}</span>
-                  {#if game.favorite}<span class="card-fav">★</span>{/if}
+                  <div class="card-meta-left">
+                    <span class="muted-sm">{formatPlaytime(game.playtimeMinutes)}</span>
+                    {#if game.favorite}<span class="card-fav">★</span>{/if}
+                  </div>
+                  <!-- Bottom right actions: Play / Download -->
+                  <!-- svelte-ignore a11y_click_events_have_key_events -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div class="card-actions" onclick={(e) => e.stopPropagation()}>
+                    {#if game.installed}
+                      <button
+                        class="card-action-btn play"
+                        title="Launch {game.name}"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          handleLaunch(game);
+                        }}
+                      >
+                        <svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" class="action-glyph">
+                          <path d="M4.5 3.2v9.6l8-4.8z" />
+                        </svg>
+                      </button>
+                    {:else}
+                      <button
+                        class="card-action-btn install"
+                        title="Install {game.name}"
+                        onclick={(e) => {
+                          e.stopPropagation();
+                          handleInstall(game);
+                        }}
+                      >
+                        <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="action-glyph">
+                          <path d="M8 2v8m0 0l-3.2-3.2m3.2 3.2l3.2-3.2" />
+                          <path d="M2.5 13.5h11" />
+                        </svg>
+                      </button>
+                    {/if}
+                  </div>
                 </div>
               </div>
             </div>
@@ -938,6 +1034,7 @@
         <!-- LIST DISPLAY (Alternate Layout) -->
         <div class="glass list-view">
           {#each filtered as game (game.kind + "-" + game.appId)}
+            {@const thumbSrc = getGameHeader(game)}
             <div
               class="row game-list-row"
               class:selected={selected.has(game.appId)}
@@ -955,12 +1052,18 @@
                 {selected.has(game.appId) ? "✓" : ""}
               </span>
 
-              <img
-                src={getHeaderUrl(game.appId)}
-                alt=""
-                class="list-thumb"
-                onerror={(e) => ((e.currentTarget as HTMLElement).style.display = 'none')}
-              />
+              {#if thumbSrc}
+                <img
+                  src={thumbSrc}
+                  alt=""
+                  class="list-thumb"
+                  onerror={(e) => ((e.currentTarget as HTMLElement).style.display = 'none')}
+                />
+              {:else}
+                <div class="list-thumb list-thumb-fallback">
+                  <span>{getPlatformIcon(game.platform)}</span>
+                </div>
+              {/if}
 
               <span class="name">
                 {game.name || `App ${game.appId}`}
@@ -998,17 +1101,23 @@
               <!-- Action buttons -->
               <!-- svelte-ignore a11y_click_events_have_key_events -->
               <!-- svelte-ignore a11y_no_static_element_interactions -->
-              <div class="row" style="gap:0.35rem" onclick={(e) => e.stopPropagation()}>
+              <div class="row list-actions-group" onclick={(e) => e.stopPropagation()}>
                 {#if game.installed}
-                  <button class="btn mini btn-primary" onclick={() => handleLaunch(game)}>Play</button>
+                  <button class="btn mini btn-primary" onclick={() => handleLaunch(game)}>
+                    <svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" class="action-glyph-inline"><path d="M4.5 3.2v9.6l8-4.8z" /></svg>
+                    Play
+                  </button>
                 {:else}
-                  <button class="btn mini" onclick={() => handleInstall(game)}>Install</button>
+                  <button class="btn mini" onclick={() => handleInstall(game)}>
+                    <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" class="action-glyph-inline"><path d="M8 2v8m0 0l-3.2-3.2m3.2 3.2l3.2-3.2" /><path d="M2.5 13.5h11" /></svg>
+                    Install
+                  </button>
                 {/if}
               </div>
             </div>
           {/each}
           {#if filtered.length === 0}
-            <p class="muted" style="padding:1.5rem">No games match the current filters.</p>
+            <p class="muted empty-list-notice">No games match the current filters.</p>
           {/if}
         </div>
       {/if}
@@ -1156,928 +1265,165 @@
   </div>
 {/if}
 
-<style>
-  /* Base Layout */
-  .library-shell {
-    display: flex;
-    gap: 1rem;
-    height: 100%;
-    align-items: flex-start;
-  }
+<!-- Management Sub-Window Modal (Accessible from both Grid Cards & Details View) -->
+{#if showManageModal && (managingGame || selectedGame)}
+  {@const targetGame = managingGame || selectedGame!}
+  <div
+    class="modal-backdrop"
+    role="button"
+    tabindex="0"
+    onclick={closeManageModal}
+    onkeydown={(e) => e.key === "Escape" && closeManageModal()}
+  >
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="modal glass-strong card" onclick={(e) => e.stopPropagation()}>
+      <div class="row-between modal-head">
+        <h2 class="section-title">Manage: {targetGame.name}</h2>
+        <button class="btn btn-ghost" onclick={closeManageModal}>✕</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Folder Management -->
+        <div class="manage-group">
+          <span class="group-label">Local Files & Installation</span>
+          <div class="row" style="gap:0.5rem">
+            <button
+              class="btn"
+              onclick={() => handleOpenFolder(targetGame)}
+              disabled={!targetGame.installDir && !targetGame.startDir}
+            >
+              📂 Open Game Folder
+            </button>
+            {#if targetGame.installed}
+              <button class="btn btn-danger" onclick={() => handleUninstall(targetGame)}>
+                🗑️ Uninstall Game
+              </button>
+            {:else}
+              <button class="btn btn-primary" onclick={() => handleInstall(targetGame)}>
+                ⬇️ Install Game
+              </button>
+            {/if}
+          </div>
+        </div>
+
+        <!-- Platform assignment -->
+        <div class="manage-group">
+          <span class="group-label">Storefront Platform Tag</span>
+          <select
+            class="platform-select-modal"
+            value={targetGame.platform}
+            onchange={(e) => setPlatform(targetGame, e.currentTarget.value)}
+          >
+            {#each platformOptions as opt}
+              <option value={opt.id}>{opt.label}</option>
+            {/each}
+          </select>
+          <p class="muted-sm" style="margin-top:0.35rem">
+            Assigns this game to a specific storefront catalogue for grouping and metadata.
+          </p>
+        </div>
+
+        <!-- Collections Assignment -->
+        <div class="manage-group">
+          <span class="group-label">Category / Collection Assignment</span>
+          <div class="row" style="gap:0.5rem">
+            <select bind:value={targetCollection} style="flex:1">
+              {#each $collections as col (col.id)}
+                <option value={col.name}>{col.name}</option>
+              {/each}
+            </select>
+            <button
+              class="btn btn-primary"
+              onclick={() => {
+                selected = new Set([targetGame.appId]);
+                assign("add");
+              }}
+            >
+              Add
+            </button>
+            <button
+              class="btn btn-danger"
+              onclick={() => {
+                selected = new Set([targetGame.appId]);
+                assign("remove");
+              }}
+            >
+              Remove
+            </button>
+          </div>
+        </div>
+
+        <!-- Artwork management link -->
+        <div class="manage-group">
+          <span class="group-label">Artwork Customization</span>
+          <div class="row" style="gap:0.5rem">
+            <a class="btn" href="/artwork">
+              🎨 Open in Artwork Manager
+            </a>
+          </div>
+        </div>
+
+        <!-- Launch specifics -->
+        <div class="manage-group">
+          <span class="group-label">Launch Protocol & Parameters</span>
+          <div class="info-table">
+            <div class="info-row full-width">
+              <span class="muted">Launch URI:</span>
+              <span class="code-val">{targetGame.launchUri || `steam://run/${targetGame.appId}`}</span>
+            </div>
+            {#if targetGame.installUri}
+              <div class="info-row full-width">
+                <span class="muted">Install URI:</span>
+                <span class="code-val">{targetGame.installUri}</span>
+              </div>
+            {/if}
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer row-between">
+        <span class="muted-sm">Changes take effect immediately.</span>
+        <button class="btn btn-primary" onclick={closeManageModal}>Done</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Fullscreen Lightbox Modal -->
+{#if activeLightboxMedia}
+  <div
+    class="lightbox-overlay"
+    role="button"
+    tabindex="0"
+    onclick={() => (activeLightboxMedia = null)}
+    onkeydown={(e) => e.key === "Escape" && (activeLightboxMedia = null)}
+  >
+    {#if activeLightboxMedia.type === "video"}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
+      <div class="lightbox-video-container" onclick={(e) => e.stopPropagation()}>
+        <video
+          src={activeLightboxMedia.url}
+          controls
+          autoplay
+          playsinline
+          class="lightbox-video"
+        >
+          <track kind="captions" />
+        </video>
+      </div>
+    {:else}
+      <!-- svelte-ignore a11y_click_events_have_key_events -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <img
+        src={activeLightboxMedia.url}
+        alt={activeLightboxMedia.title || "Enlarged media"}
+        class="lightbox-img"
+        onclick={(e) => e.stopPropagation()}
+      />
+    {/if}
+    <button class="lightbox-close" onclick={() => (activeLightboxMedia = null)}>✕</button>
+  </div>
+{/if}
 
-  .library-main {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .library-header {
-    margin-bottom: 1rem;
-  }
-
-  .bulk-bar {
-    display: flex;
-    align-items: center;
-    gap: 0.65rem;
-    padding: 0.65rem 1rem;
-    margin-bottom: 1rem;
-    flex-wrap: wrap;
-    border-radius: var(--radius-sm);
-  }
-
-  .spacer {
-    flex: 1;
-  }
-
-  /* Right Sidebar */
-  .library-sidebar {
-    width: 280px;
-    flex-shrink: 0;
-    padding: 1rem;
-    border-radius: var(--radius);
-    display: flex;
-    flex-direction: column;
-    gap: 1.15rem;
-    position: sticky;
-    top: 0;
-    max-height: calc(100vh - 80px);
-    overflow-y: auto;
-  }
-
-  .sidebar-head {
-    align-items: center;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid var(--border-subtle);
-  }
-
-  .sidebar-title {
-    font-weight: 650;
-    font-size: 0.95rem;
-    letter-spacing: -0.01em;
-  }
-
-  .view-switch-btns {
-    display: flex;
-    gap: 2px;
-    background: rgba(0, 0, 0, 0.3);
-    padding: 2px;
-    border-radius: var(--radius-sm);
-  }
-
-  .view-btn {
-    border: none;
-    background: transparent;
-    color: var(--text-dim);
-    padding: 0.2rem 0.5rem;
-    cursor: pointer;
-    border-radius: 4px;
-    font-size: 0.85rem;
-    transition: all 0.15s ease;
-  }
-
-  .view-btn.active,
-  .view-btn:hover {
-    background: var(--panel-hover);
-    color: var(--text);
-  }
-
-  .sidebar-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.45rem;
-  }
-
-  .sidebar-label {
-    font-size: 0.76rem;
-    font-weight: 650;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-dim);
-  }
-
-  .search-wrap {
-    position: relative;
-    display: flex;
-    align-items: center;
-  }
-
-  .search-input {
-    width: 100%;
-    padding-right: 1.8rem;
-  }
-
-  .search-clear-btn {
-    position: absolute;
-    right: 8px;
-    background: transparent;
-    border: none;
-    color: var(--text-mute);
-    cursor: pointer;
-    font-size: 0.75rem;
-  }
-
-  .sidebar-select {
-    width: 100%;
-  }
-
-  .status-pill-group {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 4px;
-  }
-
-  .status-pill {
-    border: 1px solid var(--border-subtle);
-    background: rgba(0, 0, 0, 0.2);
-    color: var(--text-dim);
-    font-size: 0.72rem;
-    padding: 0.35rem 0.2rem;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    text-align: center;
-    transition: all 0.15s ease;
-  }
-
-  .status-pill.active,
-  .status-pill:hover {
-    border-color: var(--accent);
-    background: rgba(56, 189, 248, 0.15);
-    color: var(--text);
-  }
-
-  .platform-filter-list {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    max-height: 220px;
-    overflow-y: auto;
-    padding-right: 2px;
-  }
-
-  .platform-filter-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--text-dim);
-    padding: 0.35rem 0.6rem;
-    border-radius: var(--radius-sm);
-    font-size: 0.8rem;
-    cursor: pointer;
-    text-align: left;
-    transition: all 0.12s ease;
-  }
-
-  .platform-filter-item:hover {
-    background: var(--panel-hover);
-    color: var(--text);
-  }
-
-  .platform-filter-item.active {
-    background: rgba(56, 189, 248, 0.16);
-    border-color: var(--border-glow);
-    color: var(--text);
-    font-weight: 600;
-  }
-
-  .count-tag {
-    font-size: 0.7rem;
-    background: rgba(255, 255, 255, 0.08);
-    padding: 0.1rem 0.35rem;
-    border-radius: var(--radius-pill);
-    color: var(--text-mute);
-  }
-
-  .toggle-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-
-  .toggle-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.82rem;
-    cursor: pointer;
-    color: var(--text-dim);
-  }
-
-  .toggle-item input {
-    width: auto;
-    cursor: pointer;
-  }
-
-  .sidebar-footer {
-    padding-top: 0.5rem;
-    border-top: 1px solid var(--border-subtle);
-    text-align: center;
-  }
-
-  /* ========================================================================= */
-  /* GRID VIEW STYLES                                                          */
-  /* ========================================================================= */
-  .games-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
-    gap: 1.15rem;
-    padding-bottom: 2rem;
-  }
-
-  .game-card {
-    display: flex;
-    flex-direction: column;
-    border-radius: var(--radius);
-    overflow: hidden;
-    cursor: pointer;
-    transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease, border-color 0.18s ease;
-    border: 1px solid var(--border-subtle);
-    background: rgba(14, 25, 44, 0.45);
-    position: relative;
-    user-select: none;
-  }
-
-  .game-card:hover {
-    transform: translateY(-4px);
-    border-color: var(--border-glow);
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5), 0 0 16px rgba(56, 189, 248, 0.2);
-  }
-
-  .game-card.selected {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 2px var(--accent), 0 12px 30px rgba(0, 0, 0, 0.5);
-  }
-
-  .game-card.uninstalled .card-cover {
-    filter: saturate(0.65) brightness(0.85);
-  }
-
-  .card-cover-container {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 600 / 900;
-    overflow: hidden;
-    background: linear-gradient(145deg, #0f1c32, #08101e);
-  }
-
-  .card-cover {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-    transition: transform 0.25s ease;
-  }
-
-  .game-card:hover .card-cover {
-    transform: scale(1.04);
-  }
-
-  .card-cover-fallback {
-    display: none;
-    width: 100%;
-    height: 100%;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    padding: 1rem;
-    text-align: center;
-    background: radial-gradient(circle at 50% 40%, rgba(56, 189, 248, 0.15), transparent 70%);
-  }
-
-  .fallback-icon {
-    font-size: 2.2rem;
-    margin-bottom: 0.5rem;
-    opacity: 0.7;
-  }
-
-  .fallback-title {
-    font-weight: 600;
-    font-size: 0.85rem;
-    color: var(--text);
-  }
-
-  .card-hover-overlay {
-    position: absolute;
-    inset: 0;
-    background: rgba(3, 7, 18, 0.4);
-    opacity: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    transition: opacity 0.18s ease;
-    backdrop-filter: blur(2px);
-  }
-
-  .game-card:hover .card-hover-overlay {
-    opacity: 1;
-  }
-
-  .card-play-btn {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: var(--accent);
-    color: #ffffff;
-    border: none;
-    font-size: 1.25rem;
-    cursor: pointer;
-    box-shadow: 0 4px 16px rgba(56, 189, 248, 0.5);
-    display: grid;
-    place-items: center;
-    transition: transform 0.15s ease, background 0.15s ease;
-  }
-
-  .card-play-btn:hover {
-    transform: scale(1.12);
-    background: var(--accent-hover);
-  }
-
-  .card-play-btn.install {
-    background: var(--ok);
-    box-shadow: 0 4px 16px rgba(52, 211, 153, 0.5);
-  }
-
-  .card-check {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    width: 22px;
-    height: 22px;
-    border-radius: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    background: rgba(6, 14, 26, 0.65);
-    display: grid;
-    place-items: center;
-    font-size: 0.75rem;
-    cursor: pointer;
-    z-index: 2;
-    transition: all 0.15s ease;
-  }
-
-  .card-check.checked {
-    border-color: var(--accent);
-    background: var(--accent);
-    color: #ffffff;
-  }
-
-  .card-badges {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    align-items: flex-end;
-    pointer-events: none;
-  }
-
-  .pill-platform {
-    font-size: 0.65rem;
-    font-weight: 600;
-    background: rgba(6, 14, 26, 0.85);
-    border: 1px solid var(--border-subtle);
-    backdrop-filter: blur(4px);
-  }
-
-  .pill-uninstalled {
-    font-size: 0.62rem;
-    background: rgba(100, 116, 139, 0.7);
-    color: #ffffff;
-  }
-
-  .card-info {
-    padding: 0.65rem 0.75rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .card-title {
-    font-weight: 600;
-    font-size: 0.85rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .card-meta {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .card-fav {
-    color: var(--warn);
-    font-size: 0.9rem;
-  }
-
-  .empty-state {
-    grid-column: 1 / -1;
-    padding: 3rem;
-    text-align: center;
-    border-radius: var(--radius);
-  }
-
-  /* ========================================================================= */
-  /* LIST VIEW STYLES                                                          */
-  /* ========================================================================= */
-  .list-view {
-    padding: 0.45rem;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    border-radius: var(--radius);
-  }
-
-  .game-list-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    width: 100%;
-    text-align: left;
-    padding: 0.55rem 0.75rem;
-    border-radius: var(--radius-sm);
-    border: 1px solid transparent;
-    background: transparent;
-    color: var(--text);
-    cursor: pointer;
-    font: inherit;
-    transition: background 0.15s ease, border-color 0.15s ease;
-  }
-
-  .game-list-row:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: var(--border-subtle);
-  }
-
-  .game-list-row.selected {
-    background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(168, 85, 247, 0.16));
-    border-color: var(--border-glow);
-  }
-
-  .list-thumb {
-    width: 72px;
-    height: 34px;
-    object-fit: cover;
-    border-radius: 4px;
-  }
-
-  .check {
-    width: 20px;
-    height: 20px;
-    border-radius: 6px;
-    border: 1px solid var(--border-strong);
-    display: grid;
-    place-items: center;
-    font-size: 0.75rem;
-    flex-shrink: 0;
-    background: rgba(6, 14, 26, 0.5);
-  }
-
-  .name {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-width: 0;
-    font-weight: 550;
-  }
-
-  .tags {
-    display: flex;
-    gap: 0.35rem;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    max-width: 32%;
-  }
-
-  .playtime-col {
-    width: 70px;
-    text-align: right;
-  }
-
-  .size-col {
-    width: 72px;
-    text-align: right;
-  }
-
-  .mini {
-    padding: 0.2rem 0.55rem;
-    font-size: 0.75rem;
-  }
-
-  /* ========================================================================= */
-  /* EXTENSIVE GAME DETAILS SUB-PAGE STYLES                                    */
-  /* ========================================================================= */
-  .game-details-view {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-    padding-bottom: 3rem;
-  }
-
-  .details-topbar {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0.75rem 1.15rem;
-    border-radius: var(--radius);
-  }
-
-  .game-top-title {
-    margin: 0;
-    font-size: 1.15rem;
-    font-weight: 650;
-  }
-
-  .play-btn {
-    padding: 0.5rem 1.4rem;
-    font-size: 0.95rem;
-    font-weight: 650;
-    letter-spacing: 0.02em;
-    background: linear-gradient(135deg, var(--accent), #2563eb);
-    box-shadow: 0 4px 18px rgba(56, 189, 248, 0.45);
-  }
-
-  .install-btn {
-    padding: 0.5rem 1.4rem;
-    font-size: 0.95rem;
-    font-weight: 650;
-    background: linear-gradient(135deg, var(--ok), #059669);
-  }
-
-  .fav-btn.is-fav {
-    color: var(--warn);
-    font-size: 1.2rem;
-  }
-
-  .feedback-pill {
-    animation: fadeIn 0.2s ease;
-  }
-
-  /* Details Hero */
-  .details-hero {
-    position: relative;
-    border-radius: var(--radius-lg);
-    overflow: hidden;
-    min-height: 260px;
-    display: flex;
-    align-items: flex-end;
-  }
-
-  .hero-backdrop {
-    position: absolute;
-    inset: 0;
-    background-size: cover;
-    background-position: center 30%;
-    filter: brightness(0.7) blur(1px);
-    transform: scale(1.02);
-  }
-
-  .hero-overlay {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(0deg, #030712 5%, rgba(3, 7, 18, 0.6) 50%, rgba(3, 7, 18, 0.2) 100%);
-  }
-
-  .hero-content {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    gap: 1.5rem;
-    padding: 1.5rem 2rem;
-    align-items: flex-end;
-    width: 100%;
-  }
-
-  .hero-capsule {
-    width: 130px;
-    height: 195px;
-    object-fit: cover;
-    border-radius: var(--radius-sm);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7);
-    border: 1px solid var(--border);
-    flex-shrink: 0;
-  }
-
-  .hero-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    min-width: 0;
-  }
-
-  .hero-title {
-    margin: 0;
-    font-size: 1.85rem;
-    font-weight: 750;
-    letter-spacing: -0.02em;
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
-  }
-
-  .hero-desc {
-    margin: 0;
-    color: var(--text-dim);
-    font-size: 0.9rem;
-    max-width: 780px;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .hero-tags {
-    gap: 0.45rem;
-    flex-wrap: wrap;
-    margin-top: 0.25rem;
-  }
-
-  /* Details Grid */
-  .details-grid {
-    display: grid;
-    grid-template-columns: 1.6fr 1fr;
-    gap: 1.25rem;
-    align-items: flex-start;
-  }
-
-  .details-sidebar {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-
-  /* Media Gallery */
-  .media-gallery-card {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .featured-media {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-    background: #000;
-    cursor: zoom-in;
-    border: 1px solid var(--border-subtle);
-  }
-
-  .featured-media img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transition: transform 0.25s ease;
-  }
-
-  .featured-media:hover img {
-    transform: scale(1.02);
-  }
-
-  .media-zoom-hint {
-    position: absolute;
-    bottom: 8px;
-    right: 8px;
-    background: rgba(0, 0, 0, 0.75);
-    color: #fff;
-    padding: 0.3rem 0.6rem;
-    border-radius: var(--radius-pill);
-    font-size: 0.72rem;
-    backdrop-filter: blur(4px);
-    pointer-events: none;
-  }
-
-  .gallery-thumbnails {
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 6px;
-  }
-
-  .thumb-btn {
-    border: 2px solid transparent;
-    padding: 0;
-    background: #000;
-    border-radius: 6px;
-    overflow: hidden;
-    aspect-ratio: 16 / 9;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .thumb-btn img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-    opacity: 0.7;
-    transition: opacity 0.15s ease;
-  }
-
-  .thumb-btn:hover img,
-  .thumb-btn.active img {
-    opacity: 1;
-  }
-
-  .thumb-btn.active {
-    border-color: var(--accent);
-    box-shadow: 0 0 8px rgba(56, 189, 248, 0.4);
-  }
-
-  /* Meta Links List */
-  .meta-links-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .meta-link {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: var(--radius-sm);
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid var(--border-subtle);
-    color: var(--text);
-    text-decoration: none;
-    font-size: 0.85rem;
-    transition: all 0.15s ease;
-  }
-
-  .meta-link:hover {
-    background: var(--panel-hover);
-    border-color: var(--border-glow);
-    color: var(--accent);
-    transform: translateX(3px);
-  }
-
-  .meta-icon {
-    font-size: 1rem;
-  }
-
-  /* Info Table */
-  .info-table {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    font-size: 0.85rem;
-  }
-
-  .info-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.25rem 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-  }
-
-  .info-row.full-width {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .code-val {
-    font-family: monospace;
-    font-size: 0.75rem;
-    background: rgba(0, 0, 0, 0.35);
-    padding: 0.2rem 0.45rem;
-    border-radius: 4px;
-    word-break: break-all;
-    color: var(--accent);
-  }
-
-  /* Playtime Stats */
-  .playtime-stats {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-  }
-
-  .stat-box {
-    display: flex;
-    flex-direction: column;
-    background: rgba(0, 0, 0, 0.25);
-    padding: 0.85rem;
-    border-radius: var(--radius-sm);
-    text-align: center;
-    border: 1px solid var(--border-subtle);
-  }
-
-  .stat-number {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--accent);
-  }
-
-  .stat-label {
-    font-size: 0.72rem;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-top: 0.25rem;
-  }
-
-  /* Modal Sub-Window */
-  .modal-backdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(6px);
-    display: grid;
-    place-items: center;
-    z-index: 100;
-    padding: 1rem;
-  }
-
-  .modal {
-    width: 100%;
-    max-width: 520px;
-    border-radius: var(--radius);
-    padding: 1.5rem;
-    box-shadow: var(--shadow-elevated);
-  }
-
-  .modal-head {
-    align-items: center;
-    margin-bottom: 1.25rem;
-  }
-
-  .modal-body {
-    display: flex;
-    flex-direction: column;
-    gap: 1.15rem;
-  }
-
-  .manage-group {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-
-  .group-label {
-    font-size: 0.78rem;
-    font-weight: 650;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    color: var(--text-dim);
-  }
-
-  .platform-select-modal {
-    width: 100%;
-    padding: 0.45rem;
-    border-radius: var(--radius-sm);
-    background: var(--bg-1);
-    color: var(--text);
-    border: 1px solid var(--border);
-  }
-
-  .modal-footer {
-    align-items: center;
-    margin-top: 1.5rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--border-subtle);
-  }
-
-  /* Lightbox */
-  .lightbox-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.92);
-    backdrop-filter: blur(8px);
-    display: grid;
-    place-items: center;
-    z-index: 200;
-    padding: 2rem;
-  }
-
-  .lightbox-img {
-    max-width: 90vw;
-    max-height: 85vh;
-    object-fit: contain;
-    border-radius: var(--radius);
-    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.8);
-    border: 1px solid var(--border-glow);
-  }
-
-  .lightbox-close {
-    position: absolute;
-    top: 24px;
-    right: 28px;
-    background: rgba(255, 255, 255, 0.1);
-    border: none;
-    color: #fff;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    font-size: 1.2rem;
-    cursor: pointer;
-    display: grid;
-    place-items: center;
-    transition: background 0.15s ease;
-  }
-
-  .lightbox-close:hover {
-    background: rgba(255, 255, 255, 0.25);
-  }
-</style>

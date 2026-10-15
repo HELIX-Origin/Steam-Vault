@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use flate2::read::GzDecoder;
 
-use super::{Platform, PlatformGame, PlatformScan, PlatformStatus, ScanConfig};
+use super::{EmulatorConfig, Platform, PlatformGame, PlatformScan, PlatformStatus, ScanConfig};
 
 /// The outcome of one detector run.
 struct Detection {
@@ -90,16 +90,17 @@ pub fn scan_all(config: &ScanConfig) -> PlatformScan {
         );
     }
     if config.is_enabled(Platform::Emulator) {
+        let extra_roots = config.roots_for(Platform::Emulator);
         merge(
             &mut by_platform,
             Platform::Emulator,
-            detect_emulators(&mounted_drives),
+            detect_user_emulators(&config.emulator_configs, &extra_roots),
         );
     }
 
     // User-configured folders plus well-known folders on every mounted drive.
     for platform in ORDER {
-        if !config.is_enabled(platform) {
+        if !config.is_enabled(platform) || platform == Platform::Emulator {
             continue;
         }
         let mut roots = config.roots_for(platform);
@@ -199,18 +200,7 @@ fn drive_folder_names(platform: Platform) -> &'static [&'static str] {
         Platform::Amazon => &["Amazon Games", "Games\\Amazon Games"],
         Platform::Rockstar => &["Rockstar Games", "Games\\Rockstar Games"],
         Platform::Xbox => &["XboxGames"],
-        Platform::Emulator => &[
-            "ROMs",
-            "Roms",
-            "roms",
-            "Emulators\\Roms",
-            "Emulators\\ROMs",
-            "Games\\Roms",
-            "Games\\ROMs",
-            "Emulation\\roms",
-            "Emulation\\ROMs",
-        ],
-        Platform::Steam | Platform::Other => &[],
+        Platform::Emulator | Platform::Steam | Platform::Other => &[],
     }
 }
 
@@ -596,7 +586,7 @@ pub fn library_folders(platform: Platform) -> Vec<String> {
             }
         }
         Platform::Emulator => {
-            out.extend(emulator_library_dirs());
+            // Emulated directories must be configured manually by the user.
         }
         Platform::Amazon => {
             if let Some(local) = env_dir("LOCALAPPDATA") {
@@ -896,7 +886,7 @@ fn detect_extra_root(platform: Platform, root: &str) -> Detection {
     }
     if platform == Platform::Emulator {
         let mut detection = Detection::empty();
-        let emu_map = locate_installed_emulators(&[]);
+        let emu_map = BTreeMap::new();
         scan_emulator_dir(Path::new(root), &mut detection, &emu_map);
         if !detection.games.is_empty() {
             return detection;
@@ -2812,109 +2802,125 @@ const KNOWN_EMULATORS: &[EmulatorDef] = &[
     },
 ];
 
-fn detect_emulators(mounted_drives: &[PathBuf]) -> Detection {
-    let mut detection = Detection::empty();
-    let emu_map = locate_installed_emulators(mounted_drives);
-
-    // 1. Authoritative: directories configured in emulator settings
-    for dir_str in emulator_library_dirs() {
-        let dir = Path::new(&dir_str);
-        if dir.is_dir() {
-            scan_emulator_dir(dir, &mut detection, &emu_map);
+/// Map explicitly configured emulators to their executable paths.
+fn map_configured_emulators(configs: &[EmulatorConfig]) -> BTreeMap<String, String> {
+    let mut map = BTreeMap::new();
+    for emu in configs {
+        let name = emu.name.trim();
+        let exe = emu.executable_path.trim();
+        if !name.is_empty() && !exe.is_empty() {
+            map.insert(name.to_string(), exe.to_string());
         }
     }
+    map
+}
 
-    // 2. ROM folders on mounted drives
-    for drive in mounted_drives {
-        for sub in drive_folder_names(Platform::Emulator) {
-            let candidate = drive.join(sub);
-            if candidate.is_dir() {
-                scan_emulator_dir(&candidate, &mut detection, &emu_map);
+/// Detect emulated ROMs strictly from user-configured emulators and folders.
+///
+/// Automatic detection of emulator installation locations or filesystem ROM scanning
+/// is deliberately disabled to protect user privacy and respect anti-piracy policies.
+fn detect_user_emulators(configs: &[EmulatorConfig], extra_roots: &[String]) -> Detection {
+    let mut detection = Detection::empty();
+    if configs.is_empty() && extra_roots.is_empty() {
+        detection.note = Some(
+            "Emulated games are not auto-detected. Add your emulator and ROM folder in Settings.".into(),
+        );
+        return detection;
+    }
+
+    let emu_map = map_configured_emulators(configs);
+
+    // Scan ROM directories configured per emulator
+    for emu in configs {
+        for rom_dir in &emu.rom_directories {
+            let path = Path::new(rom_dir);
+            if path.is_dir() {
+                scan_emulator_dir(path, &mut detection, &emu_map);
             }
         }
     }
 
-    if detection.roots.is_empty() {
-        detection.note =
-            Some("No ROM or emulator folders found. Add your ROM folder in Settings.".into());
+    // Scan any additional ROM directories configured by the user
+    for extra in extra_roots {
+        let path = Path::new(extra);
+        if path.is_dir() {
+            scan_emulator_dir(path, &mut detection, &emu_map);
+        }
+    }
+
+    if detection.games.is_empty() && detection.roots.is_empty() {
+        detection.note = Some(
+            "No ROM files found in the configured emulator directories.".into(),
+        );
     }
 
     detection
 }
 
-/// Locate all installed emulator executables once into a fast lookup map.
-fn locate_installed_emulators(mounted_drives: &[PathBuf]) -> BTreeMap<&'static str, String> {
-    let base_search_dirs = [
-        env_dir("LOCALAPPDATA"),
-        env_dir("APPDATA"),
-        env_dir("ProgramFiles"),
-        env_dir("ProgramFiles(x86)"),
-    ];
-
-    let mut map = BTreeMap::new();
-    for emu in KNOWN_EMULATORS {
-        let mut found = None;
-
-        // Check well-known install locations
-        for base in base_search_dirs.iter().flatten() {
-            for sub in emu.dirs {
-                let emu_dir = base.join(sub);
-                for exe in emu.exes {
-                    let exe_path = emu_dir.join(exe);
-                    if exe_path.is_file() {
-                        found = Some(exe_path.display().to_string());
-                        break;
-                    }
-                }
-                if found.is_some() {
-                    break;
-                }
-            }
-            if found.is_some() {
-                break;
-            }
-        }
-
-        // If not in standard base directories, check mounted drive emulator folders
-        if found.is_none() {
-            for drive in mounted_drives {
-                for emu_dir_name in emu.dirs {
-                    for candidate in &[
-                        drive.join("Emulators").join(emu_dir_name),
-                        drive.join("Games").join("Emulators").join(emu_dir_name),
-                        drive.join(emu_dir_name),
-                    ] {
-                        for exe in emu.exes {
-                            let exe_path = candidate.join(exe);
-                            if exe_path.is_file() {
-                                found = Some(exe_path.display().to_string());
-                                break;
-                            }
-                        }
-                        if found.is_some() {
-                            break;
-                        }
-                    }
-                    if found.is_some() {
-                        break;
-                    }
-                }
-                if found.is_some() {
-                    break;
-                }
-            }
-        }
-
-        if let Some(exe_path) = found {
-            map.insert(emu.name, exe_path);
+/// Determine the specific console platform (e.g. GameCube, Wii, PlayStation, etc.) for a ROM file.
+///
+/// Supports EmulationStation Desktop Edition (ES-DE) folder hierarchy (`ROMs/<system>/...`)
+/// as well as standard file extension heuristics.
+pub fn determine_console_platform(path: &Path, emu_name: Option<&str>) -> Option<String> {
+    // 1. EmulationStation (ES-DE) directory match
+    if let Some(parent) = path.parent() {
+        let parent_name = parent
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        match parent_name.as_str() {
+            "nes" | "famicom" => return Some("NES".to_string()),
+            "snes" | "sfc" => return Some("Super Nintendo".to_string()),
+            "n64" | "n64dd" => return Some("Nintendo 64".to_string()),
+            "gc" | "gamecube" => return Some("GameCube".to_string()),
+            "wii" => return Some("Wii".to_string()),
+            "wiiu" => return Some("Wii U".to_string()),
+            "switch" => return Some("Nintendo Switch".to_string()),
+            "gb" => return Some("Game Boy".to_string()),
+            "gbc" => return Some("Game Boy Color".to_string()),
+            "gba" => return Some("Game Boy Advance".to_string()),
+            "nds" => return Some("Nintendo DS".to_string()),
+            "n3ds" => return Some("Nintendo 3DS".to_string()),
+            "virtualboy" => return Some("Virtual Boy".to_string()),
+            "gameandwatch" => return Some("Game & Watch".to_string()),
+            "psx" | "ps1" => return Some("PlayStation".to_string()),
+            "ps2" => return Some("PlayStation 2".to_string()),
+            "ps3" => return Some("PlayStation 3".to_string()),
+            "psp" => return Some("PlayStation Portable".to_string()),
+            "psvita" => return Some("PlayStation Vita".to_string()),
+            "mastersystem" => return Some("Sega Master System".to_string()),
+            "genesis" | "megadrive" => return Some("Sega Genesis".to_string()),
+            "segacd" | "megacd" => return Some("Sega CD".to_string()),
+            "sega32x" => return Some("Sega 32X".to_string()),
+            "saturn" => return Some("Sega Saturn".to_string()),
+            "dreamcast" => return Some("Dreamcast".to_string()),
+            "gamegear" => return Some("Sega Game Gear".to_string()),
+            "arcade" | "mame" | "fbneo" => return Some("Arcade".to_string()),
+            "neogeo" => return Some("Neo Geo".to_string()),
+            "ngp" => return Some("Neo Geo Pocket".to_string()),
+            "ngpc" => return Some("Neo Geo Pocket Color".to_string()),
+            "wonderswan" => return Some("WonderSwan".to_string()),
+            "wonderswancolor" => return Some("WonderSwan Color".to_string()),
+            "pcengine" | "tg16" => return Some("TurboGrafx-16".to_string()),
+            "atari2600" => return Some("Atari 2600".to_string()),
+            "atari5200" => return Some("Atari 5200".to_string()),
+            "atari7800" => return Some("Atari 7800".to_string()),
+            "atarijaguar" => return Some("Atari Jaguar".to_string()),
+            "atarilynx" => return Some("Atari Lynx".to_string()),
+            "atarist" => return Some("Atari ST".to_string()),
+            "3do" => return Some("3DO".to_string()),
+            "colecovision" => return Some("ColecoVision".to_string()),
+            "intellivision" => return Some("Intellivision".to_string()),
+            "msx" | "msx1" => return Some("MSX".to_string()),
+            "msx2" | "msxturbor" => return Some("MSX2".to_string()),
+            "c64" => return Some("Commodore 64".to_string()),
+            "amiga" | "amiga1200" | "amiga600" => return Some("Amiga".to_string()),
+            "dos" => return Some("DOS".to_string()),
+            _ => {}
         }
     }
 
-    map
-}
-
-/// Determine the specific console platform (e.g. GameCube, Wii, PlayStation, etc.) for a ROM file.
-pub fn determine_console_platform(path: &Path, emu_name: Option<&str>) -> Option<String> {
     let ext = path
         .extension()
         .and_then(|s| s.to_str())?
@@ -3013,7 +3019,7 @@ pub fn determine_console_platform(path: &Path, emu_name: Option<&str>) -> Option
 fn scan_emulator_dir(
     dir: &Path,
     detection: &mut Detection,
-    emu_map: &BTreeMap<&'static str, String>,
+    emu_map: &BTreeMap<String, String>,
 ) {
     let root_str = dir.display().to_string();
     if !detection.roots.contains(&root_str) {
@@ -3027,7 +3033,7 @@ fn scan_roms_recursive(
     depth: usize,
     max_depth: usize,
     detection: &mut Detection,
-    emu_map: &BTreeMap<&'static str, String>,
+    emu_map: &BTreeMap<String, String>,
 ) {
     if depth > max_depth {
         return;
@@ -3121,10 +3127,20 @@ fn scan_roms_recursive(
         let rom_path_str = path.display().to_string();
         let size = Some(file_len);
 
-        let (emu_name, exe, launch_uri) = match emu_map.get(emu.name) {
-            Some(exe_path) => {
+        let emu_name_lower = emu.name.to_lowercase();
+        let configured_match = emu_map.iter().find_map(|(k, v)| {
+            let k_low = k.to_lowercase();
+            if k_low == emu_name_lower || emu_name_lower.contains(&k_low) || k_low.contains(&emu_name_lower) {
+                Some((k.as_str(), v.clone()))
+            } else {
+                None
+            }
+        });
+
+        let (emu_name, exe, launch_uri) = match configured_match {
+            Some((display_name, exe_path)) => {
                 let launch_options = (emu.launch_arg)(&rom_path_str);
-                (emu.name, Some(exe_path.clone()), Some(launch_options))
+                (display_name, Some(exe_path), Some(launch_options))
             }
             None => (
                 "ROM (configure emulator in Settings)",
@@ -3477,6 +3493,7 @@ mod tests {
         let scan = scan_all(&ScanConfig {
             sources: Vec::new(),
             include_other_drives: true,
+            emulator_configs: Vec::new(),
         });
         for g in &scan.games {
             assert_ne!(g.name.to_lowercase(), "games");
@@ -3543,6 +3560,7 @@ mod tests {
         let config = ScanConfig {
             sources: vec![],
             include_other_drives: false,
+            emulator_configs: Vec::new(),
         };
         let scan = scan_all(&config);
         let names: Vec<String> = scan.games.iter().map(|g| format!("[{:?}] {}", g.platform, g.name)).collect();

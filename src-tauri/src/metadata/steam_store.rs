@@ -110,6 +110,38 @@ fn parse_details(app_id: u32, data: &Value) -> AppMeta {
             .get("metacritic")
             .and_then(|m| m.get("score"))
             .and_then(Value::as_f64),
+        screenshots: data
+            .get("screenshots")
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|s| {
+                        s.get("path_full")
+                            .or_else(|| s.get("path_thumbnail"))
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        movies: data
+            .get("movies")
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| {
+                        m.get("mp4")
+                            .and_then(|mp4| mp4.get("max").or_else(|| mp4.get("480")))
+                            .or_else(|| {
+                                m.get("webm")
+                                    .and_then(|webm| webm.get("max").or_else(|| webm.get("480")))
+                            })
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
         ..Default::default()
     }
 }

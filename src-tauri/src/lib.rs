@@ -166,6 +166,8 @@ pub fn run() {
             commands::install_game,
             commands::uninstall_game,
             commands::open_game_folder,
+            commands::get_es_de_systems,
+            commands::scaffold_es_de_directories,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
