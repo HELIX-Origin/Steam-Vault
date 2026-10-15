@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::AppResult;
 
-pub use detectors::scan_all;
+pub use detectors::{library_folders, scan_all};
 
 /// Per-platform detection preferences (persisted in `settings.json`).
 ///
@@ -95,6 +95,7 @@ pub enum Platform {
     Amazon,
     Xbox,
     Rockstar,
+    Emulator,
     Other,
 }
 
@@ -112,6 +113,7 @@ impl Platform {
             Platform::Amazon => "amazon",
             Platform::Xbox => "xbox",
             Platform::Rockstar => "rockstar",
+            Platform::Emulator => "emulator",
             Platform::Other => "other",
         }
     }
@@ -129,6 +131,7 @@ impl Platform {
             Platform::Amazon => "Amazon Games",
             Platform::Xbox => "Xbox / Microsoft Store",
             Platform::Rockstar => "Rockstar",
+            Platform::Emulator => "Emulators & ROMs",
             Platform::Other => "Other",
         }
     }
@@ -145,6 +148,7 @@ impl Platform {
             "amazon" => Platform::Amazon,
             "xbox" => Platform::Xbox,
             "rockstar" => Platform::Rockstar,
+            "emulator" => Platform::Emulator,
             "other" => Platform::Other,
             _ => return None,
         })
@@ -220,6 +224,23 @@ pub fn load_map() -> BTreeMap<u32, Platform> {
         .unwrap_or_default()
 }
 
+/// Set or clear the platform mapping for a single game.
+///
+/// When `platform` is `Some`, sets or overrides the attribution. When `None`,
+/// removes any existing mapping for this game.
+pub fn set_override(app_id: u32, platform: Option<Platform>) -> AppResult<()> {
+    let mut map = load_map();
+    match platform {
+        Some(p) => {
+            map.insert(app_id, p);
+        }
+        None => {
+            map.remove(&app_id);
+        }
+    }
+    save_map(&map)
+}
+
 /// Merge new appid → platform pairs into the persisted map.
 pub fn record(pairs: &[(u32, Platform)]) -> AppResult<()> {
     if pairs.is_empty() {
@@ -229,6 +250,10 @@ pub fn record(pairs: &[(u32, Platform)]) -> AppResult<()> {
     for (app_id, platform) in pairs {
         map.insert(*app_id, *platform);
     }
+    save_map(&map)
+}
+
+fn save_map(map: &BTreeMap<u32, Platform>) -> AppResult<()> {
     let serializable: BTreeMap<String, String> = map
         .iter()
         .map(|(app_id, platform)| (app_id.to_string(), platform.id().to_string()))

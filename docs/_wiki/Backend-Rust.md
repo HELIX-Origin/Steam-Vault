@@ -60,7 +60,9 @@ snake_case Rust parameters.
 | `pcgamingwiki_lookup` / `wikipedia_summary` | Keyless supplemental providers. |
 | `compute_autocats` | Build an AutoCat plan without writing. |
 | `detect_platforms` | Scans the machine for games installed by other launchers. |
+| `find_platform_folders` | Auto-detects existing library / config folders for a platform. |
 | `import_platform_games` | Writes selected platform games to `shortcuts.vdf` as shortcuts. |
+| `set_game_platform` | Sets or clears the persisted platform storefront attribution for a shortcut. |
 | `get_owned_library` / `refresh_owned_games` | Returns / fetches the full owned Steam library. |
 | `compute_categorization` / `apply_categorization` | Previews and writes collections from a sorting option. |
 | `get_storage_report` | Reports mounted drives, library folders, and each installed game's size and placement. |

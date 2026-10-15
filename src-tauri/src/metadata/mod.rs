@@ -6,10 +6,13 @@
 
 pub mod extra;
 pub mod igdb;
+pub mod local;
 pub mod providers;
+pub mod steam_search;
 pub mod steam_store;
 pub mod steam_web;
 pub mod steamgriddb;
+pub mod vndb;
 
 use std::time::Duration;
 

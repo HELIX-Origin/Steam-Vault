@@ -53,6 +53,13 @@ a key you can still apply art from a local file.
 (so you get the right game, not a search result). For a **non-Steam shortcut** — which has no store
 page — it searches SteamGridDB by name and prefers an exact title match.
 
+## ⚡ Automatic Artwork Fetching
+
+Steam Vault automatically ensures games don't have blank gray posters in your Steam library:
+
+- **Automatic on Import:** When scanning and importing non-Steam games, ROMs, or platform titles from GOG/Epic/itch, Steam Vault automatically attempts to download missing artwork (portrait grid, hero banner, logo, and icon) via SteamGridDB if an API key is configured. If no key is set or no match is found, it falls back to extracting cover art from Steam Store, VNDB, or itch metadata caches.
+- **Auto-fetch Missing Art Button:** In the **Artwork** view header, click **Auto-fetch missing art** to run a background pass across your entire library and populate all games that currently lack grid art.
+
 ## 📁 Applying art from a file
 
 1. Select the game and the slot, then choose **From file…**.

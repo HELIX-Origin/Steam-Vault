@@ -13,7 +13,13 @@ pub async fn pcgamingwiki_lookup(
     client: &reqwest::Client,
     name: &str,
 ) -> AppResult<Option<AppMeta>> {
-    let where_clause = format!("Infobox_game._pageName LIKE '%{name}%'");
+    let clean = crate::metadata::vndb::clean_search_term(name);
+    if clean.is_empty() {
+        return Ok(None);
+    }
+    // Escape single quotes for MediaWiki Cargo SQL where clause
+    let escaped = clean.replace('\'', "''");
+    let where_clause = format!("Infobox_game._pageName LIKE '%{escaped}%'");
     let response = client
         .get("https://www.pcgamingwiki.com/w/api.php")
         .query(&[
@@ -22,7 +28,7 @@ pub async fn pcgamingwiki_lookup(
             ("tables", "Infobox_game"),
             (
                 "fields",
-                "Infobox_game._pageName=Page,Infobox_game.Developers,Infobox_game.Publishers,Infobox_game.Genres,Infobox_game.Released",
+                "Infobox_game._pageName=Page,Infobox_game.Developers,Infobox_game.Publishers,Infobox_game.Genres,Infobox_game.Engines,Infobox_game.Released",
             ),
             ("where", where_clause.as_str()),
             ("limit", "1"),
@@ -52,12 +58,33 @@ pub async fn pcgamingwiki_lookup(
             .unwrap_or_default()
     };
 
+    let released = row
+        .get("Released")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let release_year = released.as_deref().and_then(|r| {
+        // Find 4-digit year in string
+        r.split(|c: char| !c.is_ascii_digit())
+            .find(|token| token.len() == 4)
+            .and_then(|y| y.parse::<i32>().ok())
+    });
+
+    let engines = split("Engines");
+    let mut tags = Vec::new();
+    for engine in engines {
+        tags.push(format!("Engine: {engine}"));
+    }
+
     Ok(Some(AppMeta {
         app_id: 0,
         name: row.get("Page").and_then(Value::as_str).map(str::to_string),
         developers: split("Developers"),
         publishers: split("Publishers"),
         genres: split("Genres"),
+        tags,
+        release_date: released,
+        release_year,
+        fetched_at: Some(chrono::Utc::now().timestamp()),
         ..Default::default()
     }))
 }

@@ -535,6 +535,188 @@ pub async fn ensure_steam_metadata(
     }
 }
 
+/// Ensure metadata is populated for a list of games (both Steam and Non-Steam shortcuts).
+pub async fn ensure_game_metadata(
+    state: &AppState,
+    games: &[&Game],
+    want_tags: bool,
+) -> MetadataSyncResult {
+    let settings = state.settings_snapshot();
+    let client = metadata::http_client();
+
+    let steam_ids: Vec<u32> = games
+        .iter()
+        .filter(|game| game.kind == GameKind::Steam && game.app_id != 0)
+        .map(|game| game.app_id)
+        .collect();
+
+    let mut result = ensure_steam_metadata(state, &steam_ids, want_tags).await;
+
+    // For any Steam games where store details were unavailable, try PCGamingWiki fallback
+    let missing_steam: Vec<(String, u32)> = {
+        let cache = state.cache.lock().expect("cache lock poisoned");
+        games
+            .iter()
+            .filter(|g| {
+                g.kind == GameKind::Steam
+                    && cache
+                        .get("steam-store", g.app_id, Some(CACHE_MAX_AGE_SECS))
+                        .is_none()
+            })
+            .map(|g| (g.name.clone(), g.app_id))
+            .collect()
+    };
+
+    for (name, app_id) in missing_steam {
+        if let Ok(Some(meta)) = metadata::extra::pcgamingwiki_lookup(&client, &name).await {
+            let mut cache = state.cache.lock().expect("cache lock poisoned");
+            cache.put("steam-store", app_id, &meta);
+            let _ = cache.save();
+            result.fetched += 1;
+        }
+    }
+
+    // Resolve non-Steam shortcuts across multiple providers
+    for game in games {
+        if game.kind != GameKind::Shortcut {
+            continue;
+        }
+
+        let is_cached = {
+            let cache = state.cache.lock().expect("cache lock poisoned");
+            cache
+                .get("shortcut-meta", game.app_id, Some(CACHE_MAX_AGE_SECS))
+                .is_some()
+        };
+
+        if is_cached {
+            result.cached += 1;
+            continue;
+        }
+
+        result.requested += 1;
+        let mut resolved: Option<AppMeta> = None;
+
+        // 1. Local engine inspection (itch receipt, RPG Maker, Ren'Py, PE VersionInfo)
+        let dir = game.install_dir.as_deref().map(Path::new);
+        let exe = game.exe.as_deref().map(Path::new);
+        if let Some(local_meta) = metadata::local::inspect_local_game(dir, exe) {
+            resolved = Some(local_meta);
+        }
+
+        // 2. Steam Store Search (check if title exists on Steam Store)
+        if resolved
+            .as_ref()
+            .map_or(true, |m| m.developers.is_empty() || m.publishers.is_empty())
+        {
+            if let Ok(Some(steam_id)) = metadata::steam_search::find_steam_app_id(
+                &client,
+                &game.name,
+                &settings.country_code,
+                &settings.language,
+            )
+            .await
+            {
+                if let Ok(map) = metadata::steam_store::fetch_app_details(
+                    &client,
+                    &[steam_id],
+                    &settings.country_code,
+                    &settings.language,
+                )
+                .await
+                {
+                    if let Some(store_meta) = map.get(&steam_id) {
+                        resolved = Some(store_meta.clone());
+                    }
+                }
+            }
+        }
+
+        // 3. VNDB lookup (visual novels, Ren'Py, anime narrative)
+        if resolved
+            .as_ref()
+            .map_or(true, |m| m.developers.is_empty() || m.genres.is_empty())
+        {
+            if let Ok(Some(vndb_meta)) = metadata::vndb::vndb_lookup(&client, &game.name).await {
+                if let Some(ref mut cur) = resolved {
+                    if cur.developers.is_empty() {
+                        cur.developers = vndb_meta.developers;
+                    }
+                    if cur.publishers.is_empty() {
+                        cur.publishers = vndb_meta.publishers;
+                    }
+                    if cur.release_year.is_none() {
+                        cur.release_year = vndb_meta.release_year;
+                    }
+                    for g in vndb_meta.genres {
+                        if !cur.genres.contains(&g) {
+                            cur.genres.push(g);
+                        }
+                    }
+                } else {
+                    resolved = Some(vndb_meta);
+                }
+            }
+        }
+
+        // 4. PCGamingWiki lookup
+        if resolved
+            .as_ref()
+            .map_or(true, |m| m.developers.is_empty() || m.publishers.is_empty())
+        {
+            if let Ok(Some(wiki_meta)) =
+                metadata::extra::pcgamingwiki_lookup(&client, &game.name).await
+            {
+                if let Some(ref mut cur) = resolved {
+                    if cur.developers.is_empty() {
+                        cur.developers = wiki_meta.developers;
+                    }
+                    if cur.publishers.is_empty() {
+                        cur.publishers = wiki_meta.publishers;
+                    }
+                    if cur.release_year.is_none() {
+                        cur.release_year = wiki_meta.release_year;
+                    }
+                    for g in wiki_meta.genres {
+                        if !cur.genres.contains(&g) {
+                            cur.genres.push(g);
+                        }
+                    }
+                } else {
+                    resolved = Some(wiki_meta);
+                }
+            }
+        }
+
+        // 5. Fallback publisher attribution from platform if still empty
+        let mut final_meta = resolved.unwrap_or_else(|| AppMeta {
+            name: Some(game.name.clone()),
+            ..Default::default()
+        });
+
+        if final_meta.publishers.is_empty()
+            && game.platform != Platform::Steam
+            && game.platform != Platform::Other
+        {
+            final_meta.publishers = vec![game.platform.label().to_string()];
+        }
+        if final_meta.developers.is_empty() && !final_meta.publishers.is_empty() {
+            final_meta.developers = final_meta.publishers.clone();
+        }
+
+        final_meta.app_id = game.app_id;
+        final_meta.fetched_at = Some(chrono::Utc::now().timestamp());
+
+        let mut cache = state.cache.lock().expect("cache lock poisoned");
+        cache.put("shortcut-meta", game.app_id, &final_meta);
+        cache.put("steam-store", game.app_id, &final_meta);
+        let _ = cache.save();
+        result.fetched += 1;
+    }
+
+    result
+}
+
 /// Warm (or refresh) store metadata for the whole local library.
 #[tauri::command]
 pub async fn sync_library_metadata(
@@ -544,12 +726,8 @@ pub async fn sync_library_metadata(
     let root = steam_root(&state)?;
     let account = resolve_account(&root, &state, account_id3);
     let games = collect_library(&root, account.as_deref())?;
-    let ids: Vec<u32> = games
-        .iter()
-        .filter(|game| game.kind == GameKind::Steam && game.app_id != 0)
-        .map(|game| game.app_id)
-        .collect();
-    Ok(ensure_steam_metadata(&state, &ids, false).await)
+    let refs: Vec<&Game> = games.iter().collect();
+    Ok(ensure_game_metadata(&state, &refs, false).await)
 }
 
 #[tauri::command]
@@ -628,6 +806,28 @@ pub async fn wikipedia_summary(title: String) -> AppResult<Option<String>> {
     metadata::extra::wikipedia_summary(&client, &title).await
 }
 
+#[tauri::command]
+pub async fn vndb_lookup(title: String) -> AppResult<Option<AppMeta>> {
+    let client = metadata::http_client();
+    metadata::vndb::vndb_lookup(&client, &title).await
+}
+
+#[tauri::command]
+pub async fn steam_store_search(
+    term: String,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<metadata::steam_search::SteamSearchResult>> {
+    let client = metadata::http_client();
+    let settings = state.settings_snapshot();
+    metadata::steam_search::search_steam_store(
+        &client,
+        &term,
+        &settings.country_code,
+        &settings.language,
+    )
+    .await
+}
+
 fn require_key(state: &AppState, provider: &str) -> AppResult<String> {
     let settings = state.settings_snapshot();
     let key = match provider {
@@ -654,7 +854,7 @@ pub async fn compute_autocats(
 
     let autos = state.settings_snapshot().auto_cats;
 
-    // Only reach out to the store when at least one enabled rule needs it.
+    // Only reach out to metadata providers when at least one enabled rule needs it.
     let wants_metadata = autos
         .iter()
         .any(|autocat| autocat.enabled && autocat.kind.needs_metadata());
@@ -662,12 +862,8 @@ pub async fn compute_autocats(
         .iter()
         .any(|autocat| autocat.enabled && autocat.kind.needs_tags());
     if wants_metadata || wants_tags {
-        let ids: Vec<u32> = games
-            .iter()
-            .filter(|game| game.kind == GameKind::Steam)
-            .map(|game| game.app_id)
-            .collect();
-        ensure_steam_metadata(&state, &ids, wants_tags).await;
+        let refs: Vec<&Game> = games.iter().collect();
+        ensure_game_metadata(&state, &refs, wants_tags).await;
     }
 
     let cache = state.cache.lock().expect("cache lock poisoned");
@@ -675,8 +871,11 @@ pub async fn compute_autocats(
     let mut missing_metadata = Vec::new();
 
     for game in &games {
-        let meta = cache.get("steam-store", game.app_id, None).cloned();
-        if meta.is_none() && game.kind == GameKind::Steam && wants_metadata {
+        let meta = cache
+            .get("shortcut-meta", game.app_id, None)
+            .or_else(|| cache.get("steam-store", game.app_id, None))
+            .cloned();
+        if meta.is_none() && wants_metadata {
             missing_metadata.push(game.app_id);
         }
         let mut meta = meta.unwrap_or_default();
@@ -723,17 +922,127 @@ pub struct ImportResult {
 /// Honours the per-platform preferences saved in Settings and looks on every
 /// mounted drive, so games installed on an external drive are discovered too.
 #[tauri::command]
-pub fn detect_platforms(state: State<'_, AppState>) -> PlatformScan {
+pub fn detect_platforms(
+    include_other_drives: Option<bool>,
+    state: State<'_, AppState>,
+) -> PlatformScan {
     let settings = state.settings_snapshot();
     platforms::scan_all(&platforms::ScanConfig {
         sources: settings.platform_sources,
-        include_other_drives: true,
+        include_other_drives: include_other_drives.unwrap_or(false),
     })
+}
+
+/// Existing library folders for one platform, used to autofill Settings.
+///
+/// Mirrors the "Auto-detect" behaviour of the Steam folder field: the frontend
+/// asks for a platform's known folders and offers them as extra scan roots.
+#[tauri::command]
+pub fn find_platform_folders(platform: String) -> AppResult<Vec<String>> {
+    let platform = Platform::from_id(&platform)
+        .ok_or_else(|| AppError::Invalid(format!("unknown platform '{platform}'")))?;
+    Ok(platforms::library_folders(platform))
+}
+
+/// Automatically fetch and apply missing artwork for a game (via SteamGridDB, Steam Store, VNDB, etc.).
+pub async fn fetch_and_apply_artwork_for_game(
+    state: &AppState,
+    root: &Path,
+    id3: &str,
+    app_id: u32,
+    name: &str,
+) -> usize {
+    let settings = state.settings_snapshot();
+    let client = metadata::http_client();
+    let grid_dir = artwork::grid_dir(root, id3);
+    let mut applied_count = 0;
+
+    let portrait_missing =
+        !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::GridPortrait).present;
+    let hero_missing = !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::Hero).present;
+    let logo_missing = !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::Logo).present;
+    let icon_missing = !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::Icon).present;
+
+    if !portrait_missing && !hero_missing && !logo_missing && !icon_missing {
+        return 0;
+    }
+
+    // 1. SteamGridDB resolution if API key is configured
+    if let Some(ref key) = settings.steamgriddb_api_key.filter(|k| !k.is_empty()) {
+        let slots_to_fetch = [
+            (portrait_missing, ArtworkSlot::GridPortrait, "grids"),
+            (hero_missing, ArtworkSlot::Hero, "heroes"),
+            (logo_missing, ArtworkSlot::Logo, "logos"),
+            (icon_missing, ArtworkSlot::Icon, "icons"),
+        ];
+
+        for (missing, slot, kind) in slots_to_fetch {
+            if !missing {
+                continue;
+            }
+            if let Ok(assets) =
+                metadata::steamgriddb::for_game(&client, key, app_id, name, kind).await
+            {
+                if let Some(top_asset) = assets.first() {
+                    if let Ok(resp) = client.get(&top_asset.url).send().await {
+                        if resp.status().is_success() {
+                            if let Ok(bytes) = resp.bytes().await {
+                                if artwork::apply_bytes(
+                                    &grid_dir,
+                                    app_id,
+                                    slot,
+                                    &bytes,
+                                    Some(top_asset.url.clone()),
+                                )
+                                .is_ok()
+                                {
+                                    applied_count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Fallback: if portrait grid is still missing, check cached AppMeta (from Steam Store, VNDB, or itch)
+    if !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::GridPortrait).present {
+        let img_url = {
+            let cache = state.cache.lock().expect("cache lock poisoned");
+            cache
+                .get("shortcut-meta", app_id, None)
+                .or_else(|| cache.get("steam-store", app_id, None))
+                .and_then(|m| m.capsule_image.clone().or_else(|| m.header_image.clone()))
+        };
+
+        if let Some(url) = img_url {
+            if let Ok(resp) = client.get(&url).send().await {
+                if resp.status().is_success() {
+                    if let Ok(bytes) = resp.bytes().await {
+                        if artwork::apply_bytes(
+                            &grid_dir,
+                            app_id,
+                            ArtworkSlot::GridPortrait,
+                            &bytes,
+                            Some(url),
+                        )
+                        .is_ok()
+                        {
+                            applied_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    applied_count
 }
 
 /// Import selected platform games into Steam as non-Steam shortcuts.
 #[tauri::command]
-pub fn import_platform_games(
+pub async fn import_platform_games(
     games: Vec<PlatformGame>,
     account_id3: Option<String>,
     state: State<'_, AppState>,
@@ -764,7 +1073,7 @@ pub fn import_platform_games(
             exe,
             start_dir,
             icon: String::new(),
-            launch_options: String::new(),
+            launch_options: game.launch_uri.clone().unwrap_or_default(),
             platform: game.platform,
         });
     }
@@ -777,6 +1086,18 @@ pub fn import_platform_games(
             .map(|game| (game.app_id, game.platform))
             .collect();
         let _ = platforms::record(&pairs);
+
+        // Automatically fetch and apply artwork for newly imported shortcuts
+        for added_game in &outcome.added {
+            let _ = fetch_and_apply_artwork_for_game(
+                &state,
+                &root,
+                &id3,
+                added_game.app_id,
+                &added_game.name,
+            )
+            .await;
+        }
     }
     skipped.extend(outcome.skipped);
 
@@ -784,6 +1105,20 @@ pub fn import_platform_games(
         added: outcome.added,
         skipped,
     })
+}
+
+/// Set or clear the platform attribution for a game (usually a non-Steam shortcut).
+#[tauri::command]
+pub fn set_game_platform(app_id: u32, platform: Option<String>) -> AppResult<()> {
+    let target = match platform {
+        Some(ref id) if !id.is_empty() && id != "none" => {
+            let p = Platform::from_id(id)
+                .ok_or_else(|| AppError::Invalid(format!("unknown platform '{id}'")))?;
+            Some(p)
+        }
+        _ => None,
+    };
+    platforms::set_override(app_id, target)
 }
 
 /// Return the cached owned Steam library (may be empty before a refresh).
@@ -929,19 +1264,13 @@ pub async fn compute_categorization(
         .filter(|game| in_scope(game, &request))
         .collect();
 
-    // Pull in any missing store metadata before computing, so metadata-based
-    // kinds (genre, developer, release year, …) have data to work with, and
-    // community tags when the Tag kind was chosen. Shortcuts are never in the
-    // store, so only Steam apps are requested.
+    // Pull in any missing store/provider metadata before computing, so metadata-based
+    // kinds (genre, developer, publisher, release year, …) have data to work with,
+    // and community tags when the Tag kind was chosen.
     let wants_metadata = request.kind.needs_metadata();
     let wants_tags = request.kind.needs_tags();
     if request.fetch_metadata && (wants_metadata || wants_tags) {
-        let ids: Vec<u32> = scoped
-            .iter()
-            .filter(|game| game.kind == GameKind::Steam)
-            .map(|game| game.app_id)
-            .collect();
-        ensure_steam_metadata(&state, &ids, wants_tags).await;
+        ensure_game_metadata(&state, &scoped, wants_tags).await;
     }
 
     let autocat = build_autocat(&request);
@@ -952,8 +1281,11 @@ pub async fn compute_categorization(
     let mut categorized = 0usize;
 
     for game in &scoped {
-        let stored = cache.get("steam-store", game.app_id, None).cloned();
-        if stored.is_none() && game.kind == GameKind::Steam && wants_metadata {
+        let stored = cache
+            .get("shortcut-meta", game.app_id, None)
+            .or_else(|| cache.get("steam-store", game.app_id, None))
+            .cloned();
+        if stored.is_none() && wants_metadata {
             missing_metadata.push(game.app_id);
         }
         let mut meta = stored.unwrap_or_default();
@@ -1284,8 +1616,6 @@ pub fn remove_artwork(
     artwork::remove(&artwork::grid_dir(&root, &account), app_id, slot)
 }
 
-/// Resolve SteamGridDB artwork for a library entry: an exact app-id lookup for
-/// real Steam games, or a name match for non-Steam shortcuts.
 #[tauri::command]
 pub async fn steamgriddb_for_game(
     app_id: u32,
@@ -1296,4 +1626,34 @@ pub async fn steamgriddb_for_game(
     let key = require_key(&state, "steamgriddb")?;
     let client = metadata::http_client();
     metadata::steamgriddb::for_game(&client, &key, app_id, &name, &kind).await
+}
+
+/// Automatically fetch missing custom artwork for shortcuts or specified games.
+#[tauri::command]
+pub async fn auto_fetch_artwork_for_games(
+    app_ids: Option<Vec<u32>>,
+    account_id3: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<usize> {
+    let (root, account) = artwork_context(&state, account_id3)?;
+    let games = collect_library(&root, Some(&account))?;
+
+    let targets: Vec<&Game> = if let Some(ref ids) = app_ids {
+        games.iter().filter(|g| ids.contains(&g.app_id)).collect()
+    } else {
+        // By default target all non-Steam shortcuts
+        games
+            .iter()
+            .filter(|g| g.kind == GameKind::Shortcut)
+            .collect()
+    };
+
+    let mut applied_total = 0;
+    for game in targets {
+        applied_total +=
+            fetch_and_apply_artwork_for_game(&state, &root, &account, game.app_id, &game.name)
+                .await;
+    }
+
+    Ok(applied_total)
 }

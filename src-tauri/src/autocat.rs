@@ -86,6 +86,35 @@ fn default_true() -> bool {
     true
 }
 
+/// Split multi-entity strings (e.g. comma/semicolon/slash separated developers
+/// or publishers) into individual distinct names, preserving legal suffixes.
+pub fn split_entities(raw: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    for item in raw {
+        // Protect legal company suffixes from comma splitting
+        let protected = item
+            .replace("Co., Ltd.", "Co._Ltd_")
+            .replace("Co.,Ltd.", "Co._Ltd_")
+            .replace("co., ltd.", "co._ltd_")
+            .replace("Corp., Ltd.", "Corp._Ltd_");
+
+        for part in protected.split(&[';', ','][..]) {
+            for sub in part.split(" / ") {
+                let restored = sub
+                    .replace("Co._Ltd_", "Co., Ltd.")
+                    .replace("co._ltd_", "co., ltd.")
+                    .replace("Corp._Ltd_", "Corp., Ltd.")
+                    .trim()
+                    .to_string();
+                if !restored.is_empty() && !out.contains(&restored) {
+                    out.push(restored);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Compute the category names an [`AutoCat`] assigns to a game.
 pub fn apply(autocat: &AutoCat, game: &Game, meta: &AppMeta) -> Vec<String> {
     if !autocat.enabled {
@@ -93,9 +122,41 @@ pub fn apply(autocat: &AutoCat, game: &Game, meta: &AppMeta) -> Vec<String> {
     }
 
     let values: Vec<String> = match autocat.kind {
-        AutoCatKind::Genre => meta.genres.clone(),
-        AutoCatKind::Developer => meta.developers.clone(),
-        AutoCatKind::Publisher => meta.publishers.clone(),
+        AutoCatKind::Genre => split_entities(&meta.genres),
+        AutoCatKind::Developer => {
+            let devs = split_entities(&meta.developers);
+            if devs.is_empty() {
+                let pubs = split_entities(&meta.publishers);
+                if !pubs.is_empty() {
+                    pubs
+                } else if game.platform != crate::platforms::Platform::Steam
+                    && game.platform != crate::platforms::Platform::Other
+                {
+                    vec![game.platform.label().to_string()]
+                } else {
+                    Vec::new()
+                }
+            } else {
+                devs
+            }
+        }
+        AutoCatKind::Publisher => {
+            let pubs = split_entities(&meta.publishers);
+            if pubs.is_empty() {
+                let devs = split_entities(&meta.developers);
+                if !devs.is_empty() {
+                    devs
+                } else if game.platform != crate::platforms::Platform::Steam
+                    && game.platform != crate::platforms::Platform::Other
+                {
+                    vec![game.platform.label().to_string()]
+                } else {
+                    Vec::new()
+                }
+            } else {
+                pubs
+            }
+        }
         AutoCatKind::Flag => meta.categories.clone(),
         AutoCatKind::Tag => meta.tags.clone(),
         AutoCatKind::ReleaseYear => match meta.release_year {
@@ -171,5 +232,60 @@ fn first_letter(name: &str) -> String {
     match name.trim().chars().next() {
         Some(ch) if ch.is_ascii_alphabetic() => ch.to_ascii_uppercase().to_string(),
         Some(_) | None => "#".into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platforms::Platform;
+    use crate::steam::models::{AppMeta, Game, GameKind};
+
+    #[test]
+    fn splits_multi_entity_strings_preserving_company_suffixes() {
+        let raw = vec![
+            "Square Enix, PlatinumGames".to_string(),
+            "Spike Chunsoft Co., Ltd.".to_string(),
+            "Valve / Hidden Path Entertainment".to_string(),
+            "Kojima Productions; Konami".to_string(),
+        ];
+        let split = split_entities(&raw);
+        assert_eq!(
+            split,
+            vec![
+                "Square Enix",
+                "PlatinumGames",
+                "Spike Chunsoft Co., Ltd.",
+                "Valve",
+                "Hidden Path Entertainment",
+                "Kojima Productions",
+                "Konami"
+            ]
+        );
+    }
+
+    #[test]
+    fn falls_back_to_platform_publisher_when_metadata_absent() {
+        let autocat = AutoCat {
+            id: "pub".into(),
+            name: "Publisher".into(),
+            kind: AutoCatKind::Publisher,
+            enabled: true,
+            prefix: None,
+            max_categories: None,
+            remove_existing: false,
+            include: Vec::new(),
+            exclude: Vec::new(),
+        };
+        let game = Game {
+            app_id: 12345,
+            name: "Dead Space".into(),
+            kind: GameKind::Shortcut,
+            platform: Platform::Ea,
+            ..Default::default()
+        };
+        let meta = AppMeta::default();
+        let cats = apply(&autocat, &game, &meta);
+        assert_eq!(cats, vec!["EA"]);
     }
 }

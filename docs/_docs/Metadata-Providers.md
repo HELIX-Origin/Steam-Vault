@@ -16,10 +16,13 @@ combines several sources, and only three of them require an API key.
 | Provider | Key | Endpoint | Provides |
 | :--- | :--- | :--- | :--- |
 | **Steam Store** | No | `store.steampowered.com/api/appdetails` | Genres, developers, publishers, release date, feature flags |
+| **Steam Store Search** | No | `store.steampowered.com/api/storesearch` | Search non-Steam & indie titles to match official Steam app IDs |
 | **Steam Web API** | Yes | `IPlayerService/GetOwnedGames` | Owned games, playtime, player summaries |
 | **SteamGridDB** | Yes | `www.steamgriddb.com/api/v2` | Grids, heroes, logos, icons |
 | **IGDB (Twitch)** | Yes | `api.igdb.com/v4` | Summary, genres, companies, cover |
+| **VNDB** | No | `api.vndb.org/kana/vn` | Visual novel developers, publishers, release dates, tags, covers |
 | **PCGamingWiki** | No | `www.pcgamingwiki.com/w/api.php` | Engine, developers, publishers, release dates |
+| **Local Game Sniffer** | No | *Local disk* | itch `receipt.json`, Ren'Py signatures, RPG Maker data, PE VersionInfo |
 | **Wikipedia** | No | `en.wikipedia.org/w/api.php` | Article summaries |
 
 > **Note:** **RAWG is not supported.** The service is defunct and no RAWG provider exists by design.

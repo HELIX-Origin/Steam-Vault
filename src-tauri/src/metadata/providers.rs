@@ -16,6 +16,8 @@ pub enum Provider {
     Igdb,
     /// PCGamingWiki (keyless).
     PcGamingWiki,
+    /// Visual Novel Database (keyless).
+    Vndb,
     /// Wikipedia / Wikidata summaries (keyless).
     Wikipedia,
 }
@@ -28,6 +30,7 @@ impl Provider {
             Provider::SteamGridDb => "steamgriddb",
             Provider::Igdb => "igdb",
             Provider::PcGamingWiki => "pcgamingwiki",
+            Provider::Vndb => "vndb",
             Provider::Wikipedia => "wikipedia",
         }
     }
@@ -39,6 +42,7 @@ impl Provider {
             Provider::SteamGridDb => "SteamGridDB",
             Provider::Igdb => "IGDB",
             Provider::PcGamingWiki => "PCGamingWiki",
+            Provider::Vndb => "VNDB",
             Provider::Wikipedia => "Wikipedia",
         }
     }
@@ -56,7 +60,7 @@ impl Provider {
             Provider::SteamStore | Provider::SteamWebApi => "metadata",
             Provider::SteamGridDb => "artwork",
             Provider::Igdb => "metadata",
-            Provider::PcGamingWiki | Provider::Wikipedia => "metadata",
+            Provider::PcGamingWiki | Provider::Vndb | Provider::Wikipedia => "metadata",
         }
     }
 
@@ -77,6 +81,9 @@ impl Provider {
             Provider::PcGamingWiki => {
                 "Keyless cross-platform data: engine, developers, publishers, and release dates."
             }
+            Provider::Vndb => {
+                "Keyless visual novel database: developers, publishers, tags, and covers for visual novels and Ren'Py titles."
+            }
             Provider::Wikipedia => "Keyless article summaries used as a fallback description.",
         }
     }
@@ -94,12 +101,13 @@ pub struct ProviderInfo {
 }
 
 /// The full ordered provider list.
-pub const ALL: [Provider; 6] = [
+pub const ALL: [Provider; 7] = [
     Provider::SteamStore,
     Provider::SteamWebApi,
     Provider::SteamGridDb,
     Provider::Igdb,
     Provider::PcGamingWiki,
+    Provider::Vndb,
     Provider::Wikipedia,
 ];
 

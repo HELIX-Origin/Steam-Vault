@@ -17,17 +17,19 @@ All configuration lives in **Settings**. Values are stored locally on your machi
 | **Steam folder** | Path to your Steam installation. Use **Auto-detect** to fill it automatically. |
 | **Account** | Which Steam account to organize. Leave it on *Automatic* to use the first account found. |
 | **Store country** | Two-letter region used for Steam Store metadata (for example `us`). |
-| **Language** | Language used for Steam Store metadata (for example `en`). |
+| **Language** | Display language and metadata language. Select from all 30 officially supported Steam languages. See [Localization](Localization.md). |
 | **Back up before writing** | Take a timestamped backup of every file before it is modified. |
-| **Non-Steam sources** | Which other launchers to scan for installed games, and extra folders to search. |
+| **Non-Steam sources** | Which other launchers to scan for installed games, and extra config / game-folder locations to search. |
 | **API keys** | Keys for the three keyed providers (see below). |
 
 ## 🎮 Non-Steam sources
 
 Steam Vault can find games installed by other launchers. Under **Settings → Non-Steam sources** you
-turn each source (GOG, Epic, itch.io, and others) on or off, add extra folders to search beyond the
-standard locations, and choose whether to scan other mounted drives. See
-[External Platforms](External-Platforms.md).
+turn each source (GOG, Epic, itch.io, and others) on or off, add extra locations to search, and
+choose whether to scan other mounted drives. Because each launcher records its games in its own
+config — just like Steam's `libraryfolders.vdf` — **Find folders** autofills that launcher's config
+and library locations; adding game install folders covers configs that are missing or wrong, and
+local games with no launcher. See [External Platforms](External-Platforms.md).
 
 ## 🔑 API keys
 

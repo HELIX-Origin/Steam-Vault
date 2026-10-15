@@ -12,5 +12,10 @@ Timestamped transcripts written by the command scripts in [`../scripts/`](../scr
   the same way.
 - The log type plus timestamp in the filename means consecutive runs never
   overwrite each other.
+- **Log cleanup & retention**: `scripts/lib/logger.mjs` automatically prunes stale
+  log files on every run, keeping only the most recent 25 `.log` files (configurable
+  via `MAX_LOG_FILES` environment variable). This ensures logs never consume excessive
+  storage over time.
 - This directory is git-ignored apart from this README, so transcripts stay
   local to your machine.
+

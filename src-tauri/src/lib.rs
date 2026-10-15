@@ -52,9 +52,13 @@ pub fn run() {
             commands::igdb_search,
             commands::pcgamingwiki_lookup,
             commands::wikipedia_summary,
+            commands::vndb_lookup,
+            commands::steam_store_search,
             commands::compute_autocats,
             commands::detect_platforms,
+            commands::find_platform_folders,
             commands::import_platform_games,
+            commands::set_game_platform,
             commands::get_owned_library,
             commands::refresh_owned_games,
             commands::compute_categorization,
@@ -72,6 +76,7 @@ pub fn run() {
             commands::apply_artwork_from_file,
             commands::remove_artwork,
             commands::steamgriddb_for_game,
+            commands::auto_fetch_artwork_for_games,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
