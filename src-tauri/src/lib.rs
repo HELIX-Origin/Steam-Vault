@@ -59,6 +59,13 @@ pub fn run() {
             commands::refresh_owned_games,
             commands::compute_categorization,
             commands::apply_categorization,
+            commands::get_storage_report,
+            commands::preview_move_library,
+            commands::move_library,
+            commands::preview_move_game,
+            commands::move_game,
+            commands::add_library_folder,
+            commands::remove_library_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

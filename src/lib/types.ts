@@ -290,3 +290,78 @@ export interface ApplyResult {
   collectionsUpdated: number;
   gamesAssigned: number;
 }
+
+// --- Storage management -----------------------------------------------------
+
+/** One registered Steam library folder with its size and drive capacity. */
+export interface LibraryEntry {
+  index: number;
+  path: string;
+  label: string | null;
+  exists: boolean;
+  isSteamRoot: boolean;
+  gameCount: number;
+  totalBytes: number;
+  diskTotal: number | null;
+  diskFree: number | null;
+}
+
+/** An installed Steam app and the library folder that holds it. */
+export interface GamePlacement {
+  appId: number;
+  name: string;
+  libraryPath: string;
+  installDir: string | null;
+  sizeOnDisk: number;
+  installed: boolean;
+  folderExists: boolean;
+}
+
+/** A mounted disk, for the drive overview. */
+export interface DiskInfo {
+  name: string;
+  mount: string;
+  total: number;
+  free: number;
+  removable: boolean;
+}
+
+/** Everything the Storage view needs in one round-trip. */
+export interface StorageReport {
+  root: string;
+  libraries: LibraryEntry[];
+  games: GamePlacement[];
+  disks: DiskInfo[];
+}
+
+/** A dry-run summary of what a move would do. */
+export interface MovePreview {
+  from: string;
+  to: string;
+  bytes: number;
+  targetFree: number | null;
+  /** Whether the destination has room for the content plus headroom. */
+  fits: boolean;
+  /** True when the move is on one volume and will therefore be instant. */
+  sameVolume: boolean;
+  warnings: string[];
+}
+
+/** The result of a completed move. */
+export interface MoveOutcome {
+  from: string;
+  to: string;
+  bytes: number;
+  files: number;
+  sameVolume: boolean;
+  /** `libraryfolders.vdf` files that were updated. */
+  vdfUpdated: string[];
+}
+
+/** A throttled `storage-progress` event emitted during a long copy. */
+export interface StorageProgress {
+  label: string;
+  done: number;
+  total: number;
+  files: number;
+}

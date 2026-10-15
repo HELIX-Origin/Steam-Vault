@@ -8,4 +8,5 @@ pub mod owned;
 pub mod paths;
 pub mod process;
 pub mod shortcuts;
+pub mod storage;
 pub mod vdf;

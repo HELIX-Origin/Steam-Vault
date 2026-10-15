@@ -13,6 +13,8 @@ import type {
   IgdbGame,
   ImportResult,
   MetadataSyncResult,
+  MoveOutcome,
+  MovePreview,
   OwnedGame,
   OwnedLibrary,
   PlatformGame,
@@ -22,6 +24,7 @@ import type {
   SgdbAsset,
   SgdbGame,
   SteamInstall,
+  StorageReport,
 } from "./types";
 
 export const api = {
@@ -82,6 +85,19 @@ export const api = {
     }),
   applyCategorization: (plan: CategorizationPlan, accountId3?: string) =>
     invoke<ApplyResult>("apply_categorization", { plan, accountId3: accountId3 ?? null }),
+
+  // Storage management: inspect, register, and relocate Steam libraries.
+  getStorageReport: () => invoke<StorageReport>("get_storage_report"),
+  previewMoveLibrary: (from: string, to: string) =>
+    invoke<MovePreview>("preview_move_library", { from, to }),
+  moveLibrary: (from: string, to: string) =>
+    invoke<MoveOutcome>("move_library", { from, to }),
+  previewMoveGame: (appId: number, target: string) =>
+    invoke<MovePreview>("preview_move_game", { appId, target }),
+  moveGame: (appId: number, target: string) =>
+    invoke<MoveOutcome>("move_game", { appId, target }),
+  addLibraryFolder: (path: string) => invoke<string[]>("add_library_folder", { path }),
+  removeLibraryFolder: (path: string) => invoke<string[]>("remove_library_folder", { path }),
 };
 
 /** Normalize an unknown thrown value into a readable message. */

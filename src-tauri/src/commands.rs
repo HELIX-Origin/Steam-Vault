@@ -16,6 +16,7 @@ use crate::platforms::{self, Platform, PlatformGame, PlatformScan};
 use crate::settings::{self, Settings};
 use crate::steam::models::{AppMeta, Collection, Game, GameKind, SteamInstall};
 use crate::steam::owned::{self, OwnedGameRecord, OwnedLibrary};
+use crate::steam::storage::{self, MoveOutcome, MovePreview, StorageReport};
 use crate::steam::{collections, library, paths, process, shortcuts};
 
 /// Shared application state managed by Tauri.
@@ -1057,4 +1058,90 @@ pub fn apply_categorization(
         collections_updated: updated,
         games_assigned: assigned,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Storage management
+// ---------------------------------------------------------------------------
+
+/// Inspect every registered Steam library folder, its games, and the mounted
+/// disks — everything the Storage view needs in one round-trip.
+#[tauri::command]
+pub fn get_storage_report(state: State<'_, AppState>) -> AppResult<StorageReport> {
+    let root = steam_root(&state)?;
+    storage::report(&root)
+}
+
+/// Dry-run a move of a whole library folder: sizes, free space, warnings.
+#[tauri::command]
+pub fn preview_move_library(
+    from: String,
+    to: String,
+    state: State<'_, AppState>,
+) -> AppResult<MovePreview> {
+    let root = steam_root(&state)?;
+    storage::preview_move_library(&root, &from, &to)
+}
+
+/// Move a whole library folder to a new path and update every
+/// `libraryfolders.vdf`. Runs off the main thread so progress events flow.
+#[tauri::command]
+pub async fn move_library(
+    from: String,
+    to: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<MoveOutcome> {
+    ensure_steam_closed()?;
+    let root = steam_root(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        storage::move_library(&root, &from, &to, Some(&app))
+    })
+    .await
+    .map_err(|error| AppError::Invalid(format!("The move task failed: {error}")))?
+}
+
+/// Dry-run a move of one installed game to another library folder.
+#[tauri::command]
+pub fn preview_move_game(
+    app_id: u32,
+    target: String,
+    state: State<'_, AppState>,
+) -> AppResult<MovePreview> {
+    let root = steam_root(&state)?;
+    storage::preview_move_game(&root, app_id, &target)
+}
+
+/// Move one installed game to another library folder, updating every
+/// `libraryfolders.vdf`. Runs off the main thread so progress events flow.
+#[tauri::command]
+pub async fn move_game(
+    app_id: u32,
+    target: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<MoveOutcome> {
+    ensure_steam_closed()?;
+    let root = steam_root(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        storage::move_game(&root, app_id, &target, Some(&app))
+    })
+    .await
+    .map_err(|error| AppError::Invalid(format!("The move task failed: {error}")))?
+}
+
+/// Register a new library folder (its `steamapps` directory is created).
+#[tauri::command]
+pub fn add_library_folder(path: String, state: State<'_, AppState>) -> AppResult<Vec<String>> {
+    ensure_steam_closed()?;
+    let root = steam_root(&state)?;
+    storage::add_library_folder(&root, &path)
+}
+
+/// Unregister an empty library folder (the files on disk are left untouched).
+#[tauri::command]
+pub fn remove_library_folder(path: String, state: State<'_, AppState>) -> AppResult<Vec<String>> {
+    ensure_steam_closed()?;
+    let root = steam_root(&state)?;
+    storage::remove_library_folder(&root, &path)
 }

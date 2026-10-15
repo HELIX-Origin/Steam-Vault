@@ -15,7 +15,7 @@ pub struct SteamInstall {
 }
 
 /// A single Steam library folder registered in `libraryfolders.vdf`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SteamLibrary {
     pub index: u32,
