@@ -15,7 +15,12 @@
     "tauri:dev:raw": "tauri dev",
     "tauri:build": "node scripts/build.mjs",
     "tauri:build:raw": "tauri build",
-    "log": "node scripts/run.mjs"
+    "log": "node scripts/run.mjs",
+    "test": "node scripts/test.mjs",
+    "test:rust": "node scripts/test.mjs rust",
+    "test:frontend": "node scripts/test.mjs frontend",
+    "test:all": "node scripts/test.mjs all",
+    "verify": "node scripts/test.mjs check rust frontend build"
   },
   "author": "HELIX Origin",
   "license": "BSD-3-Clause",

@@ -88,14 +88,20 @@ export function createLogger(type) {
     },
 
     /** Write the closing block and flush the transcript. */
-    async footer({ code = null, signal = null, error = null } = {}) {
+    async footer({ code = null, signal = null, error = null, timedOut = false } = {}) {
       const ended = new Date();
       const seconds = ((ended - started) / 1000).toFixed(1);
       note("");
       note(`# finished @ ${ended.toISOString()} (${seconds}s)`);
       note(
         `# exit: ${
-          error ? `error: ${error.message}` : signal ? `signal ${signal}` : `code ${code}`
+          error
+            ? `error: ${error.message}`
+            : timedOut
+              ? "timeout"
+              : signal
+                ? `signal ${signal}`
+                : `code ${code}`
         }`
       );
       await new Promise((resolve) => stream.end(resolve));

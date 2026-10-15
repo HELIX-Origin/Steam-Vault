@@ -3,6 +3,10 @@
 // Runs a child process with its output streamed to the console and recorded to
 // a timestamped transcript (see `logger.mjs`), forwarding termination signals
 // so interactive commands such as `tauri dev` stop cleanly on Ctrl+C.
+//
+// Test/CI callers should pass `stdin: "ignore"` (so a step can never block
+// waiting for input) and a `timeoutMs` (so a wedged process is killed instead
+// of hanging the session).
 
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -15,6 +19,9 @@ const TAURI_CLI = path.join(ROOT, "node_modules", "@tauri-apps", "cli", "tauri.j
 /** Signals forwarded from this wrapper to the child process. */
 const FORWARDED_SIGNALS = ["SIGINT", "SIGTERM"];
 
+/** Exit code used for a step that exceeded its timeout (matches `timeout(1)`). */
+export const TIMEOUT_EXIT = 124;
+
 /** Quote a single argument for a shell command line. */
 function quoteArg(value) {
   const text = String(value);
@@ -26,13 +33,15 @@ function quoteArg(value) {
  * Run a command, streaming output to the console and a timestamped transcript.
  *
  * @param {object} options
- * @param {string} options.type      transcript category, e.g. `tauri-dev`
- * @param {string} options.command   executable to run
- * @param {string[]} [options.args]  arguments passed to the executable
- * @param {string} [options.cwd]     working directory (defaults to the repo root)
+ * @param {string} options.type          transcript category, e.g. `tauri-dev`
+ * @param {string} options.command       executable to run
+ * @param {string[]} [options.args]      arguments passed to the executable
+ * @param {string} [options.cwd]         working directory (defaults to the repo root)
  * @param {NodeJS.ProcessEnv} [options.env]
- * @param {boolean} [options.shell]  run through the shell (resolves `npm` on Windows)
- * @returns {Promise<number>} the child's exit code
+ * @param {boolean} [options.shell]      run through the shell (resolves `npm` on Windows)
+ * @param {"inherit"|"ignore"} [options.stdin]  child stdin handling (default `inherit`)
+ * @param {number} [options.timeoutMs]   hard timeout in ms; `0` disables it
+ * @returns {Promise<number>} the child's exit code (`124` on timeout)
  */
 export async function runLogged({
   type,
@@ -40,17 +49,32 @@ export async function runLogged({
   args = [],
   cwd = ROOT,
   env = process.env,
-  shell = false
+  shell = false,
+  stdin = "inherit",
+  timeoutMs = 0
 }) {
   const logger = createLogger(type);
   logger.header({ command, args, cwd });
   logger.info(`logging to ${logger.relative}`);
 
   return new Promise((resolve) => {
+    let settled = false;
+    let timedOut = false;
+    let timeoutTimer = null;
+    let killTimer = null;
+
+    const clearTimers = () => {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (killTimer) clearTimeout(killTimer);
+    };
+
     const finish = async (code, signal, error = null) => {
+      if (settled) return;
+      settled = true;
+      clearTimers();
       for (const signalName of FORWARDED_SIGNALS) process.removeAllListeners(signalName);
-      await logger.footer({ code, signal, error });
-      resolve(error ? 1 : (code ?? (signal ? 1 : 0)));
+      await logger.footer({ code, signal, error, timedOut });
+      resolve(timedOut ? TIMEOUT_EXIT : error ? 1 : (code ?? (signal ? 1 : 0)));
     };
 
     // With `shell` we pass one pre-quoted command line instead of an args array
@@ -60,11 +84,22 @@ export async function runLogged({
 
     let child;
     try {
-      child = spawn(spawnCommand, spawnArgs, { cwd, env, shell, stdio: ["inherit", "pipe", "pipe"] });
+      child = spawn(spawnCommand, spawnArgs, { cwd, env, shell, stdio: [stdin, "pipe", "pipe"] });
     } catch (error) {
       logger.error(`failed to start ${command}: ${error.message}`);
       void finish(null, null, error);
       return;
+    }
+
+    if (timeoutMs > 0) {
+      timeoutTimer = setTimeout(() => {
+        timedOut = true;
+        logger.warn(`timed out after ${Math.round(timeoutMs / 1000)}s — terminating ${command}`);
+        if (!child.killed) child.kill("SIGTERM");
+        killTimer = setTimeout(() => {
+          if (!child.killed) child.kill("SIGKILL");
+        }, 5000);
+      }, timeoutMs);
     }
 
     child.stdout.on("data", (data) => logger.chunk(data, false));
