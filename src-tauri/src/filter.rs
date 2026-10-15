@@ -4,6 +4,7 @@
 //! - `required`: game must be in **all** listed collections (AND).
 //! - `excluded`: game must be in **none** of the listed collections (NOT).
 //! - `search`: case-insensitive substring match on the game name.
+//!
 //! Empty groups are ignored.
 
 use serde::{Deserialize, Serialize};

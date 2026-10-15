@@ -35,12 +35,9 @@ pub fn discover_steam_root() -> Option<PathBuf> {
         }
     }
 
-    for candidate in candidate_paths() {
-        if is_steam_root(&candidate) {
-            return Some(candidate);
-        }
-    }
-    None
+    candidate_paths()
+        .into_iter()
+        .find(|candidate| is_steam_root(candidate))
 }
 
 fn is_steam_root(path: &Path) -> bool {

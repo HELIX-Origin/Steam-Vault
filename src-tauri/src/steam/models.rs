@@ -36,17 +36,12 @@ pub struct SteamAccount {
 }
 
 /// Whether a library entry is a real Steam app or a non-Steam shortcut.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum GameKind {
+    #[default]
     Steam,
     Shortcut,
-}
-
-impl Default for GameKind {
-    fn default() -> Self {
-        GameKind::Steam
-    }
 }
 
 /// A single entry in the user's library (Steam game or non-Steam shortcut).

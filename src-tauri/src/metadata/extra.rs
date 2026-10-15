@@ -63,10 +63,7 @@ pub async fn pcgamingwiki_lookup(
 }
 
 /// Fetch the intro extract of a Wikipedia article.
-pub async fn wikipedia_summary(
-    client: &reqwest::Client,
-    title: &str,
-) -> AppResult<Option<String>> {
+pub async fn wikipedia_summary(client: &reqwest::Client, title: &str) -> AppResult<Option<String>> {
     let response = client
         .get("https://en.wikipedia.org/w/api.php")
         .query(&[

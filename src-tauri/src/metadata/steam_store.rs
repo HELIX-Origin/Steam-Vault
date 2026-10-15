@@ -66,7 +66,11 @@ async fn fetch_one(
     }
     let value: Value = response.json().await.ok()?;
     let entry = value.get(app_id.to_string())?;
-    if !entry.get("success").and_then(Value::as_bool).unwrap_or(false) {
+    if !entry
+        .get("success")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
         return None;
     }
     let data = entry.get("data")?;

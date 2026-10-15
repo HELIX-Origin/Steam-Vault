@@ -79,9 +79,12 @@ impl ScanConfig {
 /// Serialized with the same stable ids surfaced by [`Platform::id`]
 /// (`steam`, `gog`, `epic`, `battlenet`, …) so the frontend can index it
 /// directly.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Platform {
+    #[default]
     Steam,
     Gog,
     Epic,
@@ -93,12 +96,6 @@ pub enum Platform {
     Xbox,
     Rockstar,
     Other,
-}
-
-impl Default for Platform {
-    fn default() -> Self {
-        Platform::Steam
-    }
 }
 
 impl Platform {

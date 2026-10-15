@@ -275,7 +275,7 @@ fn manifests_in(library: &str) -> Vec<Manifest> {
         .filter(|entry| entry.path().is_file())
         .filter_map(|entry| read_manifest(&entry.path()))
         .collect();
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    out.sort_by_key(|a| a.name.to_lowercase());
     out
 }
 
@@ -337,7 +337,7 @@ pub fn report(root: &Path) -> AppResult<StorageReport> {
         });
     }
 
-    games.sort_by(|a, b| b.size_on_disk.cmp(&a.size_on_disk));
+    games.sort_by_key(|a| std::cmp::Reverse(a.size_on_disk));
 
     Ok(StorageReport {
         root: root_str,
@@ -702,7 +702,7 @@ pub fn move_library(
     {
         let map = libraries_map_mut(&mut doc)?;
         let mut found = false;
-        for (_key, value) in map.iter_mut() {
+        for value in map.values_mut() {
             if paths_equal(value.get_str("path").unwrap_or_default(), from) {
                 if let vdf::Vdf::Object(fields) = value {
                     fields.insert("path".into(), vdf::Vdf::String(to.to_string()));
@@ -1121,7 +1121,7 @@ mod tests {
         let mut doc = vdf::parse(input).unwrap();
         {
             let map = libraries_map_mut(&mut doc).unwrap();
-            for (_key, value) in map.iter_mut() {
+            for value in map.values_mut() {
                 if paths_equal(
                     value.get_str("path").unwrap_or_default(),
                     "D:\\SteamLibrary",

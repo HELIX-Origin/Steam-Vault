@@ -227,6 +227,7 @@ pub fn shortcut_app_id(exe: &str, name: &str) -> u32 {
 }
 
 /// Build the binary-VDF fields for one shortcut entry, matching Steam's schema.
+#[allow(clippy::too_many_arguments)]
 fn build_fields(
     app_id: u32,
     name: &str,
