@@ -30,6 +30,7 @@ The frontend is a **SvelteKit** application in static SPA mode, built with **Sve
 | `src/routes/+page.svelte` | Dashboard. |
 | `src/routes/library/+page.svelte` | Library. |
 | `src/routes/storage/+page.svelte` | Storage: libraries, drives, and moving games between them. |
+| `src/routes/artwork/+page.svelte` | Artwork: custom grid, hero, logo, and icon art for any game. |
 | `src/routes/collections/+page.svelte` | Collections. |
 | `src/routes/platforms/+page.svelte` | External-platform detection and import. |
 | `src/routes/organize/+page.svelte` | Create collections from a sorting option, with the Allowed / Required / Excluded filter builder. |

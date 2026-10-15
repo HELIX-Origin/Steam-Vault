@@ -37,6 +37,8 @@ SvelteKit frontend) that targets **stable, documented data sources** rather than
   (genre, developer, platform, installed state, playtime, name, …), with a preview before writing.
 - **Non-Steam game support** — import and manage `shortcuts.vdf` entries, with artwork from
   SteamGridDB.
+- **Artwork management** — replace the grid, hero, logo, and icon art for any game, pulling from
+  SteamGridDB (by app id, or by name for shortcuts) or from a local image file.
 - **Metadata providers** — see the table below.
 
 ## 🔌 Metadata providers
@@ -120,6 +122,8 @@ writes, non-Steam shortcuts, the metadata provider layer, AutoCats, and the app 
 import, the full owned-library sync, and collection creation from any sorting option. Recent work
 adds a **filter builder** in Organize, **non-Steam source** settings (enable/disable and extra
 folders), and a **Storage** view for inspecting libraries and drives and moving games between them.
+**M4 (Artwork)** adds the **Artwork** view for applying and removing custom grid, hero, logo, and
+icon art — from SteamGridDB or your own image files — for both Steam games and non-Steam shortcuts.
 
 ## 📖 Documentation
 

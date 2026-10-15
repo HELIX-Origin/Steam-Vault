@@ -31,6 +31,8 @@ Steam Vault modifies only these files, always under the safety contract below:
 - `libraryfolders.vdf` — **every copy** Steam may keep, when a library is registered, unregistered,
   or a game moves between libraries.
 - `appmanifest_<appid>.acf` — moved (or its `path` rewritten) with its game during a storage move.
+- `userdata/<account-id>/config/grid/<appid>[*][_hero|_logo|_icon].<ext>` — custom artwork, when
+  applied or removed in the **Artwork** view.
 
 ## 🔤 Parsers
 
@@ -61,12 +63,31 @@ directory and then rewrites `libraryfolders.vdf`. Because Steam rewrites every c
 `libraryfolders.vdf` on startup, **all copies are updated** so Steam does not "lose" a game and
 start re-downloading it.
 
+## 🖼️ Custom artwork
+
+Steam's own **Customize** screen writes custom images into `userdata/<account-id>/config/grid/`. Each
+of the five slots is a fixed filename derived from the app id:
+
+| Slot | File name |
+| :--- | :--- |
+| Portrait grid | `<appid>p` |
+| Landscape grid | `<appid>` |
+| Hero banner | `<appid>_hero` |
+| Logo | `<appid>_logo` |
+| Icon | `<appid>_icon` |
+
+Steam Vault sniffs the image's real format and writes it with the matching `.png` / `.jpg` /
+`.jpeg` extension. Because the scheme is keyed by app id, it works equally for real Steam games and
+non-Steam shortcuts (whose synthetic appids begin at `0x80000000`). Replacing or removing an image
+copies the previous one into the timestamped backup store first.
+
 ## 🛡️ Write safety
 
 Every write path follows the same contract:
 
-1. **Steam must be closed.** `process::is_steam_running()` gates writes; if Steam is running, the
-   command returns an error instead of proceeding.
+1. **Steam must be closed.** `process::is_steam_running()` gates collection, shortcut, and storage
+   writes; if Steam is running, the command returns an error instead of proceeding. **Artwork is the
+   exception** — Steam watches `config/grid` and repaints live, so artwork changes need not close it.
 2. **Back up first.** `backup::backup_file(path)` copies the target to a timestamped file before it
    is modified.
 3. **Write atomically-enough and report.** The collection store is re-serialized and saved; errors

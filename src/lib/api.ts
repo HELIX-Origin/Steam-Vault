@@ -5,11 +5,14 @@ import { invoke } from "@tauri-apps/api/core";
 import type {
   AppMeta,
   ApplyResult,
+  ArtworkOutcome,
+  ArtworkSlotId,
   AutoCatPlan,
   CategorizationPlan,
   CategorizeRequest,
   Collection,
   Game,
+  GameArtwork,
   IgdbGame,
   ImportResult,
   MetadataSyncResult,
@@ -98,6 +101,33 @@ export const api = {
     invoke<MoveOutcome>("move_game", { appId, target }),
   addLibraryFolder: (path: string) => invoke<string[]>("add_library_folder", { path }),
   removeLibraryFolder: (path: string) => invoke<string[]>("remove_library_folder", { path }),
+
+  // Custom artwork: inspect, preview, apply, and remove grid/hero/logo/icon art.
+  getArtwork: (accountId3?: string, appIds?: number[]) =>
+    invoke<GameArtwork[]>("get_artwork", { accountId3: accountId3 ?? null, appIds: appIds ?? null }),
+  readArtwork: (appId: number, slot: ArtworkSlotId, accountId3?: string) =>
+    invoke<string | null>("read_artwork", { appId, slot, accountId3: accountId3 ?? null }),
+  applyArtworkFromUrl: (appId: number, slot: ArtworkSlotId, url: string, accountId3?: string) =>
+    invoke<ArtworkOutcome>("apply_artwork_from_url", {
+      appId,
+      slot,
+      url,
+      accountId3: accountId3 ?? null,
+    }),
+  applyArtworkFromFile: (appId: number, slot: ArtworkSlotId, path: string, accountId3?: string) =>
+    invoke<ArtworkOutcome>("apply_artwork_from_file", {
+      appId,
+      slot,
+      path,
+      accountId3: accountId3 ?? null,
+    }),
+  removeArtwork: (appId: number, slot: ArtworkSlotId, accountId3?: string) =>
+    invoke<ArtworkOutcome>("remove_artwork", { appId, slot, accountId3: accountId3 ?? null }),
+  steamGridDbForGame: (
+    appId: number,
+    name: string,
+    kind: "grids" | "heroes" | "logos" | "icons",
+  ) => invoke<SgdbAsset[]>("steamgriddb_for_game", { appId, name, kind }),
 };
 
 /** Normalize an unknown thrown value into a readable message. */

@@ -66,6 +66,12 @@ pub fn run() {
             commands::move_game,
             commands::add_library_folder,
             commands::remove_library_folder,
+            commands::get_artwork,
+            commands::read_artwork,
+            commands::apply_artwork_from_url,
+            commands::apply_artwork_from_file,
+            commands::remove_artwork,
+            commands::steamgriddb_for_game,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

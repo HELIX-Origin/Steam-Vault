@@ -25,7 +25,9 @@ Steam Vault parses this binary format directly, so it does not depend on Steam's
 
 Non-Steam games rarely have official artwork, so Steam Vault uses **SteamGridDB** to find grids
 (covers), heroes (banners), logos, and icons. This is the main reason SteamGridDB support matters:
-it lets non-Steam entries look at home in your library.
+it lets non-Steam entries look at home in your library. The dedicated
+[Artwork Management](Artwork-Management.md) view applies those images to a game's slots — or applies
+your own image files.
 
 > **Note:** SteamGridDB requires an API key. Add one in
 > [Settings & API Keys](Settings-and-API-Keys.md) to enable artwork lookups.

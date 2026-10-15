@@ -23,6 +23,7 @@ Steam access, metadata fetching, categorization, and file writing happen here.
 | `steam/library.rs` | Aggregates games from manifests, library folders, and play stats. |
 | `steam/collections.rs` | Reads/writes the cloud-storage collection namespace. |
 | `steam/shortcuts.rs` | Reads/writes non-Steam shortcuts, derives Steam-compatible appids, and appends imports. |
+| `steam/artwork.rs` | Inspects, applies, and removes Steam custom artwork in `userdata/<id>/config/grid/` (five slots, format sniffing, data-url reads, backup-on-replace). |
 | `steam/owned.rs` | Caches the full owned Steam library (Web API `GetOwnedGames`). |
 | `steam/storage.rs` | Library folders and mounted drives: inspection, register/unregister, and moving games or whole libraries between drives. |
 | `steam/models.rs` | Shared serde models (serialized as camelCase). |
@@ -66,6 +67,11 @@ snake_case Rust parameters.
 | `preview_move_library` / `preview_move_game` | Dry-run a move: bytes to move, destination free space, and same-drive check. |
 | `move_library` / `move_game` | Move a library or game and update every `libraryfolders.vdf`. |
 | `add_library_folder` / `remove_library_folder` | Register or unregister a library folder. |
+| `get_artwork` | Inspect the five custom-artwork slots for a game. |
+| `read_artwork` | Read one slot's image as a data URL for preview. |
+| `apply_artwork_from_url` / `apply_artwork_from_file` | Write an image into a slot from a fetched URL or a local file. |
+| `remove_artwork` | Clear a slot, backing up the previous image first. |
+| `steamgriddb_for_game` | SteamGridDB assets resolved by exact app id (Steam) or by name (non-Steam shortcut). |
 
 ## 🎮 External platforms & the owned library
 
@@ -78,6 +84,16 @@ stay attributable to their storefront.
 Because most of a large Steam library is not installed locally, `steam/owned.rs` caches the Web API's
 `GetOwnedGames` result and `load_library` merges it into the game list. Owned-but-not-installed games
 are first-class candidates for categorization and collections.
+
+## 🎨 Custom artwork
+
+`steam/artwork.rs` manages Steam's five custom-artwork slots — portrait grid (`<appid>p`), landscape
+grid (`<appid>`), hero (`<appid>_hero`), logo (`<appid>_logo`), and icon (`<appid>_icon`) — in
+`userdata/<id3>/config/grid/`. The image's real format is sniffed from its bytes so it is written
+with the correct `.png` / `.jpg` / `.jpeg` extension, and a data-url helper lets the UI preview an
+existing slot. Matching SteamGridDB assets by **exact app id** sidesteps search ambiguity for real
+games, while non-Steam shortcuts (synthetic appids from `0x80000000`) are matched by name. Unlike
+collection and shortcut writes, artwork writes do **not** require Steam to be closed.
 
 ## 🗃️ Shared state
 

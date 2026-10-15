@@ -69,8 +69,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `preview_move_game`, `move_game`, `add_library_folder`, `remove_library_folder`): inspect
   library folders and mounted drives, register/unregister libraries, and move a game or a whole
   library between drives, updating every `libraryfolders.vdf` (with backups and a Steam-closed
-  guard). New **Storage** view (seven-item navigation) with a drive overview, per-library cards, a
+  guard). New **Storage** view (navigation grows to seven items) with a drive overview, per-library cards, a
   searchable game list, move previews, and live `storage-progress` events.
+- **Artwork management** (`get_artwork`, `read_artwork`, `apply_artwork_from_url`,
+  `apply_artwork_from_file`, `remove_artwork`, `steamgriddb_for_game`): inspect and edit Steam's five
+  custom-artwork slots (portrait grid, landscape grid, hero, logo, icon) in
+  `userdata/<id3>/config/grid/`, for Steam games and non-Steam shortcuts alike. SteamGridDB assets
+  are resolved by **exact app id** for real games and by **name** for shortcuts; local PNG/JPEG files
+  can be applied directly, and the image format is sniffed so the correct extension is written.
+  Replacing or removing art backs up the previous image first. New **Artwork** view (eight-item
+  navigation). Unlike collection and shortcut writes, artwork writes do **not** require Steam to be
+  closed.
 
 ### Fixed
 

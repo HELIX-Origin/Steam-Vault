@@ -365,3 +365,40 @@ export interface StorageProgress {
   total: number;
   files: number;
 }
+
+// --- Custom artwork ---------------------------------------------------------
+
+/** One of Steam's five custom-artwork slots. */
+export type ArtworkSlotId = "gridPortrait" | "gridLandscape" | "hero" | "logo" | "icon";
+
+/** The on-disk state of one artwork slot for a game. */
+export interface ArtworkSlotState {
+  slot: ArtworkSlotId;
+  label: string;
+  present: boolean;
+  path: string | null;
+  bytes: number;
+  modified: number | null;
+}
+
+/** The artwork state for one game across all five slots. */
+export interface GameArtwork {
+  appId: number;
+  name: string;
+  slots: ArtworkSlotState[];
+  /** How many of the five slots are currently filled. */
+  applied: number;
+}
+
+/** The result of applying or removing a slot's artwork. */
+export interface ArtworkOutcome {
+  appId: number;
+  slot: ArtworkSlotId;
+  /** `"applied"` or `"removed"`. */
+  action: string;
+  path: string | null;
+  bytes: number;
+  source: string | null;
+  /** Where the replaced image was archived, when there was one. */
+  backup: string | null;
+}

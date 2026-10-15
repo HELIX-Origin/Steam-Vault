@@ -14,10 +14,11 @@ use crate::filter::Filter;
 use crate::metadata::{self, providers::ProviderInfo, steam_web, steam_web::OwnedGame};
 use crate::platforms::{self, Platform, PlatformGame, PlatformScan};
 use crate::settings::{self, Settings};
+use crate::steam::artwork::{ArtworkOutcome, ArtworkSlot, GameArtwork};
 use crate::steam::models::{AppMeta, Collection, Game, GameKind, SteamInstall};
 use crate::steam::owned::{self, OwnedGameRecord, OwnedLibrary};
 use crate::steam::storage::{self, MoveOutcome, MovePreview, StorageReport};
-use crate::steam::{collections, library, paths, process, shortcuts};
+use crate::steam::{artwork, collections, library, paths, process, shortcuts};
 
 /// Shared application state managed by Tauri.
 pub struct AppState {
@@ -34,7 +35,10 @@ impl AppState {
     }
 
     pub fn settings_snapshot(&self) -> Settings {
-        self.settings.lock().expect("settings lock poisoned").clone()
+        self.settings
+            .lock()
+            .expect("settings lock poisoned")
+            .clone()
     }
 }
 
@@ -115,7 +119,10 @@ pub fn is_steam_running() -> bool {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn load_library(account_id3: Option<String>, state: State<'_, AppState>) -> AppResult<Vec<Game>> {
+pub fn load_library(
+    account_id3: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<Game>> {
     let root = steam_root(&state)?;
     let account = resolve_account(&root, &state, account_id3);
     collect_library(&root, account.as_deref())
@@ -259,8 +266,9 @@ pub fn update_collection(
     let id3 = resolve_account(&root, &state, account_id3)
         .ok_or_else(|| AppError::NotFound("No Steam account selected.".into()))?;
 
-    let mut file = collections::load_collections_file(&root, &id3)?
-        .ok_or_else(|| AppError::NotFound("No Steam collection store found for this account.".into()))?;
+    let mut file = collections::load_collections_file(&root, &id3)?.ok_or_else(|| {
+        AppError::NotFound("No Steam collection store found for this account.".into())
+    })?;
 
     let mut collection = file
         .collections()
@@ -313,8 +321,9 @@ pub fn create_collection(
     let id3 = resolve_account(&root, &state, account_id3)
         .ok_or_else(|| AppError::NotFound("No Steam account selected.".into()))?;
 
-    let mut file = collections::load_collections_file(&root, &id3)?
-        .ok_or_else(|| AppError::NotFound("No Steam collection store found for this account.".into()))?;
+    let mut file = collections::load_collections_file(&root, &id3)?.ok_or_else(|| {
+        AppError::NotFound("No Steam collection store found for this account.".into())
+    })?;
 
     let nanos = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
     let collection = Collection {
@@ -344,8 +353,9 @@ pub fn delete_collection(
     let id3 = resolve_account(&root, &state, account_id3)
         .ok_or_else(|| AppError::NotFound("No Steam account selected.".into()))?;
 
-    let mut file = collections::load_collections_file(&root, &id3)?
-        .ok_or_else(|| AppError::NotFound("No Steam collection store found for this account.".into()))?;
+    let mut file = collections::load_collections_file(&root, &id3)?.ok_or_else(|| {
+        AppError::NotFound("No Steam collection store found for this account.".into())
+    })?;
     crate::backup::backup_file(&file.path)?;
     file.delete(&collection_id);
     file.save()?;
@@ -442,7 +452,11 @@ pub async fn ensure_steam_metadata(
         unique
             .iter()
             .copied()
-            .filter(|id| cache.get("steam-store", *id, Some(CACHE_MAX_AGE_SECS)).is_none())
+            .filter(|id| {
+                cache
+                    .get("steam-store", *id, Some(CACHE_MAX_AGE_SECS))
+                    .is_none()
+            })
             .collect()
     };
 
@@ -481,7 +495,11 @@ pub async fn ensure_steam_metadata(
             unique
                 .iter()
                 .copied()
-                .filter(|id| cache.get("steam-tags", *id, Some(CACHE_MAX_AGE_SECS)).is_none())
+                .filter(|id| {
+                    cache
+                        .get("steam-tags", *id, Some(CACHE_MAX_AGE_SECS))
+                        .is_none()
+                })
                 .collect()
         };
         if !needing.is_empty() {
@@ -1032,9 +1050,7 @@ pub fn apply_categorization(
                     collection.removed.push(*app_id);
                 }
             }
-            collection
-                .removed
-                .retain(|app_id| !target.contains(app_id));
+            collection.removed.retain(|app_id| !target.contains(app_id));
             collection.added = target.into_iter().collect();
         } else {
             for app_id in &assignment.app_ids {
@@ -1144,4 +1160,140 @@ pub fn remove_library_folder(path: String, state: State<'_, AppState>) -> AppRes
     ensure_steam_closed()?;
     let root = steam_root(&state)?;
     storage::remove_library_folder(&root, &path)
+}
+
+// ---------------------------------------------------------------------------
+// Custom artwork
+// ---------------------------------------------------------------------------
+
+/// Resolve the Steam root and the active account.
+fn artwork_context(state: &AppState, account_id3: Option<String>) -> AppResult<(PathBuf, String)> {
+    let root = steam_root(state)?;
+    let account = resolve_account(&root, state, account_id3).ok_or_else(|| {
+        AppError::NotFound("No Steam account found. Sign in to Steam at least once.".into())
+    })?;
+    Ok((root, account))
+}
+
+/// Inspect the custom artwork of every library entry (optionally limited to a
+/// set of app ids) in one round-trip.
+#[tauri::command]
+pub fn get_artwork(
+    app_ids: Option<Vec<u32>>,
+    account_id3: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<GameArtwork>> {
+    let (root, account) = artwork_context(&state, account_id3)?;
+    let mut games = collect_library(&root, Some(&account))?;
+    if let Some(filter) = app_ids {
+        let wanted: BTreeSet<u32> = filter.into_iter().collect();
+        games.retain(|game| wanted.contains(&game.app_id));
+    }
+    let entries: Vec<(u32, String)> = games
+        .into_iter()
+        .map(|game| (game.app_id, game.name))
+        .collect();
+    Ok(artwork::inspect(
+        &artwork::grid_dir(&root, &account),
+        &entries,
+    ))
+}
+
+/// Read one slot's applied image as a `data:` URL (for previews).
+#[tauri::command]
+pub fn read_artwork(
+    app_id: u32,
+    slot: String,
+    account_id3: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<Option<String>> {
+    let (root, account) = artwork_context(&state, account_id3)?;
+    let slot = ArtworkSlot::parse(&slot)?;
+    artwork::read_data_url(&artwork::grid_dir(&root, &account), app_id, slot)
+}
+
+/// Download an image from a URL and apply it as a slot's custom artwork.
+#[tauri::command]
+pub async fn apply_artwork_from_url(
+    app_id: u32,
+    slot: String,
+    url: String,
+    account_id3: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<ArtworkOutcome> {
+    let (root, account) = artwork_context(&state, account_id3)?;
+    let slot = ArtworkSlot::parse(&slot)?;
+
+    let client = metadata::http_client();
+    let response = client.get(&url).send().await?;
+    if !response.status().is_success() {
+        return Err(AppError::msg(format!(
+            "failed to download artwork (HTTP {})",
+            response.status()
+        )));
+    }
+    let bytes = response.bytes().await?;
+    artwork::apply_bytes(
+        &artwork::grid_dir(&root, &account),
+        app_id,
+        slot,
+        &bytes,
+        Some(url),
+    )
+}
+
+/// Apply a local image file as a slot's custom artwork.
+#[tauri::command]
+pub fn apply_artwork_from_file(
+    app_id: u32,
+    slot: String,
+    path: String,
+    account_id3: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<ArtworkOutcome> {
+    let (root, account) = artwork_context(&state, account_id3)?;
+    let slot = ArtworkSlot::parse(&slot)?;
+
+    let source = PathBuf::from(path.trim().trim_matches('"'));
+    if !source.is_file() {
+        return Err(AppError::NotFound(format!(
+            "{} is not a file",
+            source.display()
+        )));
+    }
+    let bytes = std::fs::read(&source)?;
+    artwork::apply_bytes(
+        &artwork::grid_dir(&root, &account),
+        app_id,
+        slot,
+        &bytes,
+        Some(source.to_string_lossy().to_string()),
+    )
+}
+
+/// Remove a slot's custom artwork (after archiving it).
+#[tauri::command]
+pub fn remove_artwork(
+    app_id: u32,
+    slot: String,
+    account_id3: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<ArtworkOutcome> {
+    let (root, account) = artwork_context(&state, account_id3)?;
+    let slot = ArtworkSlot::parse(&slot)?;
+    artwork::remove(&artwork::grid_dir(&root, &account), app_id, slot)
+}
+
+/// Resolve SteamGridDB artwork for a library entry: an exact app-id lookup for
+/// real Steam games, or a name match for non-Steam shortcuts.
+#[tauri::command]
+pub async fn steamgriddb_for_game(
+    app_id: u32,
+    name: String,
+    kind: String,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<metadata::steamgriddb::SgdbAsset>> {
+    let key = require_key(&state, "steamgriddb")?;
+    let client = metadata::http_client();
+    metadata::steamgriddb::for_game(&client, &key, app_id, &name, &kind).await
 }

@@ -8,7 +8,7 @@ nav_order: 6
 
 # Metadata Providers
 
-Metadata powers AutoCats, the filter builder, and artwork for non-Steam games. Steam Vault
+Metadata powers AutoCats, the filter builder, and artwork for any game. Steam Vault
 combines several sources, and only three of them require an API key.
 
 ## 🔌 Provider reference
@@ -32,7 +32,9 @@ combines several sources, and only three of them require an API key.
   [Settings & API Keys](Settings-and-API-Keys.md):
   - **Steam Web API** — needs a key; `GetOwnedGames` also requires your profile's game details to
     be public, or Steam returns `403`.
-  - **SteamGridDB** — needs an API key; essential for artwork on non-Steam games.
+  - **SteamGridDB** — needs an API key; powers the [Artwork Management](Artwork-Management.md)
+    view. Real Steam games are looked up by their **exact app id**; non-Steam shortcuts, which have
+    no store page, are looked up by **name** (with an exact-title preference).
   - **IGDB** — needs a Twitch *client id* and *client secret*; Steam Vault obtains an app access
     token automatically via the client-credentials flow.
 

@@ -23,6 +23,8 @@ far less likely to break it.
   release year, and user score.
 - 🎛️ **Advanced filters** — an Allowed / Required / Excluded rule builder over your whole library.
 - 👾 **Non-Steam games** — import and manage non-Steam shortcuts, with artwork from SteamGridDB.
+- 🖼️ **Artwork management** — replace the grid, hero, logo, and icon art for any game, from
+  SteamGridDB or your own image files.
 - 🎮 **External platforms** — detect games installed by GOG, Epic Games, itch.io, and others, and
   import them as non-Steam shortcuts.
 - 💽 **Storage management** — see how your games are spread across libraries and drives, register
@@ -36,12 +38,13 @@ far less likely to break it.
 - 🛡️ **Safe writes** — timestamped backups before every write, and changes are refused while Steam
   is running.
 
-> **Active development.** Steam Vault has shipped **M1 (Foundation)** and **M2 (Whole-Library
-> Organizing)**, and is building out **M3** — a filter builder in Organize, settings for non-Steam
-> sources, and full **Storage** management (library folders, drives, and moving games between them).
-> The data layer, metadata providers, AutoCats engine, external platform import, owned-library sync,
-> custom title bar, and app shell all exist; the polished interface pass and packaged installers are
-> still ahead. See [Getting Started](Getting-Started.md) to build it from source.
+> **Active development.** Steam Vault has shipped **M1 (Foundation)**, **M2 (Whole-Library
+> Organizing)**, **M3 (Filtering & Storage)** — a filter builder in Organize, non-Steam source
+> settings, and full **Storage** management — and **M4 (Artwork)**, a custom-artwork manager for
+> Steam games and non-Steam shortcuts. The data layer, metadata providers, AutoCats engine, external
+> platform import, owned-library sync, custom title bar, and app shell all exist; the polished
+> interface pass and packaged installers are still ahead. See [Getting Started](Getting-Started.md)
+> to build it from source.
 
 ## 🧭 Getting around
 
@@ -52,6 +55,7 @@ far less likely to break it.
 - **[AutoCategorization](AutoCategorization.md)** — the AutoCats engine.
 - **[Metadata Providers](Metadata-Providers.md)** — every provider and what it contributes.
 - **[Non-Steam Games](Non-Steam-Games.md)** — shortcuts and artwork.
+- **[Artwork Management](Artwork-Management.md)** — custom art for any game.
 - **[External Platforms](External-Platforms.md)** — importing games from other launchers.
 - **[Settings & API Keys](Settings-and-API-Keys.md)** — configuration reference.
 - **[Troubleshooting](Troubleshooting.md)** — common issues and fixes.
@@ -75,7 +79,7 @@ far less likely to break it.
 
 ### 📚 Documentation Index
 - **Core**: [Home]({{ '/' | relative_url }}) · [Getting Started](Getting-Started.md) · [Organizing Your Library](Organizing-Your-Library.md)
-- **Features**: [Collections](Collections.md) · [AutoCategorization](AutoCategorization.md) · [Non-Steam Games](Non-Steam-Games.md) · [External Platforms](External-Platforms.md) · [Storage Management](Storage-Management.md)
+- **Features**: [Collections](Collections.md) · [AutoCategorization](AutoCategorization.md) · [Non-Steam Games](Non-Steam-Games.md) · [Artwork Management](Artwork-Management.md) · [External Platforms](External-Platforms.md) · [Storage Management](Storage-Management.md)
 - **Reference**: [Metadata Providers](Metadata-Providers.md) · [Settings & API Keys](Settings-and-API-Keys.md) · [Troubleshooting](Troubleshooting.md) · [FAQ](FAQ.md)
 
 ---

@@ -12,6 +12,7 @@
     { href: "/", label: "Dashboard", icon: "◈" },
     { href: "/library", label: "Library", icon: "▤" },
     { href: "/storage", label: "Storage", icon: "▥" },
+    { href: "/artwork", label: "Artwork", icon: "❖" },
     { href: "/collections", label: "Collections", icon: "❐" },
     { href: "/platforms", label: "Platforms", icon: "⬡" },
     { href: "/organize", label: "Organize", icon: "⊞" },
