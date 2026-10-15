@@ -259,9 +259,9 @@
   .toolbar {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    padding: 0.7rem 0.9rem;
-    margin-bottom: 0.9rem;
+    gap: 0.65rem;
+    padding: 0.8rem 1rem;
+    margin-bottom: 1rem;
     flex-wrap: wrap;
   }
 
@@ -270,10 +270,10 @@
   }
 
   .list {
-    padding: 0.35rem;
+    padding: 0.45rem;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 4px;
   }
 
   .game {
@@ -282,22 +282,25 @@
     gap: 0.75rem;
     width: 100%;
     text-align: left;
-    padding: 0.55rem 0.7rem;
+    padding: 0.55rem 0.75rem;
     border-radius: var(--radius-sm);
     border: 1px solid transparent;
     background: transparent;
     color: var(--text);
     cursor: pointer;
     font: inherit;
+    transition: background 0.15s ease, border-color 0.15s ease, transform 0.08s ease;
   }
 
   .game:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--border-subtle);
   }
 
   .game.selected {
-    background: linear-gradient(135deg, rgba(72, 216, 242, 0.14), rgba(176, 108, 255, 0.12));
-    border-color: var(--border-strong);
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(168, 85, 247, 0.16));
+    border-color: var(--border-glow);
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
   }
 
   .check {
@@ -309,6 +312,14 @@
     place-items: center;
     font-size: 0.75rem;
     flex-shrink: 0;
+    background: rgba(6, 14, 26, 0.5);
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .game.selected .check {
+    border-color: var(--accent);
+    background: rgba(56, 189, 248, 0.25);
+    color: #ffffff;
   }
 
   .name {
@@ -317,20 +328,22 @@
     align-items: center;
     gap: 0.5rem;
     min-width: 0;
+    font-weight: 550;
   }
 
   .tags {
     display: flex;
-    gap: 0.3rem;
+    gap: 0.35rem;
     flex-wrap: wrap;
     justify-content: flex-end;
-    max-width: 40%;
+    max-width: 42%;
   }
 
   .size {
-    width: 68px;
+    width: 72px;
     text-align: right;
     flex-shrink: 0;
+    font-size: 0.82rem;
   }
 
   .platform-tag {
@@ -340,18 +353,23 @@
 
   .platform-select {
     cursor: pointer;
-    border: none;
-    background: transparent;
+    border: 1px solid var(--border-subtle);
+    background: rgba(6, 14, 26, 0.6);
     color: inherit;
     font-size: 0.72rem;
     font-weight: 600;
-    padding: 0.15rem 0.45rem;
+    padding: 0.18rem 0.5rem;
     outline: none;
-    border-radius: var(--radius-sm, 6px);
+    border-radius: var(--radius-pill);
+    transition: border-color 0.15s ease;
+  }
+
+  .platform-select:hover {
+    border-color: var(--accent);
   }
 
   .platform-select option {
-    background: var(--bg-card, #1c1d22);
-    color: var(--fg, #e6e6e6);
+    background: #0b1528;
+    color: var(--text);
   }
 </style>

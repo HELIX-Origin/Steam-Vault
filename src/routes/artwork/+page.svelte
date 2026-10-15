@@ -392,31 +392,35 @@
   .pick-list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
     max-height: 62vh;
     overflow-y: auto;
+    padding: 2px;
   }
 
   .pick {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    padding: 0.5em 0.6em;
+    gap: 0.65rem;
+    padding: 0.55em 0.7em;
     border-radius: var(--radius-sm);
     background: transparent;
     border: 1px solid transparent;
     color: var(--text);
     text-align: left;
     cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
   }
 
   .pick:hover {
     background: rgba(255, 255, 255, 0.05);
+    border-color: var(--border-subtle);
   }
 
   .pick.active {
-    background: linear-gradient(135deg, rgba(72, 216, 242, 0.16), rgba(176, 108, 255, 0.14));
-    border-color: var(--border-strong);
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(168, 85, 247, 0.16));
+    border-color: var(--border-glow);
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
   }
 
   .pick-name {
@@ -425,30 +429,37 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-weight: 550;
   }
 
   .editor {
-    padding: 1rem 1.1rem;
+    padding: 1.1rem 1.25rem;
     display: flex;
     flex-direction: column;
-    gap: 0.9rem;
+    gap: 1rem;
     min-height: 200px;
   }
 
   .slots {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.65rem;
   }
 
   .slot {
     display: grid;
     grid-template-columns: 132px 1fr;
-    gap: 0.8rem;
+    gap: 0.9rem;
     align-items: center;
-    padding: 0.6rem;
+    padding: 0.7rem 0.8rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
+    background: rgba(6, 14, 26, 0.45);
+    transition: border-color 0.15s ease;
+  }
+
+  .slot:hover {
+    border-color: var(--border-strong);
   }
 
   .thumb {
@@ -456,9 +467,10 @@
     height: 74px;
     border-radius: var(--radius-sm);
     overflow: hidden;
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.04);
     display: grid;
     place-items: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   }
 
   .thumb img {
@@ -486,23 +498,24 @@
 
   .slot-actions {
     flex-wrap: wrap;
-    gap: 0.4rem;
+    gap: 0.45rem;
   }
 
   .browser {
     border-top: 1px solid var(--border);
-    padding-top: 0.9rem;
+    padding-top: 1rem;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.7rem;
   }
 
   .assets {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 0.5rem;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 0.6rem;
     max-height: 46vh;
     overflow-y: auto;
+    padding: 2px;
   }
 
   .asset {
@@ -514,10 +527,13 @@
     cursor: pointer;
     padding: 0;
     aspect-ratio: 3 / 2;
+    transition: transform 0.15s ease, border-color 0.16s ease, box-shadow 0.16s ease;
   }
 
   .asset:hover:not(:disabled) {
-    border-color: var(--border-strong);
+    border-color: var(--border-glow);
+    transform: translateY(-2px);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
   }
 
   .asset img {
@@ -529,12 +545,15 @@
 
   .asset-size {
     position: absolute;
-    right: 4px;
-    bottom: 4px;
-    font-size: 0.62rem;
-    padding: 1px 5px;
-    border-radius: 999px;
-    background: rgba(2, 6, 12, 0.7);
+    right: 5px;
+    bottom: 5px;
+    font-size: 0.64rem;
+    font-weight: 550;
+    padding: 2px 6px;
+    border-radius: var(--radius-pill);
+    background: rgba(3, 7, 18, 0.78);
+    backdrop-filter: blur(4px);
     color: var(--text-dim);
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 </style>

@@ -5,10 +5,13 @@ All notable changes to Steam Vault are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-10-15
 
 ### Added
 
+- **M5 Dark Glassmorphism Design System**: Complete modern obsidian glass visual overhaul across every view (`app.css`, Titlebar, Dashboard, Library, Organize, Collections, Platforms, Storage, Artwork, Settings) featuring multi-layer frosted surfaces, refined glow borders, tactile buttons, and interactive cards.
+- **Embedded SQLite metadata cache**: High-performance metadata storage powered by `rusqlite` bundled from source (zero system dependencies) in WAL mode, with indexing on `(provider, app_id)`, TTL expiration checking, and automatic zero-touch migration from the legacy JSON metadata cache.
+- **Dynamic (filter-spec) smart collections**: Persist named filter presets (`filter-presets.json`), evaluate dynamic library rules, and save native Valve `filterSpec` smart collections directly into `cloud-storage-namespace-1.json` with live "Smart Collection" badges and one-click re-evaluation.
 - **Hand-rolled i18n localization engine**: Zero-dependency reactive internationalization engine supporting all 30 officially supported Valve/Steam platform languages with parameter interpolation, English fallback safety, RTL layout support for Arabic, and a 30-language selector in Settings.
 - **Keyless VNDB metadata provider** (`metadata::vndb`): Kana API client fetching visual novel metadata (developers, publishers, release year, tags, and cover art) for visual novels and Ren'Py games.
 - **Steam Store Search provider** (`metadata::steam_search`): Keyless search mapping non-Steam and indie titles to official Steam App IDs to fetch store metadata.

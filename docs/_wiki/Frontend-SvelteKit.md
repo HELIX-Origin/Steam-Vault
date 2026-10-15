@@ -26,6 +26,7 @@ The frontend is a **SvelteKit** application in static SPA mode, built with **Sve
 | `src/lib/stores.ts` | Writable stores: settings, providers, install, games, collections, Steam-running, owned library, platform scan, loading, and error. |
 | `src/lib/platform.ts` | Platform detection for window-control rendering. |
 | `src/lib/components/WindowControls.svelte` | Custom title-bar controls (macOS traffic lights / Windows buttons). |
+| `src/lib/i18n/` | Zero-dependency reactive internationalization engine supporting all 30 Steam languages with Arabic RTL layout. |
 | `src/routes/+layout.svelte` | The app shell: custom title bar, sidebar navigation, and status. |
 | `src/routes/+page.svelte` | Dashboard. |
 | `src/routes/library/+page.svelte` | Library. |
@@ -59,11 +60,10 @@ collections, and settings). Pages read stores with the `$` prefix and update the
 
 ## 🎨 Theming
 
-The interface uses a modern **dark** theme with **glassmorphism**: translucent panels with
-backdrop blur over a layered obsidian background, accented in cyan and purple. Styling is driven by
-CSS custom properties in `app.css` plus utility classes, so the whole look can be retuned from one
-place. The window is **frameless** with a custom, draggable title bar and platform-aware window
-controls. A full design pass is on the roadmap.
+The interface uses an M5 **dark obsidian glassmorphism** design system: translucent frosted panels with
+backdrop blur over an atmospheric deep sapphire mesh, accented in cyan (`#38bdf8`) and purple (`#a855f7`). Styling is driven by
+CSS custom properties in `app.css` plus modular glass classes (`.glass`, `.glass-strong`, `.card`, `.btn-primary`). The window is **frameless** with a custom, draggable title bar and platform-aware window
+controls.
 
 ## ➡️ Next
 

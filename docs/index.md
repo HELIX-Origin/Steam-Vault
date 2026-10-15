@@ -11,7 +11,12 @@ header_actions:
   - title: Source on GitHub ↗
     url: https://github.com/HELIX-Origin/Steam-Vault
     class: button--secondary
+image: assets/images/steam_banner.jpg
 ---
+
+<div class="site-banner-container" style="margin-bottom: 2.2rem; border-radius: 14px; overflow: hidden; border: 1px solid rgba(135, 195, 250, 0.25); box-shadow: 0 16px 48px rgba(0,0,0,0.5);">
+<img src="{{ '/assets/images/steam_banner.jpg' | relative_url }}" alt="Steam Vault Banner" style="width: 100%; display: block;" loading="lazy" decoding="async">
+</div>
 
 <section id="about" class="doc-section">
 <div class="section-heading">
@@ -86,6 +91,31 @@ likely to break it.
 <p>Build one collection per genre, developer, platform, playtime band, or name — preview first.</p>
 </div>
 <div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">💾</span>
+<h3>Storage manager</h3>
+<p>Inspect multi-drive library sizes and move games safely between drives with progress events.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🎨</span>
+<h3>Artwork manager</h3>
+<p>Inspect, fetch, and set portrait grid, hero, logo, and icon artwork via SteamGridDB.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🕹️</span>
+<h3>Emulators &amp; ROMs</h3>
+<p>Automatically discover ROMs across 11 popular emulators with pre-configured CLI launch arguments.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🌍</span>
+<h3>30 Languages</h3>
+<p>Hand-rolled reactive i18n supporting every official Steam language with Arabic RTL layout.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">⚡</span>
+<h3>SQLite Cache</h3>
+<p>High-performance embedded metadata cache with WAL mode and zero-touch migration.</p>
+</div>
+<div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🛡️</span>
 <h3>Safe writes</h3>
 <p>Timestamped backups before every write, and changes are refused while Steam is running.</p>
@@ -102,7 +132,7 @@ likely to break it.
 </div>
 </div>
 <p>
-Steam Vault combines several metadata sources. Only <strong>Steam Web API</strong>,
+Steam Vault combines multiple metadata sources. Only <strong>Steam Web API</strong>,
 <strong>SteamGridDB</strong>, and <strong>IGDB</strong> require an API key; the rest are keyless.
 </p>
 <table>
@@ -111,10 +141,13 @@ Steam Vault combines several metadata sources. Only <strong>Steam Web API</stron
 </thead>
 <tbody>
 <tr><td>Steam Store</td><td>No</td><td>Genres, developers, publishers, release dates, flags</td></tr>
+<tr><td>Steam Store Search</td><td>No</td><td>Keyless title-to-appid matching for shortcuts &amp; indies</td></tr>
 <tr><td>Steam Web API</td><td>Yes</td><td>Owned games, playtime, player summaries</td></tr>
 <tr><td>SteamGridDB</td><td>Yes</td><td>Grids, heroes, logos, icons</td></tr>
 <tr><td>IGDB (Twitch)</td><td>Yes</td><td>Summary, genres, companies, cover</td></tr>
+<tr><td>VNDB</td><td>No</td><td>Visual novel metadata, developers, release dates, tags</td></tr>
 <tr><td>PCGamingWiki</td><td>No</td><td>Engine, developers, publishers, release dates</td></tr>
+<tr><td>Local Sniffer</td><td>No</td><td>itch manifests, Ren'Py, RPG Maker, PE VersionInfo headers</td></tr>
 <tr><td>Wikipedia</td><td>No</td><td>Article summaries</td></tr>
 </tbody>
 </table>
@@ -167,9 +200,8 @@ Explore the complete guides and references on this site. The
 </div>
 </div>
 <p>
-Steam Vault is in active development (M1 and M2 shipped; Milestone&nbsp;M3 in progress). Build it
-from source today; packaged installers are planned. See
-<a href="{{ '/docs/Getting-Started/' | relative_url }}">Getting Started</a> for the walkthrough.
+Steam Vault v1.0.0 is officially released! Build it from source today with Rust and Node.js.
+See <a href="{{ '/docs/Getting-Started/' | relative_url }}">Getting Started</a> for the walkthrough.
 </p>
 <div class="header-actions">
 <a class="button button--primary" href="{{ '/docs/Getting-Started/' | relative_url }}">Getting Started</a>

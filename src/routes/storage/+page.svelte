@@ -376,17 +376,25 @@
 <style>
   .drives {
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 0.85rem;
   }
 
   .cards {
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0.85rem;
   }
 
   .card {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
-    padding: 0.9rem 1rem;
+    gap: 0.45rem;
+    padding: 1rem 1.15rem;
+    transition: transform 0.15s ease, border-color 0.16s ease;
+  }
+
+  .card:hover {
+    transform: translateY(-1px);
+    border-color: var(--border-strong);
   }
 
   .card .name {
@@ -395,15 +403,18 @@
 
   .bar {
     height: 6px;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: rgba(255, 255, 255, 0.08);
     overflow: hidden;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
   }
 
   .bar span {
     display: block;
     height: 100%;
     background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    border-radius: var(--radius-pill);
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.45);
   }
 
   .path {
@@ -411,39 +422,42 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 0.82rem;
   }
 
   .pill-danger {
-    background: rgba(255, 107, 129, 0.14);
-    border-color: rgba(255, 107, 129, 0.35);
-    color: #ffd9df;
+    background: rgba(248, 113, 113, 0.14);
+    border-color: rgba(248, 113, 113, 0.35);
+    color: #fecaca;
   }
 
   .toolbar {
     display: flex;
-    gap: 0.6rem;
-    padding: 0.7rem 0.9rem;
-    margin-bottom: 0.8rem;
+    gap: 0.65rem;
+    padding: 0.8rem 1rem;
+    margin-bottom: 0.9rem;
     flex-wrap: wrap;
+    align-items: center;
   }
 
   .list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 6px;
+    gap: 3px;
+    padding: 8px;
   }
 
   .game {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
-    padding: 0.5em 0.7em;
+    gap: 0.75rem;
+    padding: 0.55em 0.75em;
     border-radius: var(--radius-sm);
+    transition: background 0.15s ease;
   }
 
   .game:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.05);
   }
 
   .game .name {
@@ -452,6 +466,7 @@
     align-items: center;
     gap: 0.5rem;
     min-width: 0;
+    font-weight: 550;
   }
 
   .game .src {
@@ -459,19 +474,22 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 0.8rem;
   }
 
   .game .size {
     width: 5.5rem;
     text-align: right;
     flex-shrink: 0;
+    font-size: 0.82rem;
   }
 
   .overlay {
     position: fixed;
     inset: 0;
-    background: rgba(2, 6, 12, 0.6);
-    backdrop-filter: blur(4px);
+    background: rgba(2, 6, 14, 0.72);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     display: grid;
     place-items: center;
     padding: 1.5rem;
@@ -480,19 +498,20 @@
 
   .dialog {
     width: min(560px, 100%);
-    padding: 1.2rem 1.3rem;
+    padding: 1.3rem 1.4rem;
     display: flex;
     flex-direction: column;
-    gap: 0.8rem;
+    gap: 0.9rem;
   }
 
   .preview {
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: 0.7rem 0.8rem;
+    padding: 0.75rem 0.9rem;
+    background: rgba(6, 14, 26, 0.55);
     display: flex;
     flex-direction: column;
-    gap: 0.3rem;
+    gap: 0.35rem;
   }
 
   .warn {

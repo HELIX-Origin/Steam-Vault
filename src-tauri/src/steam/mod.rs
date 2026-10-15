@@ -3,6 +3,7 @@
 pub mod artwork;
 pub mod binvdf;
 pub mod collections;
+pub mod filters;
 pub mod library;
 pub mod models;
 pub mod owned;

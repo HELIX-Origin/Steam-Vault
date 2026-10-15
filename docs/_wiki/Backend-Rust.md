@@ -24,6 +24,7 @@ Steam access, metadata fetching, categorization, and file writing happen here.
 | `steam/collections.rs` | Reads/writes the cloud-storage collection namespace. |
 | `steam/shortcuts.rs` | Reads/writes non-Steam shortcuts, derives Steam-compatible appids, and appends imports. |
 | `steam/artwork.rs` | Inspects, applies, and removes Steam custom artwork in `userdata/<id>/config/grid/` (five slots, format sniffing, data-url reads, backup-on-replace). |
+| `steam/filters.rs` | Filter preset persistence, dynamic rules evaluation, and native Valve `filterSpec` smart collections. |
 | `steam/owned.rs` | Caches the full owned Steam library (Web API `GetOwnedGames`). |
 | `steam/storage.rs` | Library folders and mounted drives: inspection, register/unregister, and moving games or whole libraries between drives. |
 | `steam/models.rs` | Shared serde models (serialized as camelCase). |
@@ -32,7 +33,7 @@ Steam access, metadata fetching, categorization, and file writing happen here.
 | `platforms/registry.rs` | Windows Uninstall-registry and GOG registry reads (Windows only). |
 | `autocat.rs` | The AutoCats rule engine. |
 | `filter.rs` | The Allowed / Required / Excluded model. |
-| `cache.rs` | JSON metadata cache with a freshness window. |
+| `cache.rs` | Embedded SQLite metadata cache (`metadata.db`) with WAL mode, indexing, and TTL checking. |
 | `settings.rs` | Local settings and API keys. |
 | `backup.rs` | Timestamped file backups. |
 | `commands.rs` | Tauri commands and the shared `AppState`. |

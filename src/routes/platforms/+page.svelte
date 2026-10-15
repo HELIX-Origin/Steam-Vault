@@ -199,9 +199,19 @@
     border: 1px solid var(--border);
   }
 
-  .card.active {
+  .card {
+    transition: transform 0.15s ease, border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+  }
+
+  .card:hover {
+    transform: translateY(-1px);
     border-color: var(--border-strong);
-    background: linear-gradient(135deg, rgba(72, 216, 242, 0.14), rgba(176, 108, 255, 0.12));
+  }
+
+  .card.active {
+    border-color: var(--border-glow);
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(168, 85, 247, 0.16));
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.14), 0 4px 16px rgba(56, 189, 248, 0.15);
   }
 
   .card .name {
@@ -215,8 +225,8 @@
   .toolbar {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    padding: 0.7rem 0.9rem;
+    gap: 0.7rem;
+    padding: 0.8rem 1rem;
     margin: 1rem 0;
     flex-wrap: wrap;
   }
@@ -228,15 +238,15 @@
   .list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 6px;
+    gap: 3px;
+    padding: 8px;
   }
 
   .game {
     display: flex;
     align-items: center;
-    gap: 0.6rem;
-    padding: 0.55em 0.7em;
+    gap: 0.65rem;
+    padding: 0.6em 0.75em;
     border-radius: var(--radius-sm);
     border: 1px solid transparent;
     background: transparent;
@@ -244,15 +254,18 @@
     font: inherit;
     cursor: pointer;
     text-align: left;
+    transition: background 0.15s ease, border-color 0.15s ease;
   }
 
   .game:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(255, 255, 255, 0.05);
+    border-color: var(--border-subtle);
   }
 
   .game.selected {
-    background: linear-gradient(135deg, rgba(72, 216, 242, 0.14), rgba(176, 108, 255, 0.12));
-    border-color: var(--border-strong);
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(168, 85, 247, 0.16));
+    border-color: var(--border-glow);
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.12);
   }
 
   .check {
@@ -264,6 +277,14 @@
     place-items: center;
     font-size: 0.75rem;
     flex-shrink: 0;
+    background: rgba(6, 14, 26, 0.5);
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .game.selected .check {
+    border-color: var(--accent);
+    background: rgba(56, 189, 248, 0.25);
+    color: #ffffff;
   }
 
   .name {
@@ -272,12 +293,14 @@
     align-items: center;
     gap: 0.5rem;
     min-width: 0;
+    font-weight: 550;
   }
 
   .src {
-    max-width: 40%;
+    max-width: 42%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 0.8rem;
   }
 </style>

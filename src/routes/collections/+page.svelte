@@ -39,6 +39,19 @@
     }
   }
 
+  async function refreshSmart(id: string) {
+    busy = true;
+    try {
+      await api.refreshSmartCollection(id);
+      await reload();
+      error.set(null);
+    } catch (e) {
+      error.set(errorMessage(e));
+    } finally {
+      busy = false;
+    }
+  }
+
   async function remove(id: string) {
     busy = true;
     try {
@@ -70,16 +83,23 @@
   <div class="glass list">
     {#each $collections as collection (collection.id)}
       <div class="row item">
-        <div class="row" style="gap:0.5rem">
+        <div class="row" style="gap:0.5rem;align-items:center">
           <strong>{collection.name}</strong>
           {#if collection.favorite}<span class="pill">Favorites</span>{/if}
           {#if collection.hidden}<span class="pill pill-dim">Hidden</span>{/if}
-          {#if collection.dynamic}<span class="pill pill-accent2">Dynamic</span>{/if}
+          {#if collection.dynamic}<span class="pill pill-accent2">Smart Collection</span>{/if}
         </div>
-        <span class="muted-sm">{collection.added.length} games</span>
-        {#if !collection.favorite && !collection.hidden}
-          <button class="btn btn-danger btn-ghost" disabled={busy} onclick={() => remove(collection.id)}>Delete</button>
-        {/if}
+        <div class="row" style="gap:0.5rem;align-items:center">
+          <span class="muted-sm">{collection.added.length} games</span>
+          {#if collection.dynamic}
+            <button class="btn btn-ghost" style="padding:0.25rem 0.6rem;font-size:0.8rem" disabled={busy} onclick={() => refreshSmart(collection.id)}>
+              ↻ Re-evaluate
+            </button>
+          {/if}
+          {#if !collection.favorite && !collection.hidden}
+            <button class="btn btn-danger btn-ghost" style="padding:0.25rem 0.6rem;font-size:0.8rem" disabled={busy} onclick={() => remove(collection.id)}>Delete</button>
+          {/if}
+        </div>
       </div>
     {/each}
     {#if $collections.length === 0}
@@ -92,16 +112,17 @@
   .toolbar {
     display: flex;
     align-items: center;
-    gap: 0.7rem;
-    padding: 0.8rem 0.9rem;
-    margin-bottom: 0.9rem;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    margin-bottom: 1rem;
     flex-wrap: wrap;
   }
 
   .list {
-    padding: 0.35rem;
+    padding: 0.45rem;
     display: flex;
     flex-direction: column;
+    gap: 3px;
   }
 
   .item {
@@ -109,8 +130,14 @@
     grid-template-columns: 1fr auto auto;
     align-items: center;
     gap: 1rem;
-    padding: 0.6rem 0.75rem;
-    border-bottom: 1px solid var(--border);
+    padding: 0.65rem 0.85rem;
+    border-radius: var(--radius-sm);
+    border-bottom: 1px solid var(--border-subtle);
+    transition: background 0.15s ease;
+  }
+
+  .item:hover {
+    background: rgba(255, 255, 255, 0.04);
   }
 
   .item:last-child {

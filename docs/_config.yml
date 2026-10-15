@@ -12,6 +12,8 @@ repository: "HELIX-Origin/Steam-Vault"
 github_username: "HELIX-Origin"
 logo: "assets/images/logo.svg"
 favicon: "assets/images/favicon.ico"
+header_image: "assets/images/steam_banner.jpg"
+image: "assets/images/steam_banner.jpg"
 
 author:
   name: "HELIX Origin"

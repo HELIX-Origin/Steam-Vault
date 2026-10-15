@@ -1,6 +1,6 @@
 {
   "name": "steam-vault",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A fast, privacy-focused cross-platform Steam library organizer and manager",
   "type": "module",
   "scripts": {

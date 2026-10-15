@@ -43,7 +43,7 @@ combines several sources, and only three of them require an API key.
 
 ## 🗄️ Caching
 
-Fetched metadata is cached **locally** as JSON so repeat lookups are instant and API usage stays
+Fetched metadata is cached **locally** in an embedded SQLite database (`metadata.db`) so repeat lookups are instant and API usage stays
 low. Steam Store results are treated as fresh for about **7 days**; after that they are refetched.
 
 ## 🔒 Privacy

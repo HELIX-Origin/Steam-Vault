@@ -19,7 +19,7 @@ flowchart TB
     core --> steam[Steam data layer]
     core --> meta[Metadata providers]
     steam --> disk[(Steam local files)]
-    meta --> cache[(JSON metadata cache)]
+    meta --> cache[(SQLite metadata cache)]
     core --> backup[(Timestamped backups)]
 ```
 
@@ -36,7 +36,7 @@ The backend is split into focused modules:
 | `metadata/` | One client per provider, plus the shared HTTP client and provider registry. |
 | `autocat` | The rule engine that turns metadata into proposed collections. |
 | `filter` | The Allowed / Required / Excluded filter model. |
-| `cache` | Local JSON metadata cache with a freshness window. |
+| `cache` | Embedded SQLite database (`metadata.db`) with WAL mode, indexing, and TTL checking. |
 | `settings` | Loading and saving local settings and API keys. |
 | `backup` | Timestamped file backups taken before any write. |
 | `commands` | The Tauri IPC surface and shared application state. |

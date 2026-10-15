@@ -89,6 +89,8 @@ pub struct Collection {
     pub added: Vec<u32>,
     #[serde(default)]
     pub removed: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter_spec: Option<serde_json::Value>,
 }
 
 /// Normalized metadata for a game from any provider.

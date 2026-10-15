@@ -77,6 +77,12 @@ pub fn run() {
             commands::remove_artwork,
             commands::steamgriddb_for_game,
             commands::auto_fetch_artwork_for_games,
+            commands::get_filter_presets,
+            commands::save_filter_preset,
+            commands::delete_filter_preset,
+            commands::evaluate_filter,
+            commands::save_smart_collection,
+            commands::refresh_smart_collection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

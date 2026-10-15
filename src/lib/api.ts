@@ -11,6 +11,8 @@ import type {
   CategorizationPlan,
   CategorizeRequest,
   Collection,
+  Filter,
+  FilterPreset,
   Game,
   GameArtwork,
   IgdbGame,
@@ -54,6 +56,20 @@ export const api = {
     invoke<Collection>("create_collection", { name, accountId3: accountId3 ?? null }),
   deleteCollection: (collectionId: string, accountId3?: string) =>
     invoke<void>("delete_collection", { collectionId, accountId3: accountId3 ?? null }),
+
+  getFilterPresets: () => invoke<FilterPreset[]>("get_filter_presets"),
+  saveFilterPreset: (preset: FilterPreset) =>
+    invoke<FilterPreset>("save_filter_preset", { preset }),
+  deleteFilterPreset: (id: string) => invoke<void>("delete_filter_preset", { id }),
+  evaluateFilter: (filter: Filter, accountId3?: string) =>
+    invoke<number[]>("evaluate_filter", { filter, accountId3: accountId3 ?? null }),
+  saveSmartCollection: (name: string, filter: Filter, accountId3?: string) =>
+    invoke<Collection>("save_smart_collection", { name, filter, accountId3: accountId3 ?? null }),
+  refreshSmartCollection: (collectionId: string, accountId3?: string) =>
+    invoke<Collection>("refresh_smart_collection", {
+      collectionId,
+      accountId3: accountId3 ?? null,
+    }),
 
   fetchSteamStoreMetadata: (appIds: number[]) =>
     invoke<AppMeta[]>("fetch_steam_store_metadata", { appIds }),

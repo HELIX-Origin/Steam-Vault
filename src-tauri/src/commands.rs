@@ -282,6 +282,7 @@ pub fn update_collection(
             dynamic: false,
             added: Vec::new(),
             removed: Vec::new(),
+            filter_spec: None,
         });
 
     if let Some(name) = name {
@@ -334,6 +335,7 @@ pub fn create_collection(
         dynamic: false,
         added: Vec::new(),
         removed: Vec::new(),
+        filter_spec: None,
     };
 
     crate::backup::backup_file(&file.path)?;
@@ -382,7 +384,7 @@ pub async fn fetch_steam_store_metadata(
         let cache = state.cache.lock().expect("cache lock poisoned");
         for app_id in &app_ids {
             match cache.get("steam-store", *app_id, Some(CACHE_MAX_AGE_SECS)) {
-                Some(meta) => result.push(meta.clone()),
+                Some(meta) => result.push(meta),
                 None => missing.push(*app_id),
             }
         }
@@ -873,15 +875,14 @@ pub async fn compute_autocats(
     for game in &games {
         let meta = cache
             .get("shortcut-meta", game.app_id, None)
-            .or_else(|| cache.get("steam-store", game.app_id, None))
-            .cloned();
+            .or_else(|| cache.get("steam-store", game.app_id, None));
         if meta.is_none() && wants_metadata {
             missing_metadata.push(game.app_id);
         }
         let mut meta = meta.unwrap_or_default();
         if wants_tags {
             if let Some(tags) = cache.get("steam-tags", game.app_id, None) {
-                meta.tags = tags.tags.clone();
+                meta.tags = tags.tags;
             }
         }
         for autocat in &autos {
@@ -1013,7 +1014,7 @@ pub async fn fetch_and_apply_artwork_for_game(
             cache
                 .get("shortcut-meta", app_id, None)
                 .or_else(|| cache.get("steam-store", app_id, None))
-                .and_then(|m| m.capsule_image.clone().or_else(|| m.header_image.clone()))
+                .and_then(|m| m.capsule_image.or(m.header_image))
         };
 
         if let Some(url) = img_url {
@@ -1283,15 +1284,14 @@ pub async fn compute_categorization(
     for game in &scoped {
         let stored = cache
             .get("shortcut-meta", game.app_id, None)
-            .or_else(|| cache.get("steam-store", game.app_id, None))
-            .cloned();
+            .or_else(|| cache.get("steam-store", game.app_id, None));
         if stored.is_none() && wants_metadata {
             missing_metadata.push(game.app_id);
         }
         let mut meta = stored.unwrap_or_default();
         if wants_tags {
             if let Some(tags) = cache.get("steam-tags", game.app_id, None) {
-                meta.tags = tags.tags.clone();
+                meta.tags = tags.tags;
             }
         }
         let names = crate::autocat::apply(&autocat, game, &meta);
@@ -1369,6 +1369,7 @@ pub fn apply_categorization(
                         dynamic: false,
                         added: Vec::new(),
                         removed: Vec::new(),
+                        filter_spec: None,
                     },
                     true,
                 )
@@ -1656,4 +1657,76 @@ pub async fn auto_fetch_artwork_for_games(
     }
 
     Ok(applied_total)
+}
+
+// ---------------------------------------------------------------------------
+// Dynamic (Filter-Spec) & Smart Collections
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn get_filter_presets() -> Vec<crate::steam::filters::FilterPreset> {
+    crate::steam::filters::load_presets()
+}
+
+#[tauri::command]
+pub fn save_filter_preset(
+    preset: crate::steam::filters::FilterPreset,
+) -> AppResult<crate::steam::filters::FilterPreset> {
+    crate::steam::filters::save_preset(preset)
+}
+
+#[tauri::command]
+pub fn delete_filter_preset(id: String) -> AppResult<()> {
+    crate::steam::filters::delete_preset(&id)
+}
+
+#[tauri::command]
+pub fn evaluate_filter(
+    filter: Filter,
+    account_id3: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<u32>> {
+    let root = steam_root(&state)?;
+    let account = resolve_account(&root, &state, account_id3);
+    let games = collect_library(&root, account.as_deref())?;
+    Ok(crate::steam::filters::evaluate_filter(&filter, &games))
+}
+
+#[tauri::command]
+pub fn save_smart_collection(
+    name: String,
+    filter: Filter,
+    account_id3: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<Collection> {
+    ensure_steam_closed()?;
+    let root = steam_root(&state)?;
+    let id3 = resolve_account(&root, &state, account_id3)
+        .ok_or_else(|| AppError::NotFound("No Steam account selected.".into()))?;
+
+    let mut file = collections::load_collections_file(&root, &id3)?.ok_or_else(|| {
+        AppError::NotFound("No Steam collection store found for this account.".into())
+    })?;
+
+    let games = collect_library(&root, Some(&id3))?;
+    crate::steam::filters::save_smart_collection(&mut file, &name, &filter, &games)
+}
+
+#[tauri::command]
+pub fn refresh_smart_collection(
+    collection_id: String,
+    account_id3: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<Collection> {
+    ensure_steam_closed()?;
+    let root = steam_root(&state)?;
+    let id3 = resolve_account(&root, &state, account_id3)
+        .ok_or_else(|| AppError::NotFound("No Steam account selected.".into()))?;
+
+    let mut file = collections::load_collections_file(&root, &id3)?.ok_or_else(|| {
+        AppError::NotFound("No Steam collection store found for this account.".into())
+    })?;
+
+    let games = collect_library(&root, Some(&id3))?;
+    crate::steam::filters::refresh_smart_collection(&mut file, &collection_id, &games)
 }

@@ -86,16 +86,18 @@
 
   .titlebar {
     flex: 0 0 auto;
-    height: 46px;
+    height: 48px;
     display: flex;
     align-items: center;
     gap: 12px;
     padding: 0 12px 0 14px;
     user-select: none;
     border-bottom: 1px solid var(--border);
-    background: linear-gradient(180deg, rgba(22, 38, 60, 0.55), rgba(13, 27, 45, 0.35));
-    backdrop-filter: blur(var(--blur));
-    -webkit-backdrop-filter: blur(var(--blur));
+    background: linear-gradient(180deg, rgba(18, 32, 56, 0.65), rgba(9, 18, 32, 0.45));
+    backdrop-filter: blur(var(--blur-strong));
+    -webkit-backdrop-filter: blur(var(--blur-strong));
+    box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.05);
+    z-index: 10;
   }
 
   .tb-brand {
@@ -113,6 +115,7 @@
     display: grid;
     place-items: center;
     flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   }
 
   .tb-mark img {
@@ -128,9 +131,10 @@
   }
 
   .tb-title {
-    font-size: 0.9rem;
+    font-size: 0.92rem;
     font-weight: 650;
-    letter-spacing: -0.01em;
+    letter-spacing: -0.015em;
+    color: var(--text);
   }
 
   .tb-sub {
@@ -154,8 +158,9 @@
   .sidebar {
     display: flex;
     flex-direction: column;
-    padding: 14px 14px 18px;
-    gap: 22px;
+    padding: 14px 12px 16px;
+    gap: 18px;
+    box-shadow: var(--glass-highlight), var(--shadow);
   }
 
   nav {
@@ -168,28 +173,37 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 0.6em 0.75em;
+    padding: 0.6em 0.8em;
     border-radius: var(--radius-sm);
     color: var(--text-dim);
     font-weight: 550;
-    transition: background 0.15s ease, color 0.15s ease;
+    font-size: 0.88rem;
+    border: 1px solid transparent;
+    transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease, transform 0.12s ease;
   }
 
   .nav-item:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text);
+    background: rgba(255, 255, 255, 0.06);
+    color: #ffffff;
+    transform: translateX(2px);
+  }
+
+  :global([dir="rtl"]) .nav-item:hover {
+    transform: translateX(-2px);
   }
 
   .nav-item.active {
-    background: linear-gradient(135deg, rgba(72, 216, 242, 0.18), rgba(176, 108, 255, 0.16));
-    color: var(--text);
-    border: 1px solid var(--border-strong);
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.22), rgba(168, 85, 247, 0.18));
+    color: #ffffff;
+    border-color: var(--border-glow);
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.14), 0 2px 12px rgba(56, 189, 248, 0.16);
   }
 
   .nav-icon {
     width: 18px;
     text-align: center;
     opacity: 0.85;
+    font-size: 0.95rem;
   }
 
   .status {
@@ -199,10 +213,11 @@
     gap: 8px;
     padding: 0.6em 0.8em;
     border-radius: var(--radius-sm);
+    background: var(--panel-subtle);
   }
 
   .content {
     overflow-y: auto;
-    padding: 8px 10px 40px;
+    padding: 6px 12px 40px;
   }
 </style>

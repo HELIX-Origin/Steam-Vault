@@ -298,44 +298,55 @@
   }
 
   .card {
-    padding: 1.1rem 1.2rem;
+    padding: 1.2rem 1.35rem;
   }
 
   .kv {
     display: flex;
     justify-content: space-between;
-    padding: 0.35rem 0;
-    border-bottom: 1px solid var(--border);
+    align-items: center;
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--border-subtle);
     margin-top: 0.4rem;
+  }
+
+  .kv:last-child {
+    border-bottom: none;
   }
 
   .sources {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
-    margin-top: 0.8rem;
+    gap: 0.65rem;
+    margin-top: 0.9rem;
   }
 
   .source {
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
-    padding: 0.55rem 0.65rem;
+    gap: 0.5rem;
+    padding: 0.7rem 0.85rem;
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: var(--radius-sm);
+    background: rgba(6, 14, 26, 0.45);
+    transition: border-color 0.15s ease;
+  }
+
+  .source:hover {
+    border-color: var(--border-strong);
   }
 
   .source-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 0.7rem;
+    gap: 0.75rem;
   }
 
   .folder-row {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
+    gap: 0.45rem;
   }
 
   .folder-row input {
@@ -343,7 +354,7 @@
   }
 
   .btn.mini {
-    padding: 0.3rem 0.6rem;
+    padding: 0.32rem 0.65rem;
     font-size: 0.82rem;
     line-height: 1.2;
   }
@@ -354,5 +365,7 @@
 
   .source input[type="checkbox"] {
     margin: 0;
+    width: auto;
+    cursor: pointer;
   }
 </style>

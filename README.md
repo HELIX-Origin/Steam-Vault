@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="./assets/steam_banner.jpg" alt="Steam Vault Banner" width="100%" />
+
 # Steam Vault
 
 **A clean-room, cross-platform revival of [Depressurizer](https://github.com/rallion/depressurizer) — built with Tauri v2.**
@@ -30,9 +32,11 @@ SvelteKit frontend) that targets **stable, documented data sources** rather than
   Steam Web API so everything you own can be organized.
 - **External platform & emulator import** — detect games installed by GOG, Epic Games, itch.io, Amazon Games,
   Ubisoft Connect, EA, Battle.net, and Rockstar, as well as ROMs across 11 popular emulators (Dolphin, PCSX2, DuckStation, Project64, PPSSPP, RPCS3, Citra, Cemu, Ryujinx, mGBA, Snes9x, RetroArch), then import them as non-Steam shortcuts with tailored launch parameters.
-- **Advanced filter builder** — Allowed (OR), Required (AND), Excluded (NOT), and text search.
+- **Advanced filter builder & dynamic smart collections** — Allowed (OR), Required (AND), Excluded (NOT), text search, named preset saving/loading, and Valve `filterSpec` smart collections with one-click live re-evaluation.
 - **AutoCats** — automatic categories from genre, developer, publisher, store flags, tags, release
   year, and user score, with multi-entity splitting and platform fallbacks.
+- **Embedded SQLite metadata cache** — high-performance, zero-dependency on-disk metadata cache powered by `rusqlite` bundled from source in WAL mode with automatic legacy JSON migration.
+- **Hand-rolled i18n localization** — native reactive UI translations across all 30 official Steam languages with zero third-party dependencies and RTL support.
 - **Create collections from any sorting option** — one collection per value of the chosen key
   (genre, developer, platform, installed state, playtime, name, …), with a preview before writing.
 - **Non-Steam game support** — import and manage `shortcuts.vdf` entries, with automated artwork downloading.

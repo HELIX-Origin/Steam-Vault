@@ -47,12 +47,17 @@ impl CollectionsFile {
     /// was modified.
     pub fn upsert(&mut self, collection: &Collection) -> AppResult<bool> {
         let key = format!("{COLLECTION_PREFIX}{}", collection.id);
-        let inner = serde_json::json!({
+        let mut inner = serde_json::json!({
             "id": collection.id,
             "name": collection.name,
             "added": collection.added,
             "removed": collection.removed,
         });
+        if let Some(spec) = &collection.filter_spec {
+            if let Some(obj) = inner.as_object_mut() {
+                obj.insert("filterSpec".into(), spec.clone());
+            }
+        }
         let value = serde_json::to_string(&inner)?;
         let timestamp = chrono::Utc::now().timestamp();
         let deleted_key = format!("{COLLECTION_PREFIX}{}", collection.id);
@@ -156,6 +161,7 @@ fn parse_entry(entry: &Value) -> Option<Collection> {
             .unwrap_or(false),
         added: json_u32_array(inner.get("added")),
         removed: json_u32_array(inner.get("removed")),
+        filter_spec: inner.get("filterSpec").cloned(),
     })
 }
 

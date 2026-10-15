@@ -104,52 +104,76 @@
 
 <style>
   .stats {
-    grid-template-columns: repeat(4, 1fr);
-    margin-bottom: 1rem;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    margin-bottom: 1.2rem;
+    gap: 0.9rem;
   }
 
   .two {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     align-items: start;
+    gap: 1.1rem;
   }
 
-  .card {
-    padding: 1.1rem 1.2rem;
+  .stat {
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+  }
+
+  .stat:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-strong);
+    box-shadow: var(--glass-highlight), 0 10px 28px rgba(0, 0, 0, 0.4);
   }
 
   .stat-value {
-    font-size: 1.9rem;
-    font-weight: 700;
-    margin-top: 0.15rem;
+    font-size: 2.1rem;
+    font-weight: 750;
+    margin-top: 0.2rem;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, #ffffff, var(--accent));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
 
   .kv {
     display: flex;
     justify-content: space-between;
+    align-items: center;
     gap: 1rem;
-    padding: 0.3rem 0;
-    border-bottom: 1px solid var(--border);
+    padding: 0.45rem 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .kv:last-child {
+    border-bottom: none;
   }
 
   .kv code {
     color: var(--accent);
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     overflow-wrap: anywhere;
     text-align: right;
+    background: rgba(6, 14, 26, 0.55);
+    padding: 0.15rem 0.5rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-subtle);
   }
 
   .providers {
     display: flex;
     flex-direction: column;
-    gap: 0.8rem;
+    gap: 0.75rem;
   }
 
   .provider {
-    padding-bottom: 0.7rem;
-    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-subtle);
   }
 
   .provider:last-child {
     border-bottom: none;
+    padding-bottom: 0;
   }
 </style>

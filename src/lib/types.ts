@@ -72,6 +72,14 @@ export interface Collection {
   dynamic: boolean;
   added: number[];
   removed: number[];
+  filterSpec?: any;
+}
+
+export interface FilterPreset {
+  id: string;
+  name: string;
+  filter: Filter;
+  createdAt?: number;
 }
 
 export interface AppMeta {
