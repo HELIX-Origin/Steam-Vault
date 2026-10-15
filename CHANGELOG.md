@@ -5,6 +5,20 @@ All notable changes to Steam Vault are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-10-15
+
+### Fixed
+
+- **Online Catalog Sync JSON Sequence Deserialization**:
+  - Resolved `JSON error: invalid type: sequence, expected a string at line 1 column 79` when synchronizing online community catalog archives (`sync_online_catalog`).
+  - Added untagged `StringOrSeq` deserializer in `cache.rs` supporting both raw stringified JSON and JSON sequence arrays for `platforms` and `known_exes`.
+  - Added `Option<serde_json::Value>` support for `meta_json` and nested `meta` objects in `CatalogExportRecord`.
+  - Recomputed normalized titles and lookups (`alias` and `exe`) during catalog ingestion to ensure exact title and alias matching in `find_catalog_by_title`.
+- **`AppMeta` Resilient Metadata Deserialization**:
+  - Added serde aliases (`app_id`, `release_date`, `release_year`, `user_score`, `short_description`, `header_image`, `capsule_image`, `fetched_at`) and defaults to `AppMeta` in `models.rs` ensuring seamless deserialization across both `camelCase` and `snake_case` formats.
+- **Embedded Catalog Seed Synchronization**:
+  - Synchronized precompiled offline catalog seed (`catalog_seed.bin`) with the latest catalog build.
+
 ## [1.1.0] - 2026-10-15
 
 ### Added

@@ -17,14 +17,38 @@ use serde::{Deserialize, Serialize};
 use crate::error::AppResult;
 use crate::steam::models::AppMeta;
 
-/// A compressed serializable catalog export record.
+/// Represents either a raw JSON string or an array of strings in catalog export records.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StringOrSeq {
+    String(String),
+    Seq(Vec<String>),
+}
+
+impl StringOrSeq {
+    pub fn into_json_string(self) -> String {
+        match self {
+            StringOrSeq::String(s) => s,
+            StringOrSeq::Seq(vec) => {
+                serde_json::to_string(&vec).unwrap_or_else(|_| "[]".to_string())
+            }
+        }
+    }
+}
+
+/// A compressed serializable catalog export record supporting both stringified and structured formats.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CatalogExportRecord {
     pub title: String,
     pub normalized_title: String,
-    pub platforms: String,
-    pub known_exes: String,
-    pub meta_json: String,
+    #[serde(default)]
+    pub platforms: Option<StringOrSeq>,
+    #[serde(default)]
+    pub known_exes: Option<StringOrSeq>,
+    #[serde(default)]
+    pub meta_json: Option<serde_json::Value>,
+    #[serde(default)]
+    pub meta: Option<serde_json::Value>,
 }
 
 /// SQLite-backed metadata cache.
@@ -442,9 +466,10 @@ impl MetadataCache {
             Ok(CatalogExportRecord {
                 title: row.get(0)?,
                 normalized_title: row.get(1)?,
-                platforms: row.get(2)?,
-                known_exes: row.get(3)?,
-                meta_json: row.get(4)?,
+                platforms: Some(StringOrSeq::String(row.get(2)?)),
+                known_exes: Some(StringOrSeq::String(row.get(3)?)),
+                meta_json: Some(serde_json::Value::String(row.get(4)?)),
+                meta: None,
             })
         })?;
 
@@ -471,17 +496,66 @@ impl MetadataCache {
 
         let tx = self.conn.transaction()?;
         for rec in records {
+            let platforms_str = rec
+                .platforms
+                .map(|p| p.into_json_string())
+                .unwrap_or_else(|| "[]".to_string());
+            let known_exes_str = rec
+                .known_exes
+                .map(|e| e.into_json_string())
+                .unwrap_or_else(|| "[]".to_string());
+            let meta_json_str = if let Some(m) = rec.meta_json {
+                match m {
+                    serde_json::Value::String(s) => s,
+                    other => serde_json::to_string(&other).unwrap_or_default(),
+                }
+            } else if let Some(m) = rec.meta {
+                match m {
+                    serde_json::Value::String(s) => s,
+                    other => serde_json::to_string(&other).unwrap_or_default(),
+                }
+            } else {
+                "{}".to_string()
+            };
+
+            let norm = if !rec.normalized_title.trim().is_empty() {
+                normalize_catalog_key(&rec.normalized_title)
+            } else {
+                normalize_catalog_key(&rec.title)
+            };
+            let raw_norm: String = rec
+                .title
+                .to_lowercase()
+                .chars()
+                .filter(|c| c.is_alphanumeric())
+                .collect();
+
             let _ = tx.execute(
                 "INSERT OR REPLACE INTO game_catalog (title, normalized_title, platforms, known_exes, meta_json, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![rec.title, rec.normalized_title, rec.platforms, rec.known_exes, rec.meta_json, now],
+                params![rec.title, norm, platforms_str, known_exes_str, meta_json_str, now],
             );
             let catalog_id = tx.last_insert_rowid();
             let _ = tx.execute(
                 "INSERT OR IGNORE INTO catalog_lookups (lookup_key, key_type, catalog_id) VALUES (?1, 'alias', ?2)",
-                params![rec.normalized_title, catalog_id],
+                params![norm, catalog_id],
             );
-            let exes: Vec<String> = serde_json::from_str(&rec.known_exes).unwrap_or_default();
+            if !raw_norm.is_empty() && raw_norm != norm {
+                let _ = tx.execute(
+                    "INSERT OR IGNORE INTO catalog_lookups (lookup_key, key_type, catalog_id) VALUES (?1, 'alias', ?2)",
+                    params![raw_norm, catalog_id],
+                );
+            }
+            if !rec.normalized_title.is_empty()
+                && rec.normalized_title != norm
+                && rec.normalized_title != raw_norm
+            {
+                let _ = tx.execute(
+                    "INSERT OR IGNORE INTO catalog_lookups (lookup_key, key_type, catalog_id) VALUES (?1, 'alias', ?2)",
+                    params![rec.normalized_title, catalog_id],
+                );
+            }
+            let exes: Vec<String> = serde_json::from_str(&known_exes_str).unwrap_or_default();
             for e in exes {
                 let _ = tx.execute(
                     "INSERT OR IGNORE INTO catalog_lookups (lookup_key, key_type, catalog_id) VALUES (?1, 'exe', ?2)",
@@ -667,5 +741,44 @@ mod tests {
             .find_catalog_by_exe("DragonAge2.exe")
             .expect("should find by exe in restored catalog");
         assert_eq!(imported_by_exe.name.as_deref(), Some("Dragon Age II"));
+
+        // Test importing structured format (arrays for platforms & exes, object for meta)
+        let structured_json = r#"[
+            {
+                "title": "Super Mario 64",
+                "normalized_title": "super mario 64",
+                "platforms": ["Nintendo 64"],
+                "known_exes": ["sm64.z64", "sm64.n64"],
+                "meta": {
+                    "app_id": 0,
+                    "name": "Super Mario 64",
+                    "developers": ["Nintendo EAD"],
+                    "publishers": ["Nintendo"],
+                    "release_year": 1996
+                }
+            }
+        ]"#;
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(structured_json.as_bytes()).unwrap();
+        let structured_gz = encoder.finish().unwrap();
+
+        let conn3 = Connection::open_in_memory().unwrap();
+        let mut cache3 = MetadataCache::with_connection(conn3);
+        let imported_structured = cache3
+            .import_catalog_compressed(&structured_gz)
+            .expect("should import structured compressed catalog");
+        assert_eq!(imported_structured, 1);
+        assert_eq!(cache3.catalog_count(), 1);
+
+        let n64_game = cache3
+            .find_catalog_by_title("Super Mario 64")
+            .expect("should find Super Mario 64 by title");
+        assert_eq!(n64_game.name.as_deref(), Some("Super Mario 64"));
+        assert_eq!(n64_game.release_year, Some(1996));
+
+        let by_rom = cache3
+            .find_catalog_by_exe("sm64.z64")
+            .expect("should find by ROM filename");
+        assert_eq!(by_rom.name.as_deref(), Some("Super Mario 64"));
     }
 }

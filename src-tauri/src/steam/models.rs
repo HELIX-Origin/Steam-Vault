@@ -97,6 +97,7 @@ pub struct Collection {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppMeta {
+    #[serde(default, alias = "app_id")]
     pub app_id: u32,
     pub name: Option<String>,
     #[serde(default)]
@@ -110,11 +111,18 @@ pub struct AppMeta {
     pub categories: Vec<String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default, alias = "release_date")]
     pub release_date: Option<String>,
+    #[serde(default, alias = "release_year")]
     pub release_year: Option<i32>,
+    #[serde(default, alias = "short_description")]
     pub short_description: Option<String>,
+    #[serde(default, alias = "header_image")]
     pub header_image: Option<String>,
+    #[serde(default, alias = "capsule_image")]
     pub capsule_image: Option<String>,
+    #[serde(default, alias = "user_score")]
     pub user_score: Option<f64>,
+    #[serde(default, alias = "fetched_at")]
     pub fetched_at: Option<i64>,
 }
