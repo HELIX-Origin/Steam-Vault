@@ -170,6 +170,15 @@ export const api = {
     invoke<number>("sync_online_catalog", { customUrl: customUrl ?? null }),
   fetchOnlineGameEntry: (titleOrSlug: string) =>
     invoke<AppMeta | null>("fetch_online_game_entry", { titleOrSlug }),
+
+  // Launcher actions
+  launchGame: (appId: number, launchUri?: string | null, exe?: string | null) =>
+    invoke<boolean>("launch_game", { appId, launchUri: launchUri ?? null, exe: exe ?? null }),
+  installGame: (appId: number, installUri?: string | null) =>
+    invoke<boolean>("install_game", { appId, installUri: installUri ?? null }),
+  uninstallGame: (appId: number, uninstallUri?: string | null) =>
+    invoke<boolean>("uninstall_game", { appId, uninstallUri: uninstallUri ?? null }),
+  openGameFolder: (path: string) => invoke<boolean>("open_game_folder", { path }),
 };
 
 /** Normalize an unknown thrown value into a readable message. */

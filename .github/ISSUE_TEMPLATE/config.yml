@@ -3,9 +3,9 @@ contact_links:
   - name: 📖 Steam Vault Documentation
     url: https://github.com/HELIX-Origin/Steam-Vault/tree/main/docs
     about: Read the user guide, architecture wiki, and troubleshooting documentation.
-  - name: 💬 GitHub Discussions
-    url: https://github.com/HELIX-Origin/Steam-Vault/discussions
-    about: Ask general questions, share collection ideas, or engage with the community.
+  - name: 💬 Discord Community
+    url: https://discord.com/invite/Ww3XBZC2HV
+    about: Join our Discord server to ask questions, share collection ideas, or engage with the community.
   - name: 🔒 Security & Privacy Policy
     url: https://github.com/HELIX-Origin/Steam-Vault/blob/main/SECURITY.md
     about: Guidelines on secret storage, local-only offline operations, and responsible disclosure.

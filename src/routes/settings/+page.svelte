@@ -249,53 +249,72 @@
     </section>
 
     <section class="glass-strong card">
-      <h2 class="section-title">Non-Steam sources</h2>
+      <h2 class="section-title">Storefront & Platform Integrations</h2>
       <p class="muted-sm">
-        Choose which launchers are scanned for games. Like Steam's <code>libraryfolders.vdf</code>,
-        each launcher keeps its installed games in its own config, so <strong>Find folders</strong>
-        autofills that launcher's config location — the same way the Steam folder is auto-detected.
-        Add game install folders as well when a launcher's config is missing or wrong, or for local
-        games that have no launcher.
+        Automatically detect games from installed launchers and storefront integrations. Toggle each platform on or off. All default and user installation locations are automatically discovered through each platform's own configuration.
       </p>
-      <div class="sources">
-        {#each sources as source (source.id)}
-          <div class="source">
-            <div class="source-head">
-              <label class="row" style="gap:0.5rem;margin:0">
-                <input
-                  type="checkbox"
-                  checked={source.enabled}
-                  style="width:auto"
-                  onchange={(event) => (source.enabled = event.currentTarget.checked)}
-                />
-                <strong>{source.label}</strong>
-              </label>
-              <button class="btn mini" onclick={() => findFolders(source)} disabled={finding === source.id}>
-                {finding === source.id ? "Finding…" : "Find folders"}
-              </button>
+      <div class="integrations-grid">
+        {#each sources.filter((s) => s.id !== "other") as source (source.id)}
+          <label class="integration-item">
+            <input
+              type="checkbox"
+              checked={source.enabled}
+              onchange={(event) => {
+                source.enabled = event.currentTarget.checked;
+                sources = [...sources];
+              }}
+            />
+            <div class="integration-label">
+              <strong>{source.label}</strong>
+              <span class="muted-xs">{source.enabled ? "Active" : "Disabled"}</span>
             </div>
-            {#if source.roots.length === 0}
-              <p class="muted-sm" style="margin:0.1rem 0 0 0.15rem">No extra folders.</p>
-            {/if}
-            {#each source.roots as folder, index}
-              <div class="folder-row">
-                <input
-                  placeholder="C:\Games\Library"
-                  value={folder}
-                  oninput={(event) => setRoot(source, index, event.currentTarget.value)}
-                />
-                <button class="btn mini" title="Remove folder" onclick={() => removeRoot(source, index)}>×</button>
-              </div>
-            {/each}
-            <button class="btn mini add" onclick={() => addRoot(source)}>＋ Add folder</button>
-          </div>
+          </label>
         {/each}
       </div>
-      <p class="muted-sm" style="margin-top:0.8rem">
-        Steam Vault also looks on every mounted drive for well-known game folders, so games installed
-        apart from a launcher are still found.
-      </p>
     </section>
+
+    {#if sources.find((s) => s.id === "other")}
+      {#each [sources.find((s) => s.id === "other")!] as other (other.id)}
+      <section class="glass-strong card">
+        <div class="source-head" style="margin-bottom:0.5rem">
+          <div>
+            <h2 class="section-title">Local & Standalone Games</h2>
+            <p class="muted-sm">
+              Manual path entries for local games that have no custom installer or launcher. Steam Vault scans these folders for games and executables using the folder name as the game title.
+            </p>
+          </div>
+          <label class="row" style="gap:0.5rem;margin:0;cursor:pointer">
+            <input
+              type="checkbox"
+              checked={other.enabled}
+              style="width:auto"
+              onchange={(event) => {
+                other.enabled = event.currentTarget.checked;
+                sources = [...sources];
+              }}
+            />
+            <strong>Enabled</strong>
+          </label>
+        </div>
+        {#if other.roots.length === 0}
+          <p class="muted-sm" style="margin:0.25rem 0">No local game folders configured.</p>
+        {/if}
+        <div class="folder-list">
+          {#each other.roots as folder, index}
+            <div class="folder-row">
+              <input
+                placeholder="C:\Games\Standalone"
+                value={folder}
+                oninput={(event) => setRoot(other, index, event.currentTarget.value)}
+              />
+              <button class="btn mini" title="Remove folder" onclick={() => removeRoot(other, index)}>×</button>
+            </div>
+          {/each}
+          <button class="btn mini add" onclick={() => addRoot(other)}>＋ Add folder</button>
+        </div>
+      </section>
+      {/each}
+    {/if}
 
     <section class="glass-strong card">
       <h2 class="section-title">Preferences</h2>
@@ -362,26 +381,52 @@
     border-bottom: none;
   }
 
-  .sources {
-    display: flex;
-    flex-direction: column;
+  .integrations-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 0.65rem;
-    margin-top: 0.9rem;
+    margin-top: 0.85rem;
   }
 
-  .source {
+  .integration-item {
     display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.7rem 0.85rem;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.65rem 0.8rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     background: rgba(6, 14, 26, 0.45);
-    transition: border-color 0.15s ease;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
   }
 
-  .source:hover {
+  .integration-item:hover {
     border-color: var(--border-strong);
+    background: rgba(6, 14, 26, 0.65);
+  }
+
+  .integration-item input[type="checkbox"] {
+    margin: 0;
+    width: auto;
+    cursor: pointer;
+  }
+
+  .integration-label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .muted-xs {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+
+  .folder-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    margin-top: 0.6rem;
   }
 
   .source-head {
@@ -409,11 +454,5 @@
 
   .btn.add {
     align-self: flex-start;
-  }
-
-  .source input[type="checkbox"] {
-    margin: 0;
-    width: auto;
-    cursor: pointer;
   }
 </style>

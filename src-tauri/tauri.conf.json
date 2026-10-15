@@ -39,6 +39,30 @@
       "icons/icon.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "both",
+        "installerIcon": "icons/icon.ico",
+        "sidebarImage": "windows/sidebar.bmp",
+        "installerHooks": "windows/hooks.nsh",
+        "languages": [
+          "English",
+          "Japanese",
+          "SimpChinese",
+          "TradChinese",
+          "Korean",
+          "Spanish",
+          "French",
+          "German",
+          "Russian",
+          "Portuguese"
+        ],
+        "displayLanguageSelector": true
+      },
+      "wix": {
+        "language": "en-US"
+      }
+    }
   }
 }

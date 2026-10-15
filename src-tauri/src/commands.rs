@@ -1245,6 +1245,24 @@ pub async fn import_platform_games(
                     {
                         (raw_exe, game.launch_uri.clone().unwrap_or_default())
                     }
+                } else if game.platform == Platform::Xbox
+                    && game
+                        .launch_uri
+                        .as_ref()
+                        .map(|u| u.starts_with("shell:AppsFolder"))
+                        .unwrap_or(false)
+                {
+                    #[cfg(windows)]
+                    {
+                        (
+                            "C:\\Windows\\explorer.exe".to_string(),
+                            game.launch_uri.clone().unwrap_or_default(),
+                        )
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        (raw_exe, game.launch_uri.clone().unwrap_or_default())
+                    }
                 } else {
                     (raw_exe, game.launch_uri.clone().unwrap_or_default())
                 }
@@ -1253,7 +1271,11 @@ pub async fn import_platform_games(
                 if let Some(ref uri) = game.launch_uri {
                     #[cfg(windows)]
                     {
-                        ("cmd.exe".to_string(), format!("/c start \"\" \"{}\"", uri))
+                        if uri.starts_with("shell:AppsFolder") {
+                            ("C:\\Windows\\explorer.exe".to_string(), uri.clone())
+                        } else {
+                            ("cmd.exe".to_string(), format!("/c start \"\" \"{}\"", uri))
+                        }
                     }
                     #[cfg(not(windows))]
                     {
@@ -1999,11 +2021,11 @@ pub fn import_catalog_archive(path: String, state: State<'_, AppState>) -> AppRe
     cache.import_catalog_compressed(&bytes)
 }
 
-/// Default release download URL for the compiled community catalog distribution.
+/// Default release download URL for the compiled community catalogue distribution.
 const DEFAULT_CATALOG_RELEASE_URL: &str =
-    "https://github.com/HELIX-Origin/Steam-Vault-Catalog/releases/latest/download/catalog.db.gz";
+    "https://github.com/HELIX-Origin/Steam-Vault-Catalogue/releases/latest/download/catalogue.db.gz";
 
-/// Synchronize the local catalog from the official HELIX Origin community catalog.
+/// Synchronize the local catalogue from the official HELIX Origin community catalogue.
 ///
 /// This is consumer-only: it downloads the latest compressed distribution artifact
 /// and merges all game records into the local SQLite database.
@@ -2020,7 +2042,7 @@ pub async fn sync_online_catalog(
     let res = client.get(&url).send().await?;
     if !res.status().is_success() {
         return Err(AppError::msg(format!(
-            "Failed to download online catalog: HTTP {}",
+            "Failed to download online catalogue: HTTP {}",
             res.status()
         )));
     }
@@ -2030,7 +2052,7 @@ pub async fn sync_online_catalog(
     cache.import_catalog_compressed(&bytes)
 }
 
-/// Helper to fetch and parse a single game entry from the official community catalog on demand.
+/// Helper to fetch and parse a single game entry from the official community catalogue on demand.
 pub async fn fetch_online_catalog_entry(
     client: &reqwest::Client,
     title_or_slug: &str,
@@ -2042,7 +2064,7 @@ pub async fn fetch_online_catalog_entry(
         .to_string();
 
     let url = format!(
-        "https://raw.githubusercontent.com/HELIX-Origin/Steam-Vault-Catalog/main/games/{}.json",
+        "https://raw.githubusercontent.com/HELIX-Origin/Steam-Vault-Catalogue/main/games/{}.json",
         slug
     );
 
@@ -2122,4 +2144,125 @@ pub async fn fetch_online_game_entry(
         cache.upsert_catalog_entry(title, m, None, None);
     }
     Ok(meta)
+}
+
+// ---------------------------------------------------------------------------
+// Game launching & local actions
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn launch_game(
+    app_id: u32,
+    launch_uri: Option<String>,
+    exe: Option<String>,
+) -> AppResult<bool> {
+    // If we have an app_id, trigger via Steam protocol (Steam handles running native games and imported shortcuts)
+    if app_id > 0 {
+        let uri = format!("steam://run/{app_id}");
+        if open_external_target(&uri).is_ok() {
+            return Ok(true);
+        }
+    }
+
+    // Direct launcher URI fallback (e.g. goggalaxy://, com.epicgames.launcher://, uplay://)
+    if let Some(uri) = launch_uri.filter(|u| !u.is_empty()) {
+        if open_external_target(&uri).is_ok() {
+            return Ok(true);
+        }
+    }
+
+    // Direct executable fallback
+    if let Some(path) = exe.filter(|p| !p.is_empty()) {
+        let p = Path::new(&path);
+        let mut cmd = std::process::Command::new(p);
+        if let Some(parent) = p.parent() {
+            cmd.current_dir(parent);
+        }
+        cmd.spawn().map_err(|e| AppError::msg(format!("Failed to start executable: {e}")))?;
+        return Ok(true);
+    }
+
+    Err(AppError::msg("No valid launch method found for game."))
+}
+
+#[tauri::command]
+pub fn install_game(
+    app_id: u32,
+    install_uri: Option<String>,
+) -> AppResult<bool> {
+    if let Some(uri) = install_uri.filter(|u| !u.is_empty()) {
+        open_external_target(&uri)?;
+        return Ok(true);
+    }
+
+    if app_id > 0 {
+        let uri = format!("steam://install/{app_id}");
+        open_external_target(&uri)?;
+        return Ok(true);
+    }
+
+    Err(AppError::msg("No installation URI available for game."))
+}
+
+#[tauri::command]
+pub fn uninstall_game(
+    app_id: u32,
+    uninstall_uri: Option<String>,
+) -> AppResult<bool> {
+    if let Some(uri) = uninstall_uri.filter(|u| !u.is_empty()) {
+        open_external_target(&uri)?;
+        return Ok(true);
+    }
+
+    if app_id > 0 {
+        let uri = format!("steam://uninstall/{app_id}");
+        open_external_target(&uri)?;
+        return Ok(true);
+    }
+
+    Err(AppError::msg("No uninstallation URI available for game."))
+}
+
+#[tauri::command]
+pub fn open_game_folder(path: String) -> AppResult<bool> {
+    let p = Path::new(&path);
+    if !p.exists() {
+        return Err(AppError::NotFound(format!("Path does not exist: {path}")));
+    }
+    open_external_target(&path)?;
+    Ok(true)
+}
+
+fn open_external_target(target: &str) -> AppResult<()> {
+    #[cfg(target_os = "windows")]
+    {
+        let status = if Path::new(target).exists() {
+            std::process::Command::new("explorer")
+                .arg(target)
+                .spawn()
+        } else {
+            std::process::Command::new("cmd")
+                .args(["/c", "start", "", target])
+                .spawn()
+        };
+        status.map_err(|e| AppError::msg(format!("Failed to open {target}: {e}")))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(target)
+            .spawn()
+            .map_err(|e| AppError::msg(format!("Failed to open {target}: {e}")))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(target)
+            .spawn()
+            .map_err(|e| AppError::msg(format!("Failed to open {target}: {e}")))?;
+    }
+
+    Ok(())
 }

@@ -67,8 +67,20 @@ pub fn scan_all(config: &ScanConfig) -> PlatformScan {
     if config.is_enabled(Platform::Itch) {
         merge(&mut by_platform, Platform::Itch, detect_itch());
     }
+    if config.is_enabled(Platform::Ubisoft) {
+        merge(&mut by_platform, Platform::Ubisoft, detect_ubisoft());
+    }
+    if config.is_enabled(Platform::Ea) {
+        merge(&mut by_platform, Platform::Ea, detect_ea());
+    }
+    if config.is_enabled(Platform::BattleNet) {
+        merge(&mut by_platform, Platform::BattleNet, detect_battlenet());
+    }
     if config.is_enabled(Platform::Amazon) {
         merge(&mut by_platform, Platform::Amazon, detect_amazon());
+    }
+    if config.is_enabled(Platform::Rockstar) {
+        merge(&mut by_platform, Platform::Rockstar, detect_rockstar());
     }
     if config.is_enabled(Platform::Xbox) {
         merge(
@@ -97,11 +109,12 @@ pub fn scan_all(config: &ScanConfig) -> PlatformScan {
         {
             roots.extend(drive_candidates(platform, &mounted_drives));
         }
-        roots.retain(|r| !is_blacklisted_root(Path::new(r)));
-        roots.sort();
-        roots.dedup();
-        if !roots.is_empty() {
-            for root in &roots {
+        let mut norm_roots: Vec<String> = roots.into_iter().map(|r| normalize_path(&r)).collect();
+        norm_roots.retain(|r| !is_blacklisted_root(Path::new(r)));
+        norm_roots.sort();
+        norm_roots.dedup();
+        if !norm_roots.is_empty() {
+            for root in &norm_roots {
                 merge(
                     &mut by_platform,
                     platform,
@@ -155,17 +168,36 @@ pub fn scan_all(config: &ScanConfig) -> PlatformScan {
     PlatformScan { games, platforms }
 }
 
+/// Standardize Windows/POSIX path separators, eliminate trailing slashes, and trim whitespace.
+pub fn normalize_path(path: &str) -> String {
+    let mut s = path.trim().replace('/', "\\");
+    while s.ends_with('\\') && s.len() > 3 {
+        s.pop();
+    }
+    s
+}
+
 /// Well-known install folder names per platform, searched on every drive.
 fn drive_folder_names(platform: Platform) -> &'static [&'static str] {
     match platform {
         Platform::Gog => &["GOG Games"],
         Platform::Epic => &["Epic Games"],
         Platform::Itch => &["itch\\games", "itch"],
-        Platform::Ubisoft => &["Ubisoft Games", "Ubisoft Game Launcher\\games"],
-        Platform::Ea => &["EA Games", "Origin Games"],
-        Platform::BattleNet => &["Battle.net"],
-        Platform::Amazon => &["Amazon Games"],
-        Platform::Rockstar => &["Rockstar Games"],
+        Platform::Ubisoft => &[
+            "Ubisoft Games",
+            "Ubisoft Game Launcher\\games",
+            "Games\\Ubisoft\\Ubisoft Game Launcher\\games",
+            "Games\\Ubisoft",
+        ],
+        Platform::Ea => &[
+            "EA Games",
+            "Origin Games",
+            "Games\\EA Games",
+            "Games\\Origin Games",
+        ],
+        Platform::BattleNet => &["Battle.net", "Games\\Battle.net"],
+        Platform::Amazon => &["Amazon Games", "Games\\Amazon Games"],
+        Platform::Rockstar => &["Rockstar Games", "Games\\Rockstar Games"],
         Platform::Xbox => &["XboxGames"],
         Platform::Emulator => &[
             "ROMs",
@@ -182,11 +214,32 @@ fn drive_folder_names(platform: Platform) -> &'static [&'static str] {
     }
 }
 
+/// Check if a drive or volume represents a cloud sync provider (Google Drive, OneDrive, etc.).
+pub fn is_cloud_disk(name: &str, mount: &str) -> bool {
+    let n = name.to_lowercase();
+    let m = mount.to_lowercase();
+    n.contains("google drive")
+        || n.contains("onedrive")
+        || n.contains("dropbox")
+        || n.contains("icloud")
+        || n.contains("proton drive")
+        || n.contains("pcloud")
+        || n.contains("box sync")
+        || n.contains("nextcloud")
+        || n.contains("owncloud")
+        || n.contains("mega")
+        || m.contains("google drive")
+        || m.contains("onedrive")
+        || m.contains("dropbox")
+        || m.contains("icloud")
+}
+
 /// Every mounted drive root (`C:\`, `D:\`, …) using sysinfo to avoid probing unmounted drive letters.
 fn drive_roots() -> Vec<PathBuf> {
     let disks = sysinfo::Disks::new_with_refreshed_list();
     let mut out: Vec<PathBuf> = disks
         .iter()
+        .filter(|d| !is_cloud_disk(&d.name().to_string_lossy(), &d.mount_point().to_string_lossy()))
         .map(|d| d.mount_point().to_path_buf())
         .collect();
     out.sort();
@@ -205,7 +258,7 @@ fn drive_candidates(platform: Platform, mounted_drives: &[PathBuf]) -> Vec<Strin
         for name in names {
             let candidate = drive.join(name);
             if candidate.is_dir() {
-                out.push(candidate.display().to_string());
+                out.push(normalize_path(&candidate.display().to_string()));
             }
         }
     }
@@ -227,8 +280,8 @@ pub fn is_blacklisted_root(path: &Path) -> bool {
         || p.contains("/appdata/local/electronic arts")
         || p.contains("\\gog.com\\galaxy\\storage")
         || p.contains("/gog.com/galaxy/storage")
-        || p.contains("\\ubisoft game launcher")
-        || p.contains("/ubisoft game launcher")
+        || ((p.contains("\\ubisoft game launcher") || p.contains("/ubisoft game launcher"))
+            && !p.contains("\\games") && !p.contains("/games"))
         || p.ends_with("\\appdata\\roaming\\battle.net")
         || p.ends_with("/appdata/roaming/battle.net")
         || p.contains("\\rockstar games\\launcher")
@@ -451,6 +504,35 @@ pub fn library_folders(platform: Platform) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
 
     match platform {
+        Platform::Gog => {
+            #[cfg(windows)]
+            {
+                use crate::platforms::registry;
+                for install in registry::gog_installs() {
+                    if let Some(path) = install.path {
+                        if let Some(parent) = Path::new(&path).parent() {
+                            out.push(normalize_path(&parent.display().to_string()));
+                        }
+                    }
+                }
+            }
+        }
+        Platform::Epic => {
+            if let Some(program_data) = env_dir("ProgramData") {
+                let dir = program_data
+                    .join("Epic")
+                    .join("EpicGamesLauncher")
+                    .join("Data")
+                    .join("Manifests");
+                for game in epic_manifests(&dir) {
+                    if let Some(install) = game.install_dir {
+                        if let Some(parent) = Path::new(&install).parent() {
+                            out.push(normalize_path(&parent.display().to_string()));
+                        }
+                    }
+                }
+            }
+        }
         Platform::Itch => {
             if let Some(appdata) = env_dir("APPDATA") {
                 out.push(appdata.join("itch").join("apps").display().to_string());
@@ -487,6 +569,31 @@ pub fn library_folders(platform: Platform) -> Vec<String> {
         }
         Platform::Ea => {
             out.extend(ea_library_dirs());
+            #[cfg(windows)]
+            {
+                use crate::platforms::registry;
+                for install in registry::ea_installs() {
+                    let norm = normalize_path(&install.install_dir);
+                    if let Some(parent) = Path::new(&norm).parent() {
+                        out.push(normalize_path(&parent.display().to_string()));
+                    }
+                }
+                for uninst in registry::uninstall_entries() {
+                    let is_ea = uninst.publisher.as_deref().map(|p| {
+                        let low = p.to_lowercase();
+                        low.contains("electronic arts") || low == "ea" || low == "bioware"
+                    }).unwrap_or(false)
+                    || uninst.uninstall_string.as_deref().map(|u| u.to_lowercase().contains("eainstaller")).unwrap_or(false);
+                    if is_ea {
+                        if let Some(loc) = uninst.install_location {
+                            let norm = normalize_path(&loc);
+                            if let Some(parent) = Path::new(&norm).parent() {
+                                out.push(normalize_path(&parent.display().to_string()));
+                            }
+                        }
+                    }
+                }
+            }
         }
         Platform::Emulator => {
             out.extend(emulator_library_dirs());
@@ -514,6 +621,32 @@ pub fn library_folders(platform: Platform) -> Vec<String> {
             }
         }
         Platform::Ubisoft => {
+            #[cfg(windows)]
+            {
+                use crate::platforms::registry;
+                if let Some(launcher_dir) = registry::ubisoft_launcher_dir() {
+                    let games_dir = Path::new(&launcher_dir).join("games");
+                    out.push(normalize_path(&games_dir.display().to_string()));
+                }
+                for install in registry::ubisoft_installs() {
+                    let norm = normalize_path(&install.install_dir);
+                    if let Some(parent) = Path::new(&norm).parent() {
+                        out.push(normalize_path(&parent.display().to_string()));
+                    }
+                }
+                for uninst in registry::uninstall_entries() {
+                    let is_ubi = uninst.publisher.as_deref().map(|p| p.to_lowercase().contains("ubisoft")).unwrap_or(false)
+                        || uninst.uninstall_string.as_deref().map(|u| u.to_lowercase().contains("uplay://")).unwrap_or(false);
+                    if is_ubi {
+                        if let Some(loc) = uninst.install_location {
+                            let norm = normalize_path(&loc);
+                            if let Some(parent) = Path::new(&norm).parent() {
+                                out.push(normalize_path(&parent.display().to_string()));
+                            }
+                        }
+                    }
+                }
+            }
             if let Some(pf) = env_dir("ProgramFiles(x86)") {
                 out.push(
                     pf.join("Ubisoft")
@@ -570,14 +703,25 @@ pub fn library_folders(platform: Platform) -> Vec<String> {
     let mounted = drive_roots();
     out.extend(drive_candidates(platform, &mounted));
 
-    // Exclude launcher internal directories and non-existent folders
-    out.retain(|path| {
+    // Normalize all paths (standardize slashes, remove trailing slashes)
+    let mut normalized: Vec<String> = out.into_iter().map(|p| normalize_path(&p)).collect();
+
+    // Exclude launcher internal directories, non-existent folders, and empty folders without any game files
+    normalized.retain(|path| {
         let p = Path::new(path);
-        p.is_dir() && !is_blacklisted_root(p)
+        if !p.is_dir() || is_blacklisted_root(p) {
+            return false;
+        }
+        // Folder must contain at least one entry (e.g. game folder or files)
+        if let Ok(mut it) = std::fs::read_dir(p) {
+            it.next().is_some()
+        } else {
+            false
+        }
     });
-    out.sort();
-    out.dedup();
-    out
+    normalized.sort();
+    normalized.dedup();
+    normalized
 }
 
 /// Filter out non-game software, launchers, tools, and system packages.
@@ -807,6 +951,7 @@ fn detect_custom_roots(platform: Platform, roots: &[String]) -> Detection {
                                 launch_uri: None,
                                 source: Some("Folder scan".into()),
                                 console: None,
+                                ..Default::default()
                             });
                         }
                     }
@@ -831,6 +976,7 @@ fn detect_custom_roots(platform: Platform, roots: &[String]) -> Detection {
                     launch_uri: None,
                     source: Some("Folder scan".into()),
                     console: None,
+                    ..Default::default()
                 });
             }
         }
@@ -1080,24 +1226,116 @@ fn detect_gog() -> Detection {
     #[cfg(windows)]
     {
         use crate::platforms::registry;
+        let mut seen_ids = std::collections::BTreeSet::new();
+
+        // 1. Try GOG Galaxy 2.0 SQLite database for complete owned library + install status
+        if let Some(program_data) = env_dir("ProgramData") {
+            let db_path = program_data
+                .join("GOG.com")
+                .join("Galaxy")
+                .join("storage")
+                .join("galaxy-2.0.db");
+            if db_path.is_file() {
+                detection.roots.push(db_path.display().to_string());
+                if let Ok(conn) = rusqlite::Connection::open_with_flags(
+                    &db_path,
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+                ) {
+                    // Collect installed product IDs
+                    let mut installed_ids = std::collections::BTreeSet::new();
+                    if let Ok(mut stmt) = conn.prepare("SELECT productId FROM InstalledProducts") {
+                        if let Ok(rows) = stmt.query_map([], |row| row.get::<_, i64>(0)) {
+                            for id in rows.flatten() {
+                                installed_ids.insert(id.to_string());
+                            }
+                        }
+                    }
+
+                    // Map of registry installs for local path/exe resolution
+                    let reg_installs: std::collections::BTreeMap<String, registry::GogInstall> =
+                        registry::gog_installs()
+                            .into_iter()
+                            .map(|inst| (inst.id.clone(), inst))
+                            .collect();
+
+                    // Query LibraryReleases joined with GamePieces (304 = title)
+                    let query = "SELECT lr.releaseKey, gp.value \
+                                 FROM LibraryReleases lr \
+                                 LEFT JOIN GamePieces gp ON gp.releaseKey = lr.releaseKey AND gp.gamePieceTypeId = 304 \
+                                 WHERE lr.releaseKey LIKE 'gog_%'";
+                    if let Ok(mut stmt) = conn.prepare(query) {
+                        let rows_result = stmt.query_map([], |row| {
+                            let key: String = row.get(0)?;
+                            let val: Option<String> = row.get(1)?;
+                            Ok((key, val))
+                        });
+
+                        if let Ok(rows) = rows_result {
+                            for (release_key, val_json) in rows.flatten() {
+                                let product_id = release_key
+                                    .strip_prefix("gog_")
+                                    .unwrap_or(&release_key)
+                                    .to_string();
+                                seen_ids.insert(product_id.clone());
+
+                                let title = val_json
+                                    .as_deref()
+                                    .and_then(|txt| serde_json::from_str::<serde_json::Value>(txt).ok())
+                                    .and_then(|v| v.get("title").and_then(|t| t.as_str()).map(str::to_string))
+                                    .unwrap_or_else(|| product_id.clone());
+
+                                let is_installed = installed_ids.contains(&product_id)
+                                    || reg_installs.contains_key(&product_id);
+
+                                let reg = reg_installs.get(&product_id);
+                                let install_dir = reg.and_then(|r| r.path.clone());
+                                let exe = reg.and_then(|r| r.exe.clone().or_else(|| r.path.clone()));
+
+                                detection.games.push(PlatformGame {
+                                    name: title,
+                                    platform: Platform::Gog,
+                                    platform_id: Some(product_id.clone()),
+                                    install_dir,
+                                    exe,
+                                    size_on_disk: None,
+                                    launch_uri: Some(format!("goggalaxy://openGameView/{product_id}")),
+                                    source: Some("GOG Galaxy library".into()),
+                                    console: None,
+                                    installed: is_installed,
+                                    install_uri: Some(format!("goggalaxy://installGame/{product_id}")),
+                                    ..Default::default()
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Add any GOG games from the registry not already seen in Galaxy DB (e.g. standalone installers)
         let installs = registry::gog_installs();
-        if !installs.is_empty() {
+        if !installs.is_empty() && detection.roots.is_empty() {
             detection
                 .roots
                 .push("HKEY_LOCAL_MACHINE\\SOFTWARE\\GOG.com\\Games".into());
         }
         for install in installs {
-            detection.games.push(PlatformGame {
-                name: install.name,
-                platform: Platform::Gog,
-                platform_id: Some(install.id),
-                install_dir: install.path.clone(),
-                exe: install.exe.or(install.path),
-                size_on_disk: None,
-                launch_uri: None,
-                source: Some("GOG Galaxy registry".into()),
-                console: None,
-            });
+            if seen_ids.insert(install.id.clone()) {
+                detection.games.push(PlatformGame {
+                    name: install.name,
+                    platform: Platform::Gog,
+                    platform_id: Some(install.id.clone()),
+                    install_dir: install.path.clone(),
+                    exe: install.exe.or(install.path),
+                    size_on_disk: None,
+                    launch_uri: Some(format!("goggalaxy://openGameView/{}", install.id)),
+                    source: Some("GOG Galaxy registry".into()),
+                    console: None,
+                    installed: true,
+                    install_uri: Some(format!("goggalaxy://installGame/{}", install.id)),
+                    ..Default::default()
+                });
+            }
         }
     }
 
@@ -1185,6 +1423,10 @@ fn epic_from_manifest(path: &Path) -> Option<PlatformGame> {
         (Some(dir), false) => Some(join_exe(dir, exe_rel)),
         _ => install.clone(),
     };
+    let app_id = value
+        .get("AppName")
+        .or_else(|| value.get("CatalogItemId"))
+        .and_then(|v| v.as_str());
     Some(PlatformGame {
         name,
         platform: Platform::Epic,
@@ -1195,13 +1437,12 @@ fn epic_from_manifest(path: &Path) -> Option<PlatformGame> {
         install_dir: install,
         exe,
         size_on_disk: value.get("InstallSize").and_then(|v| v.as_u64()),
-        launch_uri: value
-            .get("AppName")
-            .or_else(|| value.get("CatalogItemId"))
-            .and_then(|v| v.as_str())
-            .map(|id| format!("com.epicgames.launcher://apps/{id}?action=launch")),
+        launch_uri: app_id.map(|id| format!("com.epicgames.launcher://apps/{id}?action=launch")),
         source: Some("Epic manifest".into()),
         console: None,
+        installed: true,
+        install_uri: app_id.map(|id| format!("com.epicgames.launcher://apps/{id}?action=install")),
+        ..Default::default()
     })
 }
 
@@ -1270,6 +1511,8 @@ fn heroic_installed(path: &Path, platform: Platform) -> Vec<PlatformGame> {
             },
             source: Some("legendary / Heroic".into()),
             console: None,
+            installed: true,
+            ..Default::default()
         });
     }
     out
@@ -1421,6 +1664,9 @@ fn detect_itch() -> Detection {
                             launch_uri: Some(format!("itch://games/{game_id}")),
                             source: Some("itch app (butler.db)".into()),
                             console: None,
+                            installed: true,
+                            install_uri: Some(format!("itch://games/{game_id}")),
+                            ..Default::default()
                         });
                     }
                 }
@@ -1587,8 +1833,407 @@ fn scan_itch_dir(dir: &Path, detection: &mut Detection) {
             launch_uri,
             source: Some("itch library folder".into()),
             console: None,
+            installed: true,
+            ..Default::default()
         });
     }
+}
+
+// ---------------------------------------------------------------------------
+// Ubisoft Connect
+// ---------------------------------------------------------------------------
+
+fn detect_ubisoft() -> Detection {
+    let mut detection = Detection::empty();
+    let mut seen_dirs = std::collections::BTreeSet::new();
+
+    #[cfg(windows)]
+    {
+        use crate::platforms::registry;
+
+        // 1. Registry installs: HKLM\SOFTWARE\Ubisoft\Launcher\Installs\<id>
+        let ubi_installs = registry::ubisoft_installs();
+        if !ubi_installs.is_empty() {
+            detection
+                .roots
+                .push("HKEY_LOCAL_MACHINE\\SOFTWARE\\Ubisoft\\Launcher\\Installs".into());
+        }
+        for install in ubi_installs {
+            let norm_dir = normalize_path(&install.install_dir);
+            let dir_path = Path::new(&norm_dir);
+            if !dir_path.is_dir() {
+                continue;
+            }
+            if !seen_dirs.insert(norm_dir.to_lowercase()) {
+                continue;
+            }
+            let game_name = dir_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(&install.id)
+                .to_string();
+            let exe = find_executable(dir_path, 2);
+            let launch_uri = Some(format!("uplay://launch/{}/0", install.id));
+            detection.games.push(PlatformGame {
+                name: game_name,
+                platform: Platform::Ubisoft,
+                platform_id: Some(install.id.clone()),
+                install_dir: Some(norm_dir),
+                exe,
+                size_on_disk: None,
+                launch_uri,
+                source: Some("Ubisoft Connect registry".into()),
+                console: None,
+                installed: true,
+                install_uri: Some(format!("uplay://install/{}", install.id)),
+                ..Default::default()
+            });
+        }
+
+        // 2. Uninstall registry entries where Publisher is Ubisoft or uninstall_string has uplay://
+        for uninst in registry::uninstall_entries() {
+            let is_ubi = uninst
+                .publisher
+                .as_deref()
+                .map(|p| p.to_lowercase().contains("ubisoft"))
+                .unwrap_or(false)
+                || uninst
+                    .uninstall_string
+                    .as_deref()
+                    .map(|u| u.to_lowercase().contains("uplay://"))
+                    .unwrap_or(false);
+            if !is_ubi {
+                continue;
+            }
+            let Some(loc) = uninst.install_location else {
+                continue;
+            };
+            let norm_dir = normalize_path(&loc);
+            let dir_path = Path::new(&norm_dir);
+            if !dir_path.is_dir() {
+                continue;
+            }
+            if !seen_dirs.insert(norm_dir.to_lowercase()) {
+                continue;
+            }
+            let game_name = uninst.display_name;
+            let exe = find_executable(dir_path, 2);
+            let game_id = uninst.uninstall_string.as_deref().and_then(|s| {
+                if let Some(pos) = s.find("uplay://uninstall/") {
+                    let rest = &s[pos + 18..];
+                    Some(rest.trim_matches(['"', ' ', '\t', '/']).to_string())
+                } else {
+                    None
+                }
+            });
+            let launch_uri = game_id.as_ref().map(|id| format!("uplay://launch/{id}/0"));
+            let install_uri = game_id.as_ref().map(|id| format!("uplay://install/{id}"));
+            detection.games.push(PlatformGame {
+                name: game_name,
+                platform: Platform::Ubisoft,
+                platform_id: game_id,
+                install_dir: Some(norm_dir),
+                exe,
+                size_on_disk: None,
+                launch_uri,
+                source: Some("Ubisoft Uninstall registry".into()),
+                console: None,
+                installed: true,
+                install_uri,
+                ..Default::default()
+            });
+        }
+
+        // 3. Ubisoft Launcher root games/ folder
+        if let Some(launcher_dir) = registry::ubisoft_launcher_dir() {
+            let games_dir = Path::new(&launcher_dir).join("games");
+            if games_dir.is_dir() {
+                let games_dir_str = normalize_path(&games_dir.display().to_string());
+                detection.roots.push(games_dir_str);
+                if let Ok(entries) = std::fs::read_dir(&games_dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if !path.is_dir() {
+                            continue;
+                        }
+                        let norm = normalize_path(&path.display().to_string());
+                        if !seen_dirs.insert(norm.to_lowercase()) {
+                            continue;
+                        }
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        let exe = find_executable(&path, 2);
+                        if exe.is_none() {
+                            continue;
+                        }
+                        detection.games.push(PlatformGame {
+                            name,
+                            platform: Platform::Ubisoft,
+                            platform_id: None,
+                            install_dir: Some(norm),
+                            exe,
+                            size_on_disk: None,
+                            launch_uri: None,
+                            source: Some("Ubisoft games folder".into()),
+                            console: None,
+                            installed: true,
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    detection
+}
+
+// ---------------------------------------------------------------------------
+// EA / Origin
+// ---------------------------------------------------------------------------
+
+fn detect_ea() -> Detection {
+    let mut detection = Detection::empty();
+    let mut seen_dirs = std::collections::BTreeSet::new();
+
+    #[cfg(windows)]
+    {
+        use crate::platforms::registry;
+
+        // 1. Registry installs: BioWare, Electronic Arts, EA Games
+        let ea_installs = registry::ea_installs();
+        for install in ea_installs {
+            let norm_dir = normalize_path(&install.install_dir);
+            let dir_path = Path::new(&norm_dir);
+            if !dir_path.is_dir() {
+                continue;
+            }
+            if !seen_dirs.insert(norm_dir.to_lowercase()) {
+                continue;
+            }
+            let exe = find_executable(dir_path, 2);
+            let game_name = dir_path
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(&install.name)
+                .to_string();
+            detection.games.push(PlatformGame {
+                name: game_name,
+                platform: Platform::Ea,
+                platform_id: None,
+                install_dir: Some(norm_dir),
+                exe,
+                size_on_disk: None,
+                launch_uri: None,
+                source: Some("EA registry".into()),
+                console: None,
+                installed: true,
+                ..Default::default()
+            });
+        }
+
+        // 2. Uninstall registry entries where Publisher is Electronic Arts / EA / BioWare
+        for uninst in registry::uninstall_entries() {
+            let is_ea = uninst
+                .publisher
+                .as_deref()
+                .map(|p| {
+                    let low = p.to_lowercase();
+                    low.contains("electronic arts") || low == "ea" || low == "bioware"
+                })
+                .unwrap_or(false)
+                || uninst
+                    .uninstall_string
+                    .as_deref()
+                    .map(|u| u.to_lowercase().contains("eainstaller"))
+                    .unwrap_or(false);
+
+            if !is_ea {
+                continue;
+            }
+            let Some(loc) = uninst.install_location else {
+                continue;
+            };
+            let norm_dir = normalize_path(&loc);
+            let dir_path = Path::new(&norm_dir);
+            if !dir_path.is_dir() {
+                continue;
+            }
+            if !seen_dirs.insert(norm_dir.to_lowercase()) {
+                continue;
+            }
+            let exe = uninst
+                .display_icon
+                .as_deref()
+                .map(|i| i.trim_matches('"').trim())
+                .filter(|i| Path::new(i).is_file())
+                .map(String::from)
+                .or_else(|| find_executable(dir_path, 2));
+
+            let clean_name = uninst
+                .display_name
+                .replace('™', "")
+                .replace('®', "")
+                .trim()
+                .to_string();
+
+            detection.games.push(PlatformGame {
+                name: if clean_name.is_empty() {
+                    uninst.display_name
+                } else {
+                    clean_name
+                },
+                platform: Platform::Ea,
+                platform_id: None,
+                install_dir: Some(norm_dir),
+                exe,
+                size_on_disk: None,
+                launch_uri: None,
+                source: Some("EA Uninstall registry".into()),
+                console: None,
+                installed: true,
+                ..Default::default()
+            });
+        }
+
+        // 3. EA Desktop user_*.ini and machine.ini library roots
+        for lib_dir in ea_library_dirs() {
+            let norm_lib = normalize_path(&lib_dir);
+            let lib_path = Path::new(&norm_lib);
+            if !lib_path.is_dir() {
+                continue;
+            }
+            detection.roots.push(norm_lib.clone());
+            if let Ok(entries) = std::fs::read_dir(lib_path) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if !path.is_dir() {
+                        continue;
+                    }
+                    let norm = normalize_path(&path.display().to_string());
+                    if !seen_dirs.insert(norm.to_lowercase()) {
+                        continue;
+                    }
+                    let exe = find_executable(&path, 2);
+                    if exe.is_none() {
+                        continue;
+                    }
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    detection.games.push(PlatformGame {
+                        name,
+                        platform: Platform::Ea,
+                        platform_id: None,
+                        install_dir: Some(norm),
+                        exe,
+                        size_on_disk: None,
+                        launch_uri: None,
+                        source: Some("EA library folder".into()),
+                        console: None,
+                        installed: true,
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+    }
+
+    detection
+}
+
+// ---------------------------------------------------------------------------
+// Battle.net
+// ---------------------------------------------------------------------------
+
+fn detect_battlenet() -> Detection {
+    let mut detection = Detection::empty();
+    if let Some(appdata) = env_dir("APPDATA") {
+        let cfg = appdata.join("Battle.net").join("Battle.net.config");
+        if let Ok(text) = std::fs::read_to_string(cfg) {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
+                if let Some(path_str) = val
+                    .pointer("/Client/Install/DefaultInstallPath")
+                    .and_then(|v| v.as_str())
+                {
+                    let norm = normalize_path(path_str);
+                    let p = Path::new(&norm);
+                    if p.is_dir() {
+                        detection.roots.push(norm.clone());
+                        if let Ok(entries) = std::fs::read_dir(p) {
+                            for entry in entries.flatten() {
+                                let path = entry.path();
+                                if !path.is_dir() {
+                                    continue;
+                                }
+                                if let Some(exe) = find_executable(&path, 2) {
+                                    let name = entry.file_name().to_string_lossy().to_string();
+                                    detection.games.push(PlatformGame {
+                                        name,
+                                        platform: Platform::BattleNet,
+                                        platform_id: None,
+                                        install_dir: Some(normalize_path(&path.display().to_string())),
+                                        exe: Some(exe),
+                                        size_on_disk: None,
+                                        launch_uri: None,
+                                        source: Some("Battle.net folder".into()),
+                                        console: None,
+                                        installed: true,
+                                        ..Default::default()
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    detection
+}
+
+// ---------------------------------------------------------------------------
+// Rockstar Games
+// ---------------------------------------------------------------------------
+
+fn detect_rockstar() -> Detection {
+    let mut detection = Detection::empty();
+    #[cfg(windows)]
+    {
+        use winreg::enums::*;
+        use winreg::RegKey;
+        let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+        for view in [KEY_WOW64_32KEY, KEY_WOW64_64KEY] {
+            if let Ok(key) =
+                hklm.open_subkey_with_flags("SOFTWARE\\Rockstar Games", KEY_READ | view)
+            {
+                for sub_name in key.enum_keys().flatten() {
+                    if let Ok(sub) = key.open_subkey(&sub_name) {
+                        if let Ok(install_folder) =
+                            sub.get_value::<String, _>("InstallFolder")
+                        {
+                            let norm = normalize_path(&install_folder);
+                            let p = Path::new(&norm);
+                            if p.is_dir() {
+                                let exe = find_executable(p, 2);
+                                detection.games.push(PlatformGame {
+                                    name: sub_name,
+                                    platform: Platform::Rockstar,
+                                    platform_id: None,
+                                    install_dir: Some(norm),
+                                    exe,
+                                    size_on_disk: None,
+                                    launch_uri: None,
+                                    source: Some("Rockstar registry".into()),
+                                    console: None,
+                                    installed: true,
+                                    ..Default::default()
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    detection
 }
 
 // ---------------------------------------------------------------------------
@@ -1618,6 +2263,8 @@ fn detect_amazon() -> Detection {
                         launch_uri: None,
                         source: Some("Amazon Games library".into()),
                         console: None,
+                        installed: true,
+                        ..Default::default()
                     });
                 }
             }
@@ -1638,11 +2285,188 @@ struct XboxMeta {
     launch_uri: Option<String>,
 }
 
+fn unescape_xml(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+}
+
+fn extract_package_family_name(full_name: &str) -> Option<String> {
+    let parts: Vec<&str> = full_name.split('_').collect();
+    if parts.len() >= 5 {
+        let name = parts.first()?;
+        let pub_id = parts.last()?;
+        if !name.is_empty() && !pub_id.is_empty() {
+            return Some(format!("{name}_{pub_id}"));
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+fn scan_xbox_registry(detection: &mut Detection) {
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    let subkey_path = "SOFTWARE\\Classes\\Local Settings\\Software\\Microsoft\\Windows\\CurrentVersion\\AppModel\\Repository\\Packages";
+    let hives = [
+        RegKey::predef(HKEY_CURRENT_USER),
+        RegKey::predef(HKEY_LOCAL_MACHINE),
+    ];
+
+    let mut seen_packages = std::collections::HashSet::new();
+
+    for hive in &hives {
+        let Ok(packages_key) = hive.open_subkey_with_flags(subkey_path, KEY_READ) else {
+            continue;
+        };
+
+        for pkg_name in packages_key.enum_keys().flatten() {
+            if !seen_packages.insert(pkg_name.clone()) {
+                continue;
+            }
+
+            let Ok(pkg_key) = packages_key.open_subkey_with_flags(&pkg_name, KEY_READ) else {
+                continue;
+            };
+
+            let root_str: String = match pkg_key.get_value("PackageRootFolder") {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+
+            let root_path = Path::new(&root_str);
+            if !root_path.is_dir() {
+                continue;
+            }
+
+            let has_mgc = root_path.join("MicrosoftGame.config").is_file();
+            let has_xbox_cfg = root_path.join("xboxservices.config").is_file()
+                || root_path.join("XboxServices.config").is_file();
+
+            let manifest_path = root_path.join("AppxManifest.xml");
+            let mut manifest_content = None;
+            let mut manifest_is_game = false;
+
+            if manifest_path.is_file() {
+                if let Ok(content) = std::fs::read_to_string(&manifest_path) {
+                    if content.contains("xboxliveapp")
+                        || content.contains("ms-xbl-")
+                        || content.contains("TargetDeviceFamily Name=\"Windows.Xbox\"")
+                        || content.contains("SubModel=\"Game\"")
+                        || content.contains("Category=\"windows.game\"")
+                    {
+                        manifest_is_game = true;
+                    }
+                    manifest_content = Some(content);
+                }
+            }
+
+            let mut has_xbox_protocol = false;
+            if let Ok(app_key) =
+                pkg_key.open_subkey_with_flags("App\\Capabilities\\URLAssociations", KEY_READ)
+            {
+                for (name, _) in app_key.enum_values().flatten() {
+                    let lower = name.to_lowercase();
+                    if lower.contains("xbox") {
+                        has_xbox_protocol = true;
+                        break;
+                    }
+                }
+            }
+
+            if !has_mgc && !has_xbox_cfg && !manifest_is_game && !has_xbox_protocol {
+                continue;
+            }
+
+            if detection
+                .games
+                .iter()
+                .any(|g| g.install_dir.as_deref() == Some(&root_str))
+            {
+                continue;
+            }
+
+            let mut meta = None;
+            if has_mgc {
+                if let Ok(xml) = std::fs::read_to_string(root_path.join("MicrosoftGame.config")) {
+                    meta = parse_microsoft_game_config(&xml, root_path);
+                }
+            }
+            if meta.is_none() {
+                if let Some(ref xml) = manifest_content {
+                    meta = parse_appx_manifest(xml, root_path);
+                }
+            }
+
+            let reg_display_name: Option<String> = pkg_key
+                .get_value("DisplayName")
+                .ok()
+                .map(|s: String| s.trim().to_string())
+                .filter(|s| !s.is_empty() && !s.starts_with('@'));
+
+            let mut game_name = reg_display_name
+                .or_else(|| meta.as_ref().and_then(|m| m.name.clone()))
+                .unwrap_or_else(|| {
+                    pkg_name
+                        .split('_')
+                        .next()
+                        .unwrap_or(&pkg_name)
+                        .to_string()
+                });
+
+            game_name = unescape_xml(game_name.trim());
+
+            let family_name = extract_package_family_name(&pkg_name)
+                .or_else(|| meta.as_ref().and_then(|m| m.id.clone()));
+
+            let launch_uri = meta
+                .as_ref()
+                .and_then(|m| m.launch_uri.clone())
+                .or_else(|| family_name.as_ref().map(|fam| format!("shell:AppsFolder\\{fam}!App")));
+
+            let exe_path = meta.and_then(|m| m.exe).or_else(|| find_executable(root_path, 2));
+
+            let root_dir_str = root_path
+                .parent()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|| root_str.clone());
+            if !detection.roots.contains(&root_dir_str) {
+                detection.roots.push(root_dir_str);
+            }
+
+            detection.games.push(PlatformGame {
+                name: game_name,
+                platform: Platform::Xbox,
+                platform_id: family_name,
+                install_dir: Some(root_str),
+                exe: exe_path,
+                size_on_disk: None,
+                launch_uri,
+                source: Some("Xbox Game Pass / Microsoft Store".into()),
+                console: None,
+                installed: true,
+                ..Default::default()
+            });
+        }
+    }
+}
+
 fn detect_xbox(mounted_drives: &[PathBuf]) -> Detection {
     let mut detection = Detection::empty();
 
+    #[cfg(windows)]
+    scan_xbox_registry(&mut detection);
+
     for drive in mounted_drives {
-        for sub in &["XboxGames", "Games\\XboxGames"] {
+        for sub in &[
+            "XboxGames",
+            "Games\\XboxGames",
+            "Program Files\\WindowsApps",
+            "WindowsApps",
+        ] {
             let candidate = drive.join(sub);
             if candidate.is_dir() {
                 scan_xbox_dir(&candidate, &mut detection);
@@ -1650,7 +2474,7 @@ fn detect_xbox(mounted_drives: &[PathBuf]) -> Detection {
         }
     }
 
-    if detection.roots.is_empty() {
+    if detection.roots.is_empty() && detection.games.is_empty() {
         detection.note = Some("No XboxGames library folders found on mounted drives.".into());
     }
 
@@ -1686,6 +2510,7 @@ fn scan_xbox_dir(dir: &Path, detection: &mut Detection) {
         let mut exe_path = None;
         let mut platform_id = None;
         let mut launch_uri = None;
+        let mut recognized = false;
 
         for s_dir in &search_dirs {
             let config_path = s_dir.join("MicrosoftGame.config");
@@ -1700,26 +2525,55 @@ fn scan_xbox_dir(dir: &Path, detection: &mut Detection) {
                         }
                         platform_id = meta.id;
                         launch_uri = meta.launch_uri;
+                        recognized = true;
                         break;
                     }
                 }
             }
+
+            let has_xbox_svc = s_dir.join("xboxservices.config").is_file()
+                || s_dir.join("XboxServices.config").is_file();
+
             let manifest_path = s_dir.join("appxmanifest.xml");
             if manifest_path.is_file() {
                 if let Ok(xml) = std::fs::read_to_string(&manifest_path) {
-                    if let Some(meta) = parse_appx_manifest(&xml, s_dir) {
-                        if let Some(n) = meta.name {
-                            game_name = n;
+                    let has_xbox_marker = xml.contains("xboxliveapp")
+                        || xml.contains("ms-xbl-")
+                        || xml.contains("TargetDeviceFamily Name=\"Windows.Xbox\"")
+                        || xml.contains("Category=\"windows.game\"")
+                        || xml.contains("SubModel=\"Game\"");
+
+                    if has_xbox_svc || has_xbox_marker {
+                        if let Some(meta) = parse_appx_manifest(&xml, s_dir) {
+                            if let Some(n) = meta.name {
+                                game_name = n;
+                            }
+                            if let Some(e) = meta.exe {
+                                exe_path = Some(e);
+                            }
+                            platform_id = meta.id;
+                            launch_uri = meta.launch_uri;
+                            recognized = true;
+                            break;
                         }
-                        if let Some(e) = meta.exe {
-                            exe_path = Some(e);
-                        }
-                        platform_id = meta.id;
-                        launch_uri = meta.launch_uri;
-                        break;
                     }
                 }
             }
+        }
+
+        // If scanning a dedicated XboxGames directory, assume candidate game
+        let parent_name = dir.file_name().and_then(|f| f.to_str()).unwrap_or("");
+        if !recognized && !parent_name.eq_ignore_ascii_case("XboxGames") {
+            continue;
+        }
+
+        let install_str = path.display().to_string();
+        if detection
+            .games
+            .iter()
+            .any(|g| g.install_dir.as_deref() == Some(&install_str))
+        {
+            continue;
         }
 
         if exe_path.is_none() {
@@ -1727,15 +2581,17 @@ fn scan_xbox_dir(dir: &Path, detection: &mut Detection) {
         }
 
         detection.games.push(PlatformGame {
-            name: game_name,
+            name: unescape_xml(&game_name),
             platform: Platform::Xbox,
             platform_id,
-            install_dir: Some(path.display().to_string()),
+            install_dir: Some(install_str),
             exe: exe_path,
             size_on_disk: None,
             launch_uri,
             source: Some("Xbox Game Pass / Microsoft Store".into()),
             console: None,
+            installed: true,
+            ..Default::default()
         });
     }
 }
@@ -1766,7 +2622,9 @@ fn extract_xml_attr(tag_content: &str, attr: &str) -> Option<String> {
 }
 
 fn parse_microsoft_game_config(xml: &str, dir: &Path) -> Option<XboxMeta> {
-    let name = extract_xml_tag(xml, "DisplayName").or_else(|| extract_xml_tag(xml, "IdForDisplay"));
+    let name = extract_xml_tag(xml, "DisplayName")
+        .or_else(|| extract_xml_tag(xml, "IdForDisplay"))
+        .map(|s| unescape_xml(&s));
 
     let id = extract_xml_tag(xml, "TitleId").or_else(|| {
         let start = xml.find("<Identity ")?;
@@ -1800,18 +2658,40 @@ fn parse_microsoft_game_config(xml: &str, dir: &Path) -> Option<XboxMeta> {
 }
 
 fn parse_appx_manifest(xml: &str, dir: &Path) -> Option<XboxMeta> {
-    let name = extract_xml_tag(xml, "DisplayName");
+    let name = extract_xml_tag(xml, "DisplayName")
+        .or_else(|| {
+            let start = xml.find("<uap:VisualElements ")?;
+            let end = xml[start..].find('>')?;
+            extract_xml_attr(&xml[start..start + end], "DisplayName")
+        })
+        .or_else(|| {
+            let start = xml.find("<VisualElements ")?;
+            let end = xml[start..].find('>')?;
+            extract_xml_attr(&xml[start..start + end], "DisplayName")
+        })
+        .map(|s| unescape_xml(&s));
 
-    let id = if let Some(start) = xml.find("<Identity ") {
+    let app_id = if let Some(start) = xml.find("<Application ") {
+        let end = xml[start..].find('>')?;
+        extract_xml_attr(&xml[start..start + end], "Id")
+    } else {
+        None
+    }
+    .unwrap_or_else(|| "App".to_string());
+
+    let identity_name = if let Some(start) = xml.find("<Identity ") {
         let end = xml[start..].find('>')?;
         extract_xml_attr(&xml[start..start + end], "Name")
     } else {
         None
     };
 
-    let launch_uri = id
+    let dir_name = dir.file_name().and_then(|f| f.to_str()).unwrap_or("");
+    let family_name = extract_package_family_name(dir_name).or(identity_name);
+
+    let launch_uri = family_name
         .as_ref()
-        .map(|id_str| format!("shell:AppsFolder\\{id_str}!App"));
+        .map(|fam| format!("shell:AppsFolder\\{fam}!{app_id}"));
 
     let exe = if let Some(start) = xml.find("<Application ") {
         let end = xml[start..].find('>')?;
@@ -1829,7 +2709,7 @@ fn parse_appx_manifest(xml: &str, dir: &Path) -> Option<XboxMeta> {
     Some(XboxMeta {
         name,
         exe,
-        id,
+        id: family_name,
         launch_uri,
     })
 }
@@ -2269,6 +3149,8 @@ fn scan_roms_recursive(
             launch_uri,
             source: Some(display_source),
             console,
+            installed: true,
+            ..Default::default()
         });
     }
 }
@@ -2311,6 +3193,8 @@ fn detect_registry_based() -> Vec<(Platform, Detection)> {
             launch_uri: None,
             source: Some(format!("Uninstall registry · {publisher}")),
             console: None,
+            installed: true,
+            ..Default::default()
         });
     }
     buckets.into_iter().collect()
@@ -2420,6 +3304,55 @@ mod tests {
             Some("shell:AppsFolder\\Microsoft.MinecraftUWP!App")
         );
         assert_eq!(meta.exe.as_deref(), Some("Minecraft.Windows.exe"));
+    }
+
+    #[test]
+    fn extracts_package_family_name_and_unescapes_xml() {
+        assert_eq!(
+            extract_package_family_name("Microsoft.MicrosoftSolitaireCollection_4.27.9181.0_x64__8wekyb3d8bbwe"),
+            Some("Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe".to_string())
+        );
+        assert_eq!(
+            extract_package_family_name("Microsoft.Studios.Wordament_4.7.7281.0_x64__8wekyb3d8bbwe"),
+            Some("Microsoft.Studios.Wordament_8wekyb3d8bbwe".to_string())
+        );
+        assert_eq!(
+            extract_package_family_name("Microsoft.MicrosoftMahjong_4.9.9090.0_x64__8wekyb3d8bbwe"),
+            Some("Microsoft.MicrosoftMahjong_8wekyb3d8bbwe".to_string())
+        );
+        assert_eq!(unescape_xml("Solitaire &amp; Casual Games"), "Solitaire & Casual Games");
+
+        let xml = r#"
+            <Package>
+                <Identity Name="Microsoft.MicrosoftSolitaireCollection" Publisher="CN=Microsoft Corporation" Version="4.27.9181.0"/>
+                <Properties>
+                    <DisplayName>Solitaire &amp; Casual Games</DisplayName>
+                </Properties>
+                <Applications>
+                    <Application Id="App" Executable="Solitaire.exe">
+                        <uap:VisualElements DisplayName="Solitaire &amp; Casual Games"/>
+                    </Application>
+                </Applications>
+            </Package>
+        "#;
+        let meta = parse_appx_manifest(
+            xml,
+            Path::new("C:\\MockApps\\Microsoft.MicrosoftSolitaireCollection_4.27.9181.0_x64__8wekyb3d8bbwe"),
+        )
+        .unwrap();
+        assert_eq!(meta.name.as_deref(), Some("Solitaire & Casual Games"));
+        assert_eq!(
+            meta.id.as_deref(),
+            Some("Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe")
+        );
+        assert_eq!(
+            meta.launch_uri.as_deref(),
+            Some("shell:AppsFolder\\Microsoft.MicrosoftSolitaireCollection_8wekyb3d8bbwe!App")
+        );
+        assert_eq!(
+            meta.exe.as_deref(),
+            Some("Solitaire.exe")
+        );
     }
 
     #[test]
@@ -2603,5 +3536,45 @@ mod tests {
             .as_deref(),
             Some("PlayStation")
         );
+    }
+
+    #[test]
+    fn test_ubisoft_ea_xbox_real_detection() {
+        let config = ScanConfig {
+            sources: vec![],
+            include_other_drives: false,
+        };
+        let scan = scan_all(&config);
+        let names: Vec<String> = scan.games.iter().map(|g| format!("[{:?}] {}", g.platform, g.name)).collect();
+        println!("Detected games:\n{:#?}", names);
+        // Verify Xbox detection if on Windows
+        #[cfg(windows)]
+        {
+            let ubi_games: Vec<&str> = scan.games.iter().filter(|g| g.platform == Platform::Ubisoft).map(|g| g.name.as_str()).collect();
+            let ea_games: Vec<&str> = scan.games.iter().filter(|g| g.platform == Platform::Ea).map(|g| g.name.as_str()).collect();
+            let xbox_games: Vec<&str> = scan.games.iter().filter(|g| g.platform == Platform::Xbox).map(|g| g.name.as_str()).collect();
+            println!("Ubisoft: {:?}", ubi_games);
+            println!("EA: {:?}", ea_games);
+            println!("Xbox: {:?}", xbox_games);
+            assert!(ubi_games.iter().any(|n| n.contains("Assassin")));
+            assert!(ea_games.iter().any(|n| n.contains("Dragon Age")));
+            assert!(xbox_games.iter().any(|n| n.contains("Solitaire") || n.contains("Mahjong") || n.contains("Word")));
+
+            let ubi_folders = library_folders(Platform::Ubisoft);
+            let ea_folders = library_folders(Platform::Ea);
+            println!("Ubisoft library folders: {:?}", ubi_folders);
+            println!("EA library folders: {:?}", ea_folders);
+            let mut ubi_set = std::collections::HashSet::new();
+            for f in &ubi_folders {
+                assert!(ubi_set.insert(f.to_lowercase()), "Duplicate Ubisoft folder found: {}", f);
+            }
+            let mut ea_set = std::collections::HashSet::new();
+            for f in &ea_folders {
+                assert!(ea_set.insert(f.to_lowercase()), "Duplicate EA folder found: {}", f);
+            }
+            // Ensure no empty or trailing-slash duplicate exists
+            assert!(ea_folders.contains(&"E:\\Games\\EA Games".to_string()));
+            assert!(!ea_folders.contains(&"C:\\Program Files\\EA Games".to_string())); // Filtered out because it was empty
+        }
     }
 }

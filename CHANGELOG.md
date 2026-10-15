@@ -23,7 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Integrated Community Game Catalog (`Steam-Vault-Catalog`)**:
+- **Integrated Community Game Catalogue (`Steam-Vault-Catalogue`)**:
   - Precompiled embedded SQLite catalog seed (`src-tauri/src/catalog_seed.bin`) with curated multi-platform games for offline title and metadata lookup.
   - Online catalog synchronization (`sync_online_catalog`) downloading compressed catalog databases (`catalog.db.gz`) from GitHub Releases or custom URLs.
   - Catalog backup and restoration (`export_catalog_archive`, `import_catalog_archive`) enabling offline portability and custom database overrides.

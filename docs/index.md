@@ -14,9 +14,7 @@ header_actions:
 image: assets/images/steam_banner.jpg
 ---
 
-<div class="site-banner-container" style="margin-bottom: 2.2rem; border-radius: 14px; overflow: hidden; border: 1px solid rgba(135, 195, 250, 0.25); box-shadow: 0 16px 48px rgba(0,0,0,0.5);">
-<img src="{{ '/assets/images/steam_banner.jpg' | relative_url }}" alt="Steam Vault Banner" style="width: 100%; display: block;" loading="lazy" decoding="async">
-</div>
+<div markdown="0" class="site-banner-container" style="margin-bottom: 2.2rem; border-radius: 14px; overflow: hidden; border: 1px solid rgba(135, 195, 250, 0.25); box-shadow: 0 16px 48px rgba(0,0,0,0.5); line-height: 0; font-size: 0;"><img src="{{ '/assets/images/steam_banner.jpg' | relative_url }}" alt="Steam Vault Banner" style="width: 100%; height: auto; display: block; margin: 0; padding: 0; border: none;" loading="lazy" decoding="async"></div>
 
 <section id="about" class="doc-section">
 <div class="section-heading">
@@ -51,14 +49,29 @@ likely to break it.
 </div>
 <div class="features-grid">
 <div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🚀</span>
+<h3>Library Grid Launcher</h3>
+<p>Browse your library with vertical capsule covers, platform badges, install pills, and instant one-click launch controls.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">📑</span>
+<h3>Per-Game Details &amp; Management</h3>
+<p>Extensive details sub-pages featuring a 10-image media gallery with fullscreen lightbox, meta links, playtime tracking, and management modal.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🎛️</span>
+<h3>Collapsible Filter Sidebar</h3>
+<p>Toggle sort options, platform counts, install state, and collections instantly from a dedicated right sidebar.</p>
+</div>
+<div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🗂️</span>
-<h3>Real collections</h3>
-<p>Read and write your actual Steam collections, with favorites and hidden state honored.</p>
+<h3>Real Collections</h3>
+<p>Read and write your actual Steam collections, with favourites and hidden state honoured.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🧩</span>
-<h3>Manual organizing</h3>
-<p>Multi-select games and add or remove them from collections in a single pass.</p>
+<h3>Multi-Scope Organize Lists</h3>
+<p>Select multiple organization scopes simultaneously with Depressurizer-style custom rules to categorise your entire library.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🧠</span>
@@ -66,44 +79,24 @@ likely to break it.
 <p>Generate categories automatically from genre, developer, publisher, tags, and flags.</p>
 </div>
 <div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🎛️</span>
-<h3>Advanced filters</h3>
-<p>Build Allowed (OR), Required (AND), and Excluded (NOT) rules over your whole library.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">👾</span>
-<h3>Non-Steam games</h3>
-<p>Import and manage non-Steam shortcuts, with artwork pulled from SteamGridDB.</p>
+<span class="feature-card__icon" aria-hidden="true">💾</span>
+<h3>Storage Statistics</h3>
+<p>Dedicated drive capacity and usage gauges with Steam Library Folder management.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🎮</span>
-<h3>External platforms</h3>
-<p>Detect games installed by GOG, Epic Games, itch.io, and others, then import them as shortcuts.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🌐</span>
-<h3>Whole owned library</h3>
-<p>Sync every game you own through the Steam Web API, not just the ones installed right now.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🧱</span>
-<h3>Collections from any key</h3>
-<p>Build one collection per genre, developer, platform, playtime band, or name — preview first.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">💾</span>
-<h3>Storage manager</h3>
-<p>Inspect multi-drive library sizes and move games safely between drives with progress events.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🎨</span>
-<h3>Artwork manager</h3>
-<p>Inspect, fetch, and set portrait grid, hero, logo, and icon artwork via SteamGridDB.</p>
+<h3>External Platforms</h3>
+<p>Detect owned and installed games across GOG, Epic Games, itch.io, Xbox, and others, with shortcut launch integration.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🕹️</span>
 <h3>Emulators &amp; ROMs</h3>
 <p>Automatically discover ROMs across 11 popular emulators with pre-configured CLI launch arguments.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🎨</span>
+<h3>Artwork Manager</h3>
+<p>Inspect, fetch, and set portrait grid, hero, logo, and icon artwork via SteamGridDB.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🌍</span>
@@ -117,7 +110,7 @@ likely to break it.
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🗄️</span>
-<h3>Community Catalog</h3>
+<h3>Community Catalogue</h3>
 <p>Precompiled offline database of curated multi-platform games with online sync and archive portability.</p>
 </div>
 <div class="feature-card">
@@ -150,7 +143,7 @@ Steam Vault combines multiple metadata sources. Only <strong>Steam Web API</stro
 <tr><th>Provider</th><th>Key</th><th>Provides</th></tr>
 </thead>
 <tbody>
-<tr><td>Community Catalog</td><td>No</td><td>Curated offline seed with multi-platform OS and console metadata</td></tr>
+<tr><td>Community Catalogue</td><td>No</td><td>Curated offline seed with multi-platform OS and console metadata</td></tr>
 <tr><td>Steam Store</td><td>No</td><td>Genres, developers, publishers, release dates, flags</td></tr>
 <tr><td>Steam Store Search</td><td>No</td><td>Keyless title-to-appid matching for shortcuts &amp; indies</td></tr>
 <tr><td>Steam Web API</td><td>Yes</td><td>Owned games, playtime, player summaries</td></tr>

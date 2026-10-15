@@ -31,7 +31,80 @@ pub fn run() {
             {
                 let _ = window.set_icon(icon.clone());
             }
+
+            #[cfg(desktop)]
+            {
+                use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+                use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+                let show_i = MenuItem::with_id(app, "show", "Show Steam Vault", true, None::<&str>)?;
+                let min_i = MenuItem::with_id(app, "minimize", "Minimize to Tray", true, None::<&str>)?;
+                let sep = PredefinedMenuItem::separator(app)?;
+                let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+
+                let menu = Menu::with_items(app, &[&show_i, &min_i, &sep, &quit_i])?;
+
+                let mut tray_builder = TrayIconBuilder::with_id("main")
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .tooltip("Steam Vault")
+                    .on_menu_event(|app, event| match event.id().as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                        "minimize" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.hide();
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(window) = app.get_webview_window("main") {
+                                if window.is_visible().unwrap_or(false) {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.unminimize();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                    });
+
+                let tray_icon =
+                    tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png")).ok();
+                if let Some(icon) = tray_icon.or_else(|| app.default_window_icon().cloned()) {
+                    tray_builder = tray_builder.icon(icon);
+                }
+
+                let _ = tray_builder.build(app);
+            }
+
             Ok(())
+        })
+        .on_window_event(|_window, _event| {
+            #[cfg(desktop)]
+            if let tauri::WindowEvent::CloseRequested { api, .. } = _event {
+                if _window.label() == "main" {
+                    api.prevent_close();
+                    let _ = _window.hide();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_providers,
@@ -89,6 +162,10 @@ pub fn run() {
             commands::import_catalog_archive,
             commands::sync_online_catalog,
             commands::fetch_online_game_entry,
+            commands::launch_game,
+            commands::install_game,
+            commands::uninstall_game,
+            commands::open_game_folder,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

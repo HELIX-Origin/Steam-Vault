@@ -303,7 +303,7 @@ fn extract_version_string(bytes: &[u8], key: &str) -> Option<String> {
 }
 
 /// Helper to merge non-empty fields from `source` into `target`.
-fn merge_meta(target: &mut AppMeta, source: AppMeta) {
+pub fn merge_meta(target: &mut AppMeta, source: AppMeta) {
     if target.name.is_none() && source.name.is_some() {
         target.name = source.name;
     }

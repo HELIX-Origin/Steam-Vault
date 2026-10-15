@@ -174,6 +174,31 @@ pub struct PlatformGame {
     /// Specific console platform for emulated games (GameCube, Wii, PlayStation, etc.).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub console: Option<String>,
+    #[serde(default = "default_true")]
+    pub installed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install_uri: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uninstall_uri: Option<String>,
+}
+
+impl Default for PlatformGame {
+    fn default() -> Self {
+        Self {
+            name: String::new(),
+            platform: Platform::Steam,
+            platform_id: None,
+            install_dir: None,
+            exe: None,
+            size_on_disk: None,
+            launch_uri: None,
+            source: None,
+            console: None,
+            installed: true,
+            install_uri: None,
+            uninstall_uri: None,
+        }
+    }
 }
 
 /// Per-platform scan summary, so the UI can explain what was (not) found.

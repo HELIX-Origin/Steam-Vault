@@ -190,10 +190,30 @@ fn is_inside(child: &Path, parent: &Path) -> bool {
 // Disks
 // ---------------------------------------------------------------------------
 
+fn is_cloud_disk(name: &str, mount: &str) -> bool {
+    let n = name.to_lowercase();
+    let m = mount.to_lowercase();
+    n.contains("google drive")
+        || n.contains("onedrive")
+        || n.contains("dropbox")
+        || n.contains("icloud")
+        || n.contains("proton drive")
+        || n.contains("pcloud")
+        || n.contains("box sync")
+        || n.contains("nextcloud")
+        || n.contains("owncloud")
+        || n.contains("mega")
+        || m.contains("google drive")
+        || m.contains("onedrive")
+        || m.contains("dropbox")
+        || m.contains("icloud")
+}
+
 fn disks_snapshot() -> Vec<DiskInfo> {
     let disks = sysinfo::Disks::new_with_refreshed_list();
     let mut out: Vec<DiskInfo> = disks
         .iter()
+        .filter(|d| !is_cloud_disk(&d.name().to_string_lossy(), &d.mount_point().to_string_lossy()))
         .map(|disk| DiskInfo {
             name: disk.name().to_string_lossy().to_string(),
             mount: disk.mount_point().display().to_string(),

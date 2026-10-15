@@ -23,28 +23,23 @@ and feature flags.
 Unlike Depressurizer, Steam Vault is a modern, cross-platform **Tauri v2** application (Rust backend,
 SvelteKit frontend) that targets **stable, documented data sources** rather than fragile HTML scraping.
 
-## 🧩 Features (v1 scope)
+## 🧩 Features
 
-- **Read + write Steam collections** — modern Steam collections via the cloud namespace store, plus
-  legacy tag import.
-- **Manual organizing UI** — multi-select games and add/remove collections, favorites, and hidden.
-- **Whole owned library** — sync your entire Steam library (not just installed games) through the
-  Steam Web API so everything you own can be organized.
-- **External platform & emulator import** — detect games installed by GOG, Epic Games, itch.io, Amazon Games,
-  Ubisoft Connect, EA, Battle.net, and Rockstar, as well as ROMs across 11 popular emulators (Dolphin, PCSX2, DuckStation, Project64, PPSSPP, RPCS3, Citra, Cemu, Ryujinx, mGBA, Snes9x, RetroArch), then import them as non-Steam shortcuts with tailored launch parameters.
-- **Console platform detection & shortcut tagging** — automatically resolves specific console hardware (GameCube, Wii, PS1, PS2, N64, SNES, GBA, etc.) from ROM extensions and emulator paths, displays console badges in the Platforms view, and writes console platforms directly into Steam's binary `shortcuts.vdf` `tags` for native category grouping.
-- **Embedded Community Game Catalog** — precompiled SQLite seed database of curated multi-platform games (`catalog_seed.bin`) for instant offline title and metadata lookup, with online sync from GitHub releases (`Steam-Vault-Catalog`) and archive export/import.
+- **Redesigned Library Grid & Launcher** — Vertical game capsule grid view as the central launcher hub featuring responsive artwork covers, install status badges, platform icons, and one-click launch controls.
+- **Collapsible Right Sidebar** — Instant sort options (Name A-Z/Z-A, Playtime high/low, Last played, Size on disk) and granular filters (installation status, platform counts across Steam, GOG, Epic, Itch, Ubisoft, EA, Battle.net, Amazon, Xbox, Rockstar, Emulators, Other, collection dropdown, and favorites/hidden toggles).
+- **Extensive Per-Game Management Sub-Page** — Interactive 10-image media gallery with full-screen lightbox modal, meta links card (Store, PCGamingWiki, SteamDB, ProtonDB, Wikipedia, Community Catalogue), comprehensive details cards (developer, publisher, release date, genres, tags, metacritic/user scores, platform ID, file paths), playtime tracking, Play/Install button (via `steam://run/{app_id}`, `steam://install/{app_id}`, and native fallbacks), and Manage button launching a per-game management sub-window modal (folder explorer, platform tagging, launch URI inspection, uninstaller trigger).
+- **Streamlined Storage Statistics** — Pure storage analytics dashboard with drive capacity/usage gauges and Steam Library Folder management (add/remove library folders, view registered paths and disk footprint).
+- **Streamlined Organize Scopes List** — Multi-select scope list (Genre, Developer, Publisher, Release Year, Platform) with custom Depressurizer-style rule builder to organize the Steam library without clutter.
+- **Read + write Steam collections** — modern Steam collections via the cloud namespace store, plus legacy tag import.
+- **Whole owned library** — sync your entire Steam library (not just installed games) through the Steam Web API and local GOG/Epic manifests so everything you own can be organized and launched.
+- **External platform & emulator import** — detect games installed by GOG (including full read-only SQLite galaxy database querying), Epic Games, itch.io, Amazon Games, Ubisoft Connect, EA, Battle.net, Xbox/Windows Store, and Rockstar, as well as ROMs across 11 popular emulators with tailored launch parameters.
+- **Console platform detection & shortcut tagging** — automatically resolves specific console hardware from ROM extensions and emulator paths, displays console badges, and writes console platforms directly into Steam's binary `shortcuts.vdf` `tags` for native category grouping.
+- **Embedded Community Game Catalogue** — precompiled SQLite seed database of curated multi-platform games (`catalog_seed.bin`) for instant offline title and metadata lookup, with online sync from GitHub releases (`Steam-Vault-Catalogue`) and archive export/import.
 - **Advanced filter builder & dynamic smart collections** — Allowed (OR), Required (AND), Excluded (NOT), text search, named preset saving/loading, and Valve `filterSpec` smart collections with one-click live re-evaluation.
-- **AutoCats** — automatic categories from genre, developer, publisher, store flags, tags, release
-  year, and user score, with multi-entity splitting and platform fallbacks.
+- **AutoCats** — automatic categories from genre, developer, publisher, store flags, tags, release year, and user score, with multi-entity splitting and platform fallbacks.
 - **Embedded SQLite metadata cache** — high-performance, zero-dependency on-disk metadata cache powered by `rusqlite` bundled from source in WAL mode with automatic legacy JSON migration.
 - **Hand-rolled i18n localization** — native reactive UI translations across all 30 official Steam languages with zero third-party dependencies and RTL support.
-- **Create collections from any sorting option** — one collection per value of the chosen key
-  (genre, developer, platform, installed state, playtime, name, …), with a preview before writing.
-- **Non-Steam game support** — import and manage `shortcuts.vdf` entries, with automated artwork downloading.
-- **Artwork management** — replace or auto-fetch the grid, hero, logo, and icon art for any game, pulling from
-  SteamGridDB (by app id, or by name for shortcuts) or from local metadata and file caches.
-- **Metadata providers** — see the table below.
+- **Artwork management** — replace or auto-fetch the grid, hero, logo, and icon art for any game, pulling from SteamGridDB (by app id, or by name for shortcuts) or from local metadata and file caches.
 
 ## 🔌 Metadata providers
 
@@ -61,8 +56,9 @@ SvelteKit frontend) that targets **stable, documented data sources** rather than
 | **Local Game Sniffer** | ❌ No | itch.io manifests, Ren'Py, RPG Maker, and PE VersionInfo headers |
 | **Wikipedia** | ❌ No | Infobox wikitext parser for console games, developers, publishers, genres, release year, and summaries |
 
-> **Note:** RAWG support is intentionally **not** included (the service is defunct). Steam Web API,
-> SteamGridDB, and IGDB are the **only** providers that require an API key.
+> **Note:** RAWG support is intentionally **not** included (the service is defunct).
+>
+> 💡 **Architectural Direction:** Steam Vault is progressively migrating metadata resolution to rely **solely on official sources** (local launcher manifests, GOG Galaxy DB, Epic manifests, Xbox packages, and official store APIs) and our open **Community Game Catalogue** (`Steam-Vault-Catalogue`). Furthermore, even the **Steam Web API key is planned to be completely optional**, as Steam Vault is designed to read the user's authenticated local Steam installation directly (`appinfo.vdf`, `packageinfo.vdf`, `localconfig.vdf`) to discover all owned games from their authenticated account—mirroring the zero-friction, keyless architecture established across GOG, Epic, Xbox, and itch.io.
 
 ## 🔒 Privacy
 

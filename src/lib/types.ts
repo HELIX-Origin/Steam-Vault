@@ -62,6 +62,10 @@ export interface Game {
   exe: string | null;
   startDir: string | null;
   icon: string | null;
+  launchUri?: string | null;
+  installUri?: string | null;
+  uninstallUri?: string | null;
+  platformId?: string | null;
 }
 
 export interface Collection {
@@ -220,6 +224,9 @@ export interface PlatformGame {
   launchUri: string | null;
   source: string | null;
   console?: string | null;
+  installed?: boolean;
+  installUri?: string | null;
+  uninstallUri?: string | null;
 }
 
 /** Per-platform scan summary (availability, count, sources consulted). */

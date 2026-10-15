@@ -1,71 +1,67 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
-  import { listen } from "@tauri-apps/api/event";
+  import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
   import { t } from "$lib/i18n";
-  import { error, steamRunning } from "$lib/stores";
-  import type {
-    GamePlacement,
-    LibraryEntry,
-    MovePreview,
-    StorageProgress,
-    StorageReport
-  } from "$lib/types";
+  import { error } from "$lib/stores";
+  import type { LibraryEntry, StorageReport } from "$lib/types";
 
   let report: StorageReport | null = null;
   let busy = false;
-  let busyLabel = "";
-  let newFolder = "";
-  let gameSearch = "";
-  let libraryFilter = "";
-  let progress: StorageProgress | null = null;
-  let notice: string | null = null;
-
-  type MoveDialog =
-    | { kind: "game"; appId: number; title: string; from: string; target: string; preview: MovePreview | null }
-    | { kind: "library"; title: string; from: string; target: string; preview: MovePreview | null };
-
-  let move: MoveDialog | null = null;
-
-  let unlisten: (() => void) | null = null;
+  let newLibraryPath = "";
+  let actionMessage: string | null = null;
 
   onMount(async () => {
-    unlisten = await listen<StorageProgress>("storage-progress", (event) => {
-      progress = event.payload;
-    });
     await refresh();
   });
 
-  onDestroy(() => unlisten?.());
-
   async function refresh() {
+    busy = true;
     try {
       report = await api.getStorageReport();
       error.set(null);
     } catch (e) {
       error.set(errorMessage(e));
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function handleAddLibrary() {
+    if (!newLibraryPath.trim()) return;
+    busy = true;
+    try {
+      await api.addLibraryFolder(newLibraryPath.trim());
+      newLibraryPath = "";
+      actionMessage = "Library folder added successfully!";
+      await refresh();
+      setTimeout(() => (actionMessage = null), 4000);
+    } catch (e) {
+      error.set(errorMessage(e));
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function handleRemoveLibrary(path: string) {
+    busy = true;
+    try {
+      await api.removeLibraryFolder(path);
+      actionMessage = "Library folder removed!";
+      await refresh();
+      setTimeout(() => (actionMessage = null), 4000);
+    } catch (e) {
+      error.set(errorMessage(e));
+    } finally {
+      busy = false;
     }
   }
 
   $: libraries = report?.libraries ?? [];
   $: disks = report?.disks ?? [];
-  $: games = report?.games ?? [];
-  $: shownGames = games.filter((game) => {
-    if (libraryFilter === "steam" && game.platform !== "steam") return false;
-    if (libraryFilter === "non-steam" && game.platform === "steam") return false;
-    if (
-      libraryFilter &&
-      libraryFilter !== "steam" &&
-      libraryFilter !== "non-steam" &&
-      game.libraryPath !== libraryFilter
-    )
-      return false;
-    const search = gameSearch.trim().toLowerCase();
-    return !search || game.name.toLowerCase().includes(search);
-  });
   $: totalLibraryBytes = libraries.reduce((sum, library) => sum + library.totalBytes, 0);
-  $: moveTargets =
-    move && move.kind === "game" ? libraries.filter((library) => library.path !== move?.from) : [];
+  $: totalDiskCapacity = disks.reduce((sum, d) => sum + d.total, 0);
+  $: totalFreeDiskSpace = disks.reduce((sum, d) => sum + d.free, 0);
+  $: totalGamesTracked = libraries.reduce((sum, lib) => sum + lib.gameCount, 0);
 
   function formatBytes(bytes: number): string {
     if (!bytes) return "0 B";
@@ -87,343 +83,214 @@
   function labelFor(entry: LibraryEntry): string {
     return entry.label?.trim() || entry.path;
   }
-
-  async function addFolder() {
-    const path = newFolder.trim();
-    if (!path) return;
-    busy = true;
-    busyLabel = "Registering library folder…";
-    notice = null;
-    try {
-      await api.addLibraryFolder(path);
-      newFolder = "";
-      notice = `Registered ${path}.`;
-      await refresh();
-    } catch (e) {
-      error.set(errorMessage(e));
-    } finally {
-      busy = false;
-    }
-  }
-
-  async function removeFolder(entry: LibraryEntry) {
-    busy = true;
-    busyLabel = `Removing ${entry.path}…`;
-    notice = null;
-    try {
-      await api.removeLibraryFolder(entry.path);
-      notice = `Unregistered ${entry.path} (files left on disk).`;
-      await refresh();
-    } catch (e) {
-      error.set(errorMessage(e));
-    } finally {
-      busy = false;
-    }
-  }
-
-  function openLibraryMove(entry: LibraryEntry) {
-    move = { kind: "library", title: `Move library ${labelFor(entry)}`, from: entry.path, target: "", preview: null };
-  }
-
-  /** Clear any computed preview when the destination changes. */
-  function clearPreview() {
-    if (move) move.preview = null;
-  }
-
-  function openGameMove(game: GamePlacement) {
-    const other = libraries.find((library) => library.path !== game.libraryPath);
-    move = {
-      kind: "game",
-      appId: game.appId,
-      title: `Move ${game.name}`,
-      from: game.libraryPath,
-      target: other?.path ?? "",
-      preview: null
-    };
-  }
-
-  async function runPreview() {
-    if (!move || !move.target.trim()) return;
-    busy = true;
-    try {
-      move.preview =
-        move.kind === "game"
-          ? await api.previewMoveGame(move.appId, move.target.trim())
-          : await api.previewMoveLibrary(move.from, move.target.trim());
-      error.set(null);
-    } catch (e) {
-      error.set(errorMessage(e));
-    } finally {
-      busy = false;
-    }
-  }
-
-  async function confirmMove() {
-    if (!move || !move.preview) return;
-    busy = true;
-    busyLabel = "Moving…";
-    progress = null;
-    notice = null;
-    const dialog = move;
-    try {
-      const outcome =
-        dialog.kind === "game"
-          ? await api.moveGame(dialog.appId, dialog.target.trim())
-          : await api.moveLibrary(dialog.from, dialog.target.trim());
-      notice = `Moved ${formatBytes(outcome.bytes)} in ${outcome.files} file${outcome.files === 1 ? "" : "s"}${
-        outcome.sameVolume ? " (same drive)" : ""
-      }; updated ${outcome.vdfUpdated.length} library file(s).`;
-      move = null;
-      await refresh();
-    } catch (e) {
-      error.set(errorMessage(e));
-    } finally {
-      busy = false;
-      progress = null;
-    }
-  }
 </script>
 
-<div class="row-between" style="margin-bottom:1rem">
+<div class="row-between" style="margin-bottom:1.25rem">
   <div>
     <h1>{$t("storage.title")}</h1>
     <p class="muted">{$t("storage.subtitle")}</p>
   </div>
-  <div class="row">
+  <div class="row" style="gap:0.5rem">
+    {#if actionMessage}
+      <span class="pill pill-glow">{actionMessage}</span>
+    {/if}
     <button class="btn btn-ghost" onclick={refresh} disabled={busy}>{$t("common.refresh")}</button>
   </div>
 </div>
 
-{#if $steamRunning}
-  <div class="glass-strong" style="padding:0.9rem 1rem;margin-bottom:1rem;border-color:rgba(255,107,129,0.4)">
-    <strong>Steam is running.</strong>
-    <span class="muted-sm"> Close Steam completely before adding, removing, or moving libraries.</span>
-  </div>
-{/if}
-
-{#if notice}
-  <div class="glass-strong" style="padding:0.9rem 1rem;margin-bottom:1rem">
-    <span class="muted-sm">{notice}</span>
-  </div>
-{/if}
-
-{#if busy && progress}
-  <div class="glass-strong" style="padding:0.9rem 1rem;margin-bottom:1rem">
-    <div class="row-between">
-      <span>{progress.label}</span>
-      <span class="muted-sm">
-        {formatBytes(progress.done)} / {formatBytes(progress.total)}
-      </span>
-    </div>
-    <div class="bar"><span style="width:{progress.total ? (progress.done / progress.total) * 100 : 0}%"></span></div>
-  </div>
-{:else if busy}
-  <div class="glass-strong" style="padding:0.9rem 1rem;margin-bottom:1rem">
-    <span class="muted-sm">{busyLabel || "Working…"}</span>
-  </div>
-{/if}
-
 {#if report}
-  <div class="section-title">Drives</div>
-  <div class="grid drives">
-    {#each disks as disk (disk.mount)}
-      <div class="glass card">
-        <div class="row-between">
-          <span class="name">{disk.name || disk.mount}</span>
-          {#if disk.removable}<span class="pill pill-dim">removable</span>{/if}
-        </div>
-        <div class="bar"><span style="width:{usedFraction(disk.total, disk.free) * 100}%"></span></div>
-        <span class="muted-sm">
-          {formatBytes(disk.free)} free of {formatBytes(disk.total)} · {disk.mount}
-        </span>
-      </div>
-    {/each}
+  <!-- Storage KPI Overview Cards -->
+  <div class="grid kpi-grid">
+    <div class="glass card kpi-card">
+      <span class="kpi-num">{formatBytes(totalLibraryBytes)}</span>
+      <span class="kpi-label">Steam Games Footprint</span>
+    </div>
+    <div class="glass card kpi-card">
+      <span class="kpi-num">{formatBytes(totalFreeDiskSpace)}</span>
+      <span class="kpi-label">Free Across {disks.length} Drives</span>
+    </div>
+    <div class="glass card kpi-card">
+      <span class="kpi-num">{libraries.length}</span>
+      <span class="kpi-label">Registered Libraries</span>
+    </div>
+    <div class="glass card kpi-card">
+      <span class="kpi-num">{totalGamesTracked}</span>
+      <span class="kpi-label">Games Installed</span>
+    </div>
   </div>
 
-  <div class="row-between" style="margin:1.4rem 0 0.6rem">
-    <div class="section-title" style="margin:0">Libraries</div>
-    <span class="muted-sm">{libraries.length} registered · {formatBytes(totalLibraryBytes)} of games</span>
-  </div>
-  <div class="grid cards">
-    {#each libraries as entry (entry.path)}
-      <div class="glass card">
-        <div class="row-between">
-          <span class="name">{entry.label?.trim() || `Library ${entry.index}`}</span>
-          <div class="row" style="gap:0.35rem">
-            {#if entry.isSteamRoot}<span class="pill">Steam</span>{/if}
-            {#if !entry.exists}<span class="pill pill-danger">missing</span>{/if}
+  <!-- Connected Drives Section -->
+  <div class="section-container">
+    <div class="row-between section-head">
+      <div>
+        <h2 class="section-title">Connected Storage Drives</h2>
+        <p class="muted-sm">Physical and logical storage partitions available on this system.</p>
+      </div>
+      <span class="muted-sm">{disks.length} drive{disks.length === 1 ? "" : "s"} detected</span>
+    </div>
+    <div class="grid drives">
+      {#each disks as disk (disk.mount)}
+        <div class="glass card drive-card">
+          <div class="row-between">
+            <span class="name">{disk.name?.trim() || disk.mount}</span>
+            <span class="pill pill-accent">{disk.mount}</span>
+          </div>
+          <div class="bar">
+            <span style="width:{usedFraction(disk.total, disk.free) * 100}%"></span>
+          </div>
+          <div class="row-between muted-sm">
+            <span>{formatBytes(disk.total - disk.free)} used ({((disk.total - disk.free) / (disk.total || 1) * 100).toFixed(0)}%)</span>
+            <span>{formatBytes(disk.free)} free of {formatBytes(disk.total)}</span>
           </div>
         </div>
-        <span class="muted-sm path" title={entry.path}>{entry.path}</span>
-        <span class="muted-sm">
-          {entry.gameCount} game{entry.gameCount === 1 ? "" : "s"} · {formatBytes(entry.totalBytes)}
-          {#if entry.diskFree != null} · {formatBytes(entry.diskFree)} free{/if}
-        </span>
-        <div class="row" style="gap:0.4rem;margin-top:0.2rem">
-          <button class="btn btn-ghost" onclick={() => openLibraryMove(entry)} disabled={busy}>Move…</button>
-          <button
-            class="btn btn-ghost btn-danger"
-            onclick={() => removeFolder(entry)}
-            disabled={busy || entry.isSteamRoot || entry.gameCount > 0}
-            title={entry.gameCount > 0 ? "Move its games out first" : ""}
-          >
-            Remove
-          </button>
-        </div>
-      </div>
-    {/each}
-  </div>
-
-  <div class="glass-strong" style="padding:0.9rem 1rem;margin:1rem 0 1.4rem">
-    <div class="section-title" style="margin-bottom:0.5rem">Add a library folder</div>
-    <div class="row">
-      <input bind:value={newFolder} placeholder="e.g. D:\SteamLibrary" onkeydown={(e) => e.key === "Enter" && addFolder()} />
-      <button class="btn btn-primary" onclick={addFolder} disabled={busy || !newFolder.trim()}>Add</button>
-    </div>
-    <p class="muted-sm" style="margin:0.6rem 0 0">
-      The folder's <code>steamapps</code> subfolder is created if needed, then registered in Steam's
-      <code>libraryfolders.vdf</code>.
-    </p>
-  </div>
-
-  <div class="row-between" style="margin-bottom:0.6rem">
-    <div class="section-title" style="margin:0">Games</div>
-    <span class="muted-sm">{shownGames.length} of {games.length} shown</span>
-  </div>
-  <div class="glass-strong toolbar">
-    <input bind:value={gameSearch} placeholder="Search games…" style="max-width:240px" />
-    <select bind:value={libraryFilter} style="max-width:320px">
-      <option value="">All libraries & platforms</option>
-      <option value="steam">Steam games only</option>
-      <option value="non-steam">Non-Steam / External only</option>
-      {#each libraries as entry (entry.path)}
-        <option value={entry.path}>{labelFor(entry)}</option>
       {/each}
-    </select>
+    </div>
   </div>
 
-  <div class="glass list">
-    {#each shownGames as game (game.appId)}
-      <div class="row game">
-        <span class="name">
-          {game.name}
-          {#if game.platform && game.platform !== "steam"}
-            <span class="pill pill-dim" style="text-transform:uppercase">{game.platform}</span>
-          {/if}
-          {#if !game.installed}<span class="pill pill-dim">not installed</span>{/if}
-          {#if game.installed && !game.folderExists}<span class="pill pill-danger">folder missing</span>{/if}
-        </span>
-        <span class="muted-sm src" title={game.libraryPath}>
-          {libraries.find((library) => library.path === game.libraryPath)?.label?.trim() || game.libraryPath}
-        </span>
-        <span class="muted-sm size">{formatBytes(game.sizeOnDisk)}</span>
-        {#if game.platform === "steam"}
-          <button
-            class="btn btn-ghost"
-            onclick={() => openGameMove(game)}
-            disabled={busy || !game.folderExists || libraries.length < 2}
-          >
-            Move…
-          </button>
-        {:else}
-          <span class="muted-sm" style="width:4.5rem;text-align:right">External</span>
-        {/if}
+  <!-- Steam Library Folders Section -->
+  <div class="section-container">
+    <div class="row-between section-head">
+      <div>
+        <h2 class="section-title">Steam Library Folders</h2>
+        <p class="muted-sm">
+          Locations registered in Steam's <code>libraryfolders.vdf</code> where games are installed.
+        </p>
       </div>
-    {/each}
-    {#if shownGames.length === 0}
-      <p class="muted" style="padding:1rem">No games match.</p>
-    {/if}
+      <span class="muted-sm">{libraries.length} registered · {formatBytes(totalLibraryBytes)} total</span>
+    </div>
+
+    <!-- Add library folder toolbar -->
+    <div class="glass-strong card add-library-bar">
+      <span class="add-lib-label">Register Steam Library:</span>
+      <input
+        type="text"
+        bind:value={newLibraryPath}
+        placeholder="e.g. D:\SteamLibrary or /mnt/games/SteamLibrary"
+        class="add-lib-input"
+      />
+      <button class="btn btn-primary" onclick={handleAddLibrary} disabled={busy || !newLibraryPath.trim()}>
+        ＋ Add Library Folder
+      </button>
+    </div>
+
+    <div class="grid cards">
+      {#each libraries as entry (entry.path)}
+        <div class="glass card lib-card">
+          <div class="row-between">
+            <span class="name">{entry.label?.trim() || `Library ${entry.index}`}</span>
+            <div class="row" style="gap:0.35rem">
+              {#if entry.isSteamRoot}<span class="pill pill-accent">Steam Root</span>{/if}
+              {#if !entry.exists}<span class="pill pill-danger">Missing Folder</span>{/if}
+              {#if !entry.isSteamRoot}
+                <button
+                  class="btn mini btn-ghost btn-danger"
+                  onclick={() => handleRemoveLibrary(entry.path)}
+                  title="Remove Library Registration"
+                >
+                  ✕
+                </button>
+              {/if}
+            </div>
+          </div>
+          <span class="muted-sm path" title={entry.path}>{entry.path}</span>
+          <div class="row-between muted-sm lib-stats">
+            <span><strong>{entry.gameCount}</strong> games installed</span>
+            <span><strong>{formatBytes(entry.totalBytes)}</strong></span>
+          </div>
+          {#if entry.diskFree != null}
+            <div class="row-between muted-sm" style="font-size:0.75rem;padding-top:0.25rem;border-top:1px solid rgba(255,255,255,0.05)">
+              <span>Drive Free: {formatBytes(entry.diskFree)}</span>
+            </div>
+          {/if}
+        </div>
+      {/each}
+    </div>
   </div>
 {:else}
-  <div class="glass" style="padding:2rem;text-align:center">
-    <p class="muted">Loading library storage…</p>
-  </div>
-{/if}
-
-{#if move}
-  <div class="overlay">
-    <div class="glass-strong dialog">
-      <h2 class="section-title">{move.title}</h2>
-      <label class="field" style="display:block">
-        <span class="muted-sm">{move.kind === "game" ? "Destination library" : "New location"}</span>
-        {#if move.kind === "game"}
-          <select bind:value={move.target} onchange={clearPreview}>
-            {#each moveTargets as entry (entry.path)}
-              <option value={entry.path}>{labelFor(entry)}</option>
-            {/each}
-          </select>
-        {:else}
-          <input bind:value={move.target} placeholder="e.g. E:\SteamLibrary" oninput={clearPreview} />
-        {/if}
-      </label>
-
-      <div class="row" style="gap:0.5rem">
-        <button class="btn" onclick={runPreview} disabled={busy || !move.target.trim()}>Preview</button>
-        <button class="btn btn-primary" onclick={confirmMove} disabled={busy || !move.preview || !move.preview.fits}>
-          Move
-        </button>
-        <div class="spacer"></div>
-        <button class="btn btn-ghost" onclick={() => (move = null)} disabled={busy}>Cancel</button>
-      </div>
-
-      {#if move.preview}
-        <div class="preview">
-          <div class="row-between">
-            <span class="muted-sm path" title={move.preview.from}>from {move.preview.from}</span>
-          </div>
-          <div class="row-between">
-            <span class="muted-sm path" title={move.preview.to}>to {move.preview.to}</span>
-          </div>
-          <p class="muted-sm" style="margin:0.5rem 0 0">
-            {formatBytes(move.preview.bytes)} to move ·
-            {move.preview.sameVolume ? "same drive (instant)" : "across drives"}
-            {#if move.preview.targetFree != null} · {formatBytes(move.preview.targetFree)} free at destination{/if}
-          </p>
-          {#if move.preview.warnings.length}
-            {#each move.preview.warnings as warning}
-              <p class="warn">{warning}</p>
-            {/each}
-          {/if}
-        </div>
-      {/if}
-    </div>
+  <div class="glass" style="padding:3rem;text-align:center;border-radius:var(--radius)">
+    <p class="muted">Loading storage statistics and drive overview…</p>
   </div>
 {/if}
 
 <style>
+  .kpi-grid {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .kpi-card {
+    display: flex;
+    flex-direction: column;
+    padding: 1.15rem;
+    text-align: center;
+    border-radius: var(--radius);
+  }
+
+  .kpi-num {
+    font-size: 1.65rem;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.02em;
+  }
+
+  .kpi-label {
+    font-size: 0.76rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-top: 0.25rem;
+  }
+
+  .section-container {
+    margin-bottom: 1.75rem;
+  }
+
+  .section-head {
+    align-items: flex-end;
+    margin-bottom: 0.85rem;
+  }
+
   .drives {
-    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 0.85rem;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 1rem;
   }
 
   .cards {
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 0.85rem;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
   }
 
   .card {
     display: flex;
     flex-direction: column;
     gap: 0.45rem;
-    padding: 1rem 1.15rem;
+    padding: 1.15rem;
+    border-radius: var(--radius);
     transition: transform 0.15s ease, border-color 0.16s ease;
   }
 
   .card:hover {
-    transform: translateY(-1px);
+    transform: translateY(-2px);
     border-color: var(--border-strong);
   }
 
+  .drive-card, .lib-card {
+    gap: 0.6rem;
+  }
+
   .card .name {
-    font-weight: 600;
+    font-weight: 650;
+    font-size: 0.95rem;
   }
 
   .bar {
-    height: 6px;
+    height: 8px;
     border-radius: var(--radius-pill);
     background: rgba(255, 255, 255, 0.08);
     overflow: hidden;
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.4);
+    margin: 0.2rem 0;
   }
 
   .bar span {
@@ -439,101 +306,45 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 0.82rem;
+    font-size: 0.8rem;
+    background: rgba(0, 0, 0, 0.25);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    font-family: monospace;
+  }
+
+  .lib-stats {
+    padding-top: 0.25rem;
+  }
+
+  .add-library-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .add-lib-label {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+
+  .add-lib-input {
+    flex: 1;
+    min-width: 240px;
   }
 
   .pill-danger {
-    background: rgba(248, 113, 113, 0.14);
+    background: rgba(248, 113, 113, 0.16);
     border-color: rgba(248, 113, 113, 0.35);
     color: #fecaca;
   }
 
-  .toolbar {
-    display: flex;
-    gap: 0.65rem;
-    padding: 0.8rem 1rem;
-    margin-bottom: 0.9rem;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-
-  .list {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    padding: 8px;
-  }
-
-  .game {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.55em 0.75em;
-    border-radius: var(--radius-sm);
-    transition: background 0.15s ease;
-  }
-
-  .game:hover {
-    background: rgba(255, 255, 255, 0.05);
-  }
-
-  .game .name {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-width: 0;
-    font-weight: 550;
-  }
-
-  .game .src {
-    max-width: 32%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 0.8rem;
-  }
-
-  .game .size {
-    width: 5.5rem;
-    text-align: right;
-    flex-shrink: 0;
-    font-size: 0.82rem;
-  }
-
-  .overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(2, 6, 14, 0.72);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    display: grid;
-    place-items: center;
-    padding: 1.5rem;
-    z-index: 20;
-  }
-
-  .dialog {
-    width: min(560px, 100%);
-    padding: 1.3rem 1.4rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.9rem;
-  }
-
-  .preview {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 0.75rem 0.9rem;
-    background: rgba(6, 14, 26, 0.55);
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-
-  .warn {
-    color: var(--warn);
-    font-size: 0.82rem;
-    margin: 0.2rem 0 0;
+  .mini {
+    padding: 0.15rem 0.45rem;
+    font-size: 0.75rem;
   }
 </style>

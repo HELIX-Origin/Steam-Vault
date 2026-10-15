@@ -18,6 +18,7 @@ pub struct UninstallEntry {
     pub publisher: Option<String>,
     pub install_location: Option<String>,
     pub display_icon: Option<String>,
+    pub uninstall_string: Option<String>,
 }
 
 /// An installed GOG game as recorded under `…\GOG.com\Games\<id>`.
@@ -27,6 +28,21 @@ pub struct GogInstall {
     pub id: String,
     pub path: Option<String>,
     pub exe: Option<String>,
+}
+
+/// An installed Ubisoft game recorded under `…\Ubisoft\Launcher\Installs\<id>`.
+#[derive(Debug, Clone)]
+pub struct UbisoftInstall {
+    pub id: String,
+    pub install_dir: String,
+    pub name: Option<String>,
+}
+
+/// An installed EA game recorded under `…\BioWare` or `…\Electronic Arts` or `…\EA Games`.
+#[derive(Debug, Clone)]
+pub struct EaInstall {
+    pub name: String,
+    pub install_dir: String,
 }
 
 fn read_str(key: &RegKey, name: &str) -> Option<String> {
@@ -69,6 +85,7 @@ fn collect_uninstall(hive: &RegKey, view: u32, out: &mut Vec<UninstallEntry>) {
             publisher: read_str(&sub, "Publisher"),
             install_location: read_str(&sub, "InstallLocation"),
             display_icon: read_str(&sub, "DisplayIcon"),
+            uninstall_string: read_str(&sub, "UninstallString"),
         });
     }
 }
@@ -106,6 +123,106 @@ pub fn gog_installs() -> Vec<GogInstall> {
                 path: read_str(&sub, "path"),
                 exe: read_str(&sub, "exe"),
             });
+        }
+    }
+    out
+}
+
+/// Enumerate Ubisoft Connect game installs from `SOFTWARE\Ubisoft\Launcher\Installs`.
+pub fn ubisoft_installs() -> Vec<UbisoftInstall> {
+    let mut out: Vec<UbisoftInstall> = Vec::new();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+
+    let sources = [
+        (&hklm, KEY_WOW64_32KEY),
+        (&hklm, KEY_WOW64_64KEY),
+        (&hkcu, 0),
+    ];
+    for (hive, view) in sources {
+        let Ok(key) =
+            hive.open_subkey_with_flags("SOFTWARE\\Ubisoft\\Launcher\\Installs", KEY_READ | view)
+        else {
+            continue;
+        };
+        for id in key.enum_keys().flatten() {
+            if !seen.insert(id.clone()) {
+                continue;
+            }
+            let Ok(sub) = key.open_subkey(&id) else {
+                continue;
+            };
+            if let Some(install_dir) = read_str(&sub, "InstallDir") {
+                out.push(UbisoftInstall {
+                    id,
+                    install_dir,
+                    name: None,
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Discover Ubisoft Launcher's own installation directory.
+pub fn ubisoft_launcher_dir() -> Option<String> {
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let sources = [KEY_WOW64_32KEY, KEY_WOW64_64KEY];
+    for view in sources {
+        if let Ok(key) =
+            hklm.open_subkey_with_flags("SOFTWARE\\Ubisoft\\Launcher", KEY_READ | view)
+        {
+            if let Some(dir) = read_str(&key, "InstallDir") {
+                return Some(dir);
+            }
+        }
+    }
+    None
+}
+
+/// Enumerate EA game installs from registry subkeys (BioWare, Electronic Arts, EA Games).
+pub fn ea_installs() -> Vec<EaInstall> {
+    let mut out: Vec<EaInstall> = Vec::new();
+    let mut seen_paths: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+
+    let registry_roots = [
+        "SOFTWARE\\BioWare",
+        "SOFTWARE\\Electronic Arts",
+        "SOFTWARE\\EA Games",
+    ];
+
+    let sources = [
+        (&hklm, KEY_WOW64_32KEY),
+        (&hklm, KEY_WOW64_64KEY),
+        (&hkcu, 0),
+    ];
+
+    for root in registry_roots {
+        for (hive, view) in sources {
+            let Ok(key) = hive.open_subkey_with_flags(root, KEY_READ | view) else {
+                continue;
+            };
+            for sub_name in key.enum_keys().flatten() {
+                let Ok(sub) = key.open_subkey(&sub_name) else {
+                    continue;
+                };
+                let install_dir = read_str(&sub, "Install Dir")
+                    .or_else(|| read_str(&sub, "InstallDir"))
+                    .or_else(|| read_str(&sub, "Path"))
+                    .or_else(|| read_str(&sub, "BaseDir"));
+                if let Some(dir) = install_dir {
+                    let norm = dir.replace('/', "\\").trim_end_matches('\\').to_lowercase();
+                    if seen_paths.insert(norm) {
+                        out.push(EaInstall {
+                            name: sub_name,
+                            install_dir: dir,
+                        });
+                    }
+                }
+            }
         }
     }
     out
