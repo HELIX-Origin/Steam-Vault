@@ -42,19 +42,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `apply_categorization`): genre, developer, publisher, Steam feature, tag, release
   year, user score, **platform**, **installed state**, **playtime**, and **name**, with
   an optional prefix, an installed-only filter, and a replace-membership mode.
-- New **Platforms** and **Organize** views (six-item navigation) plus platform and
-  installed-state badges in the Library.
+- New **Platforms** and **Organize** views plus platform and installed-state badges in the Library.
 - **On-demand metadata cache warming** for the AutoCats / collection engine: the Steam Store
   provider now fetches store **tags** (`actions/ajaxgetstoretags`) alongside `appdetails`;
-  `ensure_steam_metadata` de-duplicates ids, reuses entries within the cache TTL, and batches
-  `appdetails` 50 per request; a new `sync_library_metadata` command warms the cache for the
+  `ensure_steam_metadata` de-duplicates ids, reuses entries within the cache TTL, and fetches
+  `appdetails` per app id with bounded concurrency; a new `sync_library_metadata` command warms the cache for the
   whole owned library, and categorization can fetch on demand (`fetchMetadata`, on by default).
 - **Logged command scripts** (`scripts/*.mjs`): `tauri:dev` / `tauri:build` and a generic
   `run.mjs` runner stream output live to the console while writing a timestamped transcript to
   `logs/` (`<type>-<YYYY-MM-DD_HH-MM-SS>.log`, so runs are never overwritten).
+- **Agent-friendly test & verification runner** (`scripts/test.mjs` + `scripts/lib/suites.mjs`):
+  named suites (`fmt`, `clippy`, `check`, `rust`, `frontend`, `build`, `all`) run the toolchain
+  directly — no nested `npm` — with **stdin closed** (no step can block on input), a **per-step
+  timeout** (default 15 min, `124` on timeout), a timestamped transcript per step, and a compact
+  PASS/FAIL summary with a reliable exit code; wired to `npm test`, `test:rust`, `test:frontend`,
+  `test:all`, and `verify`.
+- **Filter builder in Organize**: Depressurizer-style Allowed / Required / Excluded
+  collections, name search, and kind filter with live match count; filters are
+  passed to categorization.
+- **Non-Steam sources in Settings**: per-platform enable/disable and extra folders
+  (semicolon-separated), plus all-drive enumeration so games on external drives
+  are discovered.
+- **Branding**: wired the Steam Vault logo into the title bar and replaced the
+  favicon with the brand icon.
+- **Storage management** (`get_storage_report`, `preview_move_library`, `move_library`,
+  `preview_move_game`, `move_game`, `add_library_folder`, `remove_library_folder`): inspect
+  library folders and mounted drives, register/unregister libraries, and move a game or a whole
+  library between drives, updating every `libraryfolders.vdf` (with backups and a Steam-closed
+  guard). New **Storage** view (seven-item navigation) with a drive overview, per-library cards, a
+  searchable game list, move previews, and live `storage-progress` events.
 
 ### Fixed
 
 - `shortcuts.vdf` now reads canonical field casing (`AppName` / `Exe`) and strips the
   literal quotes Steam stores around `Exe` / `StartDir`; the writer emits the canonical
   `Exe` / `StartDir` keys instead of lowercase ones.
+- **Steam metadata fetch**: fixed HTTP 400 when `appids` were comma-joined (batching)
+  — now fetches per-appid with bounded concurrency; `appdetails` and store tags are
+  fetched robustly.
+- **Platform serde**: `Platform` serializes with `lowercase` ids (e.g.
+  `battlenet`, `ubisoft`, `ea`) to match the frontend union.
+- **Platform scan**: honours per-platform settings, includes extra/custom folders,
+  and enumerates mounted drives to detect games on external drives.

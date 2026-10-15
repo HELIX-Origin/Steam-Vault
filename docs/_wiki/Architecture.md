@@ -15,7 +15,7 @@ over typed IPC.
 ```mermaid
 flowchart TB
     ui[SvelteKit SPA] --> ipc[Typed Tauri commands]
-    ipc --> core[Rust core: library, collections, autocat, filter]
+    ipc --> core[Rust core: library, collections, storage, autocat, filter]
     core --> steam[Steam data layer]
     core --> meta[Metadata providers]
     steam --> disk[(Steam local files)]
@@ -32,7 +32,7 @@ The backend is split into focused modules:
 
 | Module | Responsibility |
 | :--- | :--- |
-| `steam/` | Locating Steam, parsing Valve KeyValues (text and binary), reading libraries, collections, and shortcuts. |
+| `steam/` | Locating Steam, parsing Valve KeyValues (text and binary), reading libraries, collections, and shortcuts, and moving installed games between library folders. |
 | `metadata/` | One client per provider, plus the shared HTTP client and provider registry. |
 | `autocat` | The rule engine that turns metadata into proposed collections. |
 | `filter` | The Allowed / Required / Excluded filter model. |

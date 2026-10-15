@@ -24,6 +24,7 @@ Steam access, metadata fetching, categorization, and file writing happen here.
 | `steam/collections.rs` | Reads/writes the cloud-storage collection namespace. |
 | `steam/shortcuts.rs` | Reads/writes non-Steam shortcuts, derives Steam-compatible appids, and appends imports. |
 | `steam/owned.rs` | Caches the full owned Steam library (Web API `GetOwnedGames`). |
+| `steam/storage.rs` | Library folders and mounted drives: inspection, register/unregister, and moving games or whole libraries between drives. |
 | `steam/models.rs` | Shared serde models (serialized as camelCase). |
 | `metadata/` | Provider clients + a shared HTTP client and registry. |
 | `platforms/` | External-launcher detection (GOG, Epic, itch.io, …) and the appid → platform map. |
@@ -61,6 +62,10 @@ snake_case Rust parameters.
 | `import_platform_games` | Writes selected platform games to `shortcuts.vdf` as shortcuts. |
 | `get_owned_library` / `refresh_owned_games` | Returns / fetches the full owned Steam library. |
 | `compute_categorization` / `apply_categorization` | Previews and writes collections from a sorting option. |
+| `get_storage_report` | Reports mounted drives, library folders, and each installed game's size and placement. |
+| `preview_move_library` / `preview_move_game` | Dry-run a move: bytes to move, destination free space, and same-drive check. |
+| `move_library` / `move_game` | Move a library or game and update every `libraryfolders.vdf`. |
+| `add_library_folder` / `remove_library_folder` | Register or unregister a library folder. |
 
 ## 🎮 External platforms & the owned library
 

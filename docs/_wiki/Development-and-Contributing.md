@@ -19,7 +19,15 @@ must pass.
 
 ## 🚦 Quality gate
 
-Before opening a pull request, all of the following must pass with zero errors:
+Before opening a pull request, all of the following must pass with zero errors. The project test
+runner runs them directly, logs each step to `logs/`, and never hangs:
+
+```bash
+npm test                                                 # cargo check + cargo test + svelte-check
+npm run verify                                           # the above, plus a production build
+```
+
+The underlying commands are equivalent, and remain available:
 
 ```bash
 npm run check                                            # svelte-check: 0 errors, 0 warnings

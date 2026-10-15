@@ -21,10 +21,12 @@ summarizes its security posture; the canonical policy lives in the repository's 
 
 ## ✍️ Local writes
 
-Steam Vault modifies exactly two local files:
+Steam Vault modifies only these local files:
 
 - the collection cloud-storage namespace (JSON),
-- `shortcuts.vdf` (binary KeyValues).
+- `shortcuts.vdf` (binary KeyValues),
+- `libraryfolders.vdf` (every copy), when a library is registered/removed or a game moves, and
+- `appmanifest_<appid>.acf`, moved alongside its game during a storage move.
 
 Every write is gated and reversible:
 

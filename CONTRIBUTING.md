@@ -15,10 +15,14 @@ Before opening a pull request, everything below must pass with **zero** errors:
 
 ```bash
 npm install
-npm run check                                          # svelte-check
 npm run build                                          # required before cargo: Tauri reads build/
-cargo check --manifest-path src-tauri/Cargo.toml
-cargo test  --manifest-path src-tauri/Cargo.toml
+npm test                                               # cargo check + cargo test + svelte-check
+```
+
+For the stricter gate — formatting, Clippy, and a fresh production build as well:
+
+```bash
+npm run test:all
 ```
 
 > The Rust build embeds the compiled frontend, so `npm run build` must run before the `cargo`

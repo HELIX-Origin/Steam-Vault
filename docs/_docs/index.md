@@ -25,6 +25,8 @@ far less likely to break it.
 - 👾 **Non-Steam games** — import and manage non-Steam shortcuts, with artwork from SteamGridDB.
 - 🎮 **External platforms** — detect games installed by GOG, Epic Games, itch.io, and others, and
   import them as non-Steam shortcuts.
+- 💽 **Storage management** — see how your games are spread across libraries and drives, register
+  new libraries, and move games or whole libraries between them safely.
 - 🌐 **Whole owned library** — sync your entire Steam library (not just installed games) through the
   Steam Web API so everything you own can be organized.
 - 🧱 **Collection creation from any sorting option** — build one collection per value of a chosen key
@@ -34,17 +36,19 @@ far less likely to break it.
 - 🛡️ **Safe writes** — timestamped backups before every write, and changes are refused while Steam
   is running.
 
-> **Early development.** Steam Vault has delivered **M1 (Foundation)** and **M2 (Whole-Library
-> Organizing)**. The data layer, metadata providers, AutoCats engine, external platform import, the
-> owned-library sync, the custom title bar, and the app shell exist; the polished interface and
-> packaged installers are on the roadmap. See
-> [Getting Started](Getting-Started.md) to build it from source.
+> **Active development.** Steam Vault has shipped **M1 (Foundation)** and **M2 (Whole-Library
+> Organizing)**, and is building out **M3** — a filter builder in Organize, settings for non-Steam
+> sources, and full **Storage** management (library folders, drives, and moving games between them).
+> The data layer, metadata providers, AutoCats engine, external platform import, owned-library sync,
+> custom title bar, and app shell all exist; the polished interface pass and packaged installers are
+> still ahead. See [Getting Started](Getting-Started.md) to build it from source.
 
 ## 🧭 Getting around
 
 - **[Getting Started](Getting-Started.md)** — prerequisites, build, and first launch.
 - **[Organizing Your Library](Organizing-Your-Library.md)** — the Library view and selections.
 - **[Collections](Collections.md)** — creating, editing, and safely writing collections.
+- **[Storage Management](Storage-Management.md)** — libraries, drives, and moving games.
 - **[AutoCategorization](AutoCategorization.md)** — the AutoCats engine.
 - **[Metadata Providers](Metadata-Providers.md)** — every provider and what it contributes.
 - **[Non-Steam Games](Non-Steam-Games.md)** — shortcuts and artwork.
@@ -71,7 +75,7 @@ far less likely to break it.
 
 ### 📚 Documentation Index
 - **Core**: [Home]({{ '/' | relative_url }}) · [Getting Started](Getting-Started.md) · [Organizing Your Library](Organizing-Your-Library.md)
-- **Features**: [Collections](Collections.md) · [AutoCategorization](AutoCategorization.md) · [Non-Steam Games](Non-Steam-Games.md) · [External Platforms](External-Platforms.md)
+- **Features**: [Collections](Collections.md) · [AutoCategorization](AutoCategorization.md) · [Non-Steam Games](Non-Steam-Games.md) · [External Platforms](External-Platforms.md) · [Storage Management](Storage-Management.md)
 - **Reference**: [Metadata Providers](Metadata-Providers.md) · [Settings & API Keys](Settings-and-API-Keys.md) · [Troubleshooting](Troubleshooting.md) · [FAQ](FAQ.md)
 
 ---

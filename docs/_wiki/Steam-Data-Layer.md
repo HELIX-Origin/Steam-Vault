@@ -24,10 +24,13 @@ what format they use, and how writes are protected.
 
 ## ✍️ Files written
 
-Only two files are ever modified:
+Steam Vault modifies only these files, always under the safety contract below:
 
 - `userdata/<account-id>/config/cloudstorage/cloud-storage-namespace-1.json` — collections.
 - `userdata/<account-id>/config/shortcuts.vdf` — non-Steam shortcuts.
+- `libraryfolders.vdf` — **every copy** Steam may keep, when a library is registered, unregistered,
+  or a game moves between libraries.
+- `appmanifest_<appid>.acf` — moved (or its `path` rewritten) with its game during a storage move.
 
 ## 🔤 Parsers
 
@@ -47,6 +50,16 @@ Modern collections are stored as a JSON array of `[key, entry]` pairs. Each coll
 `user-collections.<id>`, and its `entry.value` is an **escaped JSON string** describing
 `{ id, name, added, removed }` and optionally a `filterSpec` for dynamic collections. Built-ins are
 `user-collections.favorite` and `user-collections.hidden`; deleted entries carry `is_deleted: true`.
+
+## 💽 Storage & moves
+
+The **Storage** view reads `libraryfolders.vdf` and the `appmanifest_*.acf` files to report how games
+are spread across libraries and drives. Registering a folder creates its `steamapps` subfolder if
+needed and rewrites every copy of `libraryfolders.vdf`. Moving a game relocates its
+`appmanifest_<appid>.acf` (and any Workshop manifest); moving a whole library relocates the
+directory and then rewrites `libraryfolders.vdf`. Because Steam rewrites every copy of
+`libraryfolders.vdf` on startup, **all copies are updated** so Steam does not "lose" a game and
+start re-downloading it.
 
 ## 🛡️ Write safety
 

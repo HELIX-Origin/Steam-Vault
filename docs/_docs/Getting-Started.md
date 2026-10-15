@@ -56,7 +56,16 @@ See [Collections](Collections.md) for the details of what gets written and where
 
 ## 🧪 5. Verify your setup
 
-Both the frontend and backend have type checks and tests you can run locally:
+Both the frontend and backend have type checks and tests you can run locally. The quickest way is the
+project's test runner, which runs each step directly, logs it to `logs/`, and applies a timeout so a
+stuck command can never hang your session:
+
+```bash
+npm test                                                 # Rust + Svelte/TypeScript checks & tests
+npm run verify                                           # the above, plus a production build
+```
+
+The raw toolchain commands still work if you prefer them:
 
 ```bash
 npm run check                                            # Svelte/TypeScript

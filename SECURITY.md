@@ -18,6 +18,8 @@ except to the corresponding provider's API.
 
 ## Local writes
 
-Steam Vault modifies local Steam files (`config/cloudstorage/cloud-storage-namespace-1.json`
-and `config/shortcuts.vdf`). Every write is preceded by a timestamped backup under the app data
-directory, and writes are refused while Steam is running.
+Steam Vault modifies local Steam files: collections
+(`config/cloudstorage/cloud-storage-namespace-1.json`), non-Steam shortcuts (`config/shortcuts.vdf`),
+the library-folder registry (`libraryfolders.vdf`, every copy), and an app's manifest
+(`appmanifest_<appid>.acf`) when it is moved between libraries. Every write is preceded by a
+timestamped backup under the app data directory, and writes are refused while Steam is running.

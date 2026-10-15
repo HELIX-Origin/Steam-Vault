@@ -44,6 +44,10 @@ The **Organize** view exposes the same kinds as a one-shot action: choose a sort
 the collections it would create, then write them all in a single, backed-up operation. Options
 include a name prefix, an installed-only filter, and a replace-membership mode.
 
+The same view includes a **filter builder** — Allowed / Required / Excluded term lists plus a name
+search and a kind selector — with a live count of matching games, so you can narrow exactly which
+games a sorting option acts on before you apply it.
+
 ## 🔄 Compute, review, apply
 
 AutoCats run in two stages:

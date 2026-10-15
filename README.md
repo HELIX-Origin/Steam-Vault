@@ -85,13 +85,24 @@ npm run log -- check npm run check
 npm run log -- rust  cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-Static checks:
+### Tests & verification
+
+Every check runs through an agent-friendly runner that streams output live, writes a timestamped
+transcript per step to [`logs/`](./logs), **closes stdin** (so no step can block waiting for
+input), enforces a **per-step timeout** (default 15 min), and prints a compact PASS/FAIL summary
+with a reliable exit code. Run it instead of invoking the tools by hand:
 
 ```bash
-npm run check                                              # svelte-check
-cargo check --manifest-path src-tauri/Cargo.toml           # Rust
-cargo test  --manifest-path src-tauri/Cargo.toml           # Rust tests
+npm test                 # default: cargo check + cargo test + svelte-check
+npm run test:rust        # cargo test only
+npm run test:frontend    # svelte-kit sync + svelte-check only
+npm run verify           # check + tests + svelte-check + vite build
+npm run test:all         # fmt + clippy + check + tests + svelte-check + build
 ```
+
+Under the hood it is `node scripts/test.mjs [suite …]`; add `--list` to see the suites, `-t 300`
+for a different timeout in seconds, and `-- <args>` to forward extra arguments to the `cargo`
+steps (for example `npm run test:rust -- some_test_name`).
 
 ## 🎨 UI direction
 
@@ -106,7 +117,9 @@ remains tracked as deferred work.
 Early development. **M1 (Foundation)** delivered Steam discovery, library/collection reads and
 writes, non-Steam shortcuts, the metadata provider layer, AutoCats, and the app shell.
 **M2 (Whole-Library Organizing)** adds the custom title bar, external platform detection and
-import, the full owned-library sync, and collection creation from any sorting option.
+import, the full owned-library sync, and collection creation from any sorting option. Recent work
+adds a **filter builder** in Organize, **non-Steam source** settings (enable/disable and extra
+folders), and a **Storage** view for inspecting libraries and drives and moving games between them.
 
 ## 📖 Documentation
 

@@ -18,6 +18,10 @@ Steam Vault reads **local, authoritative sources** — launcher manifests, regis
 folders that the launchers themselves write. It never scrapes a storefront, never signs in on your
 behalf, and never launches another launcher.
 
+Which sources are consulted is configurable. Under **Settings → Non-Steam sources** you enable or
+disable each launcher, add **extra folders** to search beyond the standard locations, and choose
+whether to scan other mounted drives. Disabled sources are skipped entirely.
+
 ## 🎮 Supported platforms
 
 | Platform | How it is detected |

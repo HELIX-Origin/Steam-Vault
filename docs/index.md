@@ -167,8 +167,8 @@ Explore the complete guides and references on this site. The
 </div>
 </div>
 <p>
-Steam Vault is in active development (Milestone&nbsp;M2). Build it from source today; packaged
-installers are planned. See
+Steam Vault is in active development (M1 and M2 shipped; Milestone&nbsp;M3 in progress). Build it
+from source today; packaged installers are planned. See
 <a href="{{ '/docs/Getting-Started/' | relative_url }}">Getting Started</a> for the walkthrough.
 </p>
 <div class="header-actions">

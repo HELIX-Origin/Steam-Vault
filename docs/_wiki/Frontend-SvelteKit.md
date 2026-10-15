@@ -23,19 +23,16 @@ The frontend is a **SvelteKit** application in static SPA mode, built with **Sve
 | `src/app.css` | The global theme: dark surfaces, glass panels, buttons, pills, and form styles. |
 | `src/lib/types.ts` | TypeScript mirrors of the Rust serde models. |
 | `src/lib/api.ts` | Typed `invoke` wrappers, one per command, plus an error-message helper. |
-| `src/lib/stores.ts` | Writable stores: settings, providers, install, games, collections, status, loading, error. |
-| `src/app.css` | The global theme: dark surfaces, glass panels, buttons, pills, and form styles. |
-| `src/lib/types.ts` | TypeScript mirrors of the Rust serde models. |
-| `src/lib/api.ts` | Typed `invoke` wrappers, one per command, plus an error-message helper. |
-| `src/lib/stores.ts` | Writable stores: settings, providers, install, games, collections, owned library, platform scan, status, loading, error. |
+| `src/lib/stores.ts` | Writable stores: settings, providers, install, games, collections, Steam-running, owned library, platform scan, loading, and error. |
 | `src/lib/platform.ts` | Platform detection for window-control rendering. |
 | `src/lib/components/WindowControls.svelte` | Custom title-bar controls (macOS traffic lights / Windows buttons). |
 | `src/routes/+layout.svelte` | The app shell: custom title bar, sidebar navigation, and status. |
 | `src/routes/+page.svelte` | Dashboard. |
 | `src/routes/library/+page.svelte` | Library. |
+| `src/routes/storage/+page.svelte` | Storage: libraries, drives, and moving games between them. |
 | `src/routes/collections/+page.svelte` | Collections. |
 | `src/routes/platforms/+page.svelte` | External-platform detection and import. |
-| `src/routes/organize/+page.svelte` | Create collections from a sorting option. |
+| `src/routes/organize/+page.svelte` | Create collections from a sorting option, with the Allowed / Required / Excluded filter builder. |
 | `src/routes/settings/+page.svelte` | Settings. |
 
 ## 🔌 Talking to the backend
@@ -55,9 +52,9 @@ stays idiomatic while matching the Rust signatures.
 
 ## 🧩 Reactivity
 
-Svelte 5 runes and props are used for component state, and the shared `writable` stores carry
-cross-view state (the loaded library, collections, and settings). Pages read stores with the `$`
-prefix and update them after each command.
+Components use Svelte 5 in **legacy (non-runes) mode** — `let` declarations, props, and reactive
+`$:` statements — while shared `writable` stores carry cross-view state (the loaded library,
+collections, and settings). Pages read stores with the `$` prefix and update them after each command.
 
 ## 🎨 Theming
 
