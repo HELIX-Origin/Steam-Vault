@@ -24,9 +24,63 @@ use crate::error::AppResult;
 
 pub use detectors::scan_all;
 
-/// A storefront / launcher Steam Vault can detect games from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+/// Per-platform detection preferences (persisted in `settings.json`).
+///
+/// When no entry exists for a platform it is scanned with its default,
+/// built-in sources.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PlatformSource {
+    /// Stable platform id (see [`Platform::id`]).
+    pub id: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Extra folders to scan for this platform (for example on an external
+    /// drive that is not registered with the launcher's own manifest store).
+    #[serde(default)]
+    pub roots: Vec<String>,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Options controlling one [`scan_all`] pass.
+#[derive(Debug, Clone, Default)]
+pub struct ScanConfig {
+    /// Per-platform enable flags and extra folders, from settings.
+    pub sources: Vec<PlatformSource>,
+    /// Also look on every mounted drive for well-known game folders.
+    pub include_other_drives: bool,
+}
+
+impl ScanConfig {
+    /// Whether a platform should be scanned at all (defaults to enabled).
+    pub fn is_enabled(&self, platform: Platform) -> bool {
+        self.sources
+            .iter()
+            .find(|source| source.id == platform.id())
+            .map(|source| source.enabled)
+            .unwrap_or(true)
+    }
+
+    /// Folders explicitly configured for a platform.
+    pub fn roots_for(&self, platform: Platform) -> Vec<String> {
+        self.sources
+            .iter()
+            .filter(|source| source.id == platform.id())
+            .flat_map(|source| source.roots.iter().cloned())
+            .collect()
+    }
+}
+
+/// A storefront / launcher Steam Vault can detect games from.
+///
+/// Serialized with the same stable ids surfaced by [`Platform::id`]
+/// (`steam`, `gog`, `epic`, `battlenet`, …) so the frontend can index it
+/// directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Platform {
     Steam,
     Gog,
@@ -163,9 +217,7 @@ pub fn load_map() -> BTreeMap<u32, Platform> {
         .and_then(|text| serde_json::from_str::<BTreeMap<String, String>>(&text).ok())
         .map(|map| {
             map.into_iter()
-                .filter_map(|(key, value)| {
-                    key.parse::<u32>().ok().zip(Platform::from_id(&value))
-                })
+                .filter_map(|(key, value)| key.parse::<u32>().ok().zip(Platform::from_id(&value)))
                 .collect()
         })
         .unwrap_or_default()

@@ -700,9 +700,16 @@ pub struct ImportResult {
 }
 
 /// Scan the machine for games installed by GOG, Epic, itch.io, and others.
+///
+/// Honours the per-platform preferences saved in Settings and looks on every
+/// mounted drive, so games installed on an external drive are discovered too.
 #[tauri::command]
-pub fn detect_platforms() -> PlatformScan {
-    platforms::scan_all()
+pub fn detect_platforms(state: State<'_, AppState>) -> PlatformScan {
+    let settings = state.settings_snapshot();
+    platforms::scan_all(&platforms::ScanConfig {
+        sources: settings.platform_sources,
+        include_other_drives: true,
+    })
 }
 
 /// Import selected platform games into Steam as non-Steam shortcuts.

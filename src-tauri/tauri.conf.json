@@ -33,8 +33,10 @@
     "longDescription": "Steam Vault is a cross-platform Steam library organizer. It reads your local Steam data to categorize, filter, and auto-organize games, and manages non-Steam shortcuts with SteamGridDB artwork.",
     "icon": [
       "icons/32x32.png",
+      "icons/64x64.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
+      "icons/icon.png",
       "icons/icon.icns",
       "icons/icon.ico"
     ]

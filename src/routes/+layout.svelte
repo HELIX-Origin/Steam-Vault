@@ -31,7 +31,9 @@
 <div class="app">
   <header class="titlebar" data-tauri-drag-region>
     <div class="tb-brand" data-tauri-drag-region>
-      <div class="tb-mark" data-tauri-drag-region>SV</div>
+      <div class="tb-mark" data-tauri-drag-region>
+        <img src="/logo.svg" alt="Steam Vault" width="28" height="28" />
+      </div>
       <div class="tb-titles" data-tauri-drag-region>
         <span class="tb-title" data-tauri-drag-region>Steam Vault</span>
         <span class="tb-sub" data-tauri-drag-region>Library organizer</span>
@@ -101,14 +103,17 @@
   .tb-mark {
     width: 28px;
     height: 28px;
-    border-radius: 9px;
+    border-radius: 8px;
+    overflow: hidden;
     display: grid;
     place-items: center;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.02em;
-    background: linear-gradient(135deg, rgba(72, 216, 242, 0.32), rgba(176, 108, 255, 0.32));
-    border: 1px solid var(--border-strong);
+    flex-shrink: 0;
+  }
+
+  .tb-mark img {
+    width: 100%;
+    height: 100%;
+    display: block;
   }
 
   .tb-titles {

@@ -170,6 +170,16 @@ export interface Settings {
   language: string;
   autoBackup: boolean;
   autoCats: AutoCat[];
+  platformSources: PlatformSource[];
+}
+
+/** Per-platform detection preference (mirrors the Rust `PlatformSource`). */
+export interface PlatformSource {
+  /** Stable platform id: steam, gog, epic, itch, ubisoft, ea, battlenet, … */
+  id: string;
+  enabled: boolean;
+  /** Extra folders to scan for this platform (for example an external drive). */
+  roots: string[];
 }
 
 export interface AutoCatAssignment {

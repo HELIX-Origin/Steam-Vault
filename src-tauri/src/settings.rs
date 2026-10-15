@@ -26,6 +26,9 @@ pub struct Settings {
     pub auto_backup: bool,
     #[serde(default)]
     pub auto_cats: Vec<crate::autocat::AutoCat>,
+    /// Non-Steam source detection preferences (enable flags + extra folders).
+    #[serde(default)]
+    pub platform_sources: Vec<crate::platforms::PlatformSource>,
 }
 
 fn default_true() -> bool {
@@ -45,6 +48,7 @@ impl Default for Settings {
             language: "en".into(),
             auto_backup: true,
             auto_cats: Vec::new(),
+            platform_sources: Vec::new(),
         }
     }
 }

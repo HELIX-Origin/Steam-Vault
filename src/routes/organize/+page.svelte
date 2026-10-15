@@ -1,11 +1,14 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
-  import { error, ownedLibrary } from "$lib/stores";
+  import { collections, error, games, ownedLibrary } from "$lib/stores";
   import type {
     CategorizationPlan,
     CategorizeKind,
     CategorizeRequest,
+    Filter,
+    Game,
+    GameKind,
     MetadataSyncResult
   } from "$lib/types";
 
@@ -33,16 +36,85 @@
   let meta: MetadataSyncResult | null = null;
   let applied: string | null = null;
 
+  // Filter builder (Depressurizer-style Allowed / Required / Excluded).
+  let filterAllowed: string[] = [];
+  let filterRequired: string[] = [];
+  let filterExcluded: string[] = [];
+  let filterSearch = "";
+  let filterKind: GameKind | "" = "";
+
+  $: collectionNames = $collections
+    .map((collection) => collection.name)
+    .sort((a, b) => a.localeCompare(b));
+  $: gameCount = $games.length;
+  $: matchCount = $games.filter((game) => matchesFilter(game)).length;
+
+  function hasCollection(game: Game, name: string): boolean {
+    return game.collections.some((entry) => entry.toLowerCase() === name.toLowerCase());
+  }
+
+  /** Mirror of the backend `filter::matches` so the count updates live. */
+  function matchesFilter(game: Game): boolean {
+    if (filterKind && game.kind !== filterKind) return false;
+    const search = filterSearch.trim().toLowerCase();
+    if (search && !game.name.toLowerCase().includes(search)) return false;
+    if (filterAllowed.length && !filterAllowed.some((name) => hasCollection(game, name))) {
+      return false;
+    }
+    if (filterRequired.length && !filterRequired.every((name) => hasCollection(game, name))) {
+      return false;
+    }
+    if (filterExcluded.length && filterExcluded.some((name) => hasCollection(game, name))) {
+      return false;
+    }
+    return true;
+  }
+
+  function currentFilter(): Filter | null {
+    const search = filterSearch.trim();
+    if (
+      !filterAllowed.length &&
+      !filterRequired.length &&
+      !filterExcluded.length &&
+      !search &&
+      !filterKind
+    ) {
+      return null;
+    }
+    return {
+      allowed: filterAllowed,
+      required: filterRequired,
+      excluded: filterExcluded,
+      search: search || null,
+      kind: filterKind || null
+    };
+  }
+
+  function clearFilter() {
+    filterAllowed = [];
+    filterRequired = [];
+    filterExcluded = [];
+    filterSearch = "";
+    filterKind = "";
+  }
+
   onMount(async () => {
     try {
-      ownedLibrary.set(await api.getOwnedLibrary());
+      const [owned, library, savedCollections] = await Promise.all([
+        api.getOwnedLibrary(),
+        api.loadLibrary(),
+        api.loadCollections()
+      ]);
+      ownedLibrary.set(owned);
+      games.set(library);
+      collections.set(savedCollections);
     } catch (e) {
       error.set(errorMessage(e));
     }
   });
 
   $: current = options.find((option) => option.kind === kind);
-  $: optionsKey = `${kind}|${prefix}|${removeExisting}|${onlyInstalled}`;
+  $: optionsKey = `${kind}|${prefix}|${removeExisting}|${onlyInstalled}|${JSON.stringify(currentFilter())}`;
 
   let lastKey = "";
   $: if (optionsKey !== lastKey) {
@@ -56,7 +128,8 @@
       prefix: prefix.trim() || null,
       removeExisting,
       onlyInstalled,
-      fetchMetadata: true
+      fetchMetadata: true,
+      filter: currentFilter()
     };
   }
 
@@ -149,6 +222,55 @@
 </div>
 
 <div class="glass-strong" style="padding:1rem 1.1rem;margin-bottom:1rem">
+  <div class="row-between">
+    <div class="section-title">Filter (optional)</div>
+    <span class="muted-sm">{matchCount} of {gameCount} games match</span>
+  </div>
+  <p class="muted-sm" style="margin:0 0 0.7rem">
+    Narrow which games are organized before collections are created. Empty fields are ignored.
+    Hold Ctrl (⌘) to pick several per list.
+  </p>
+  <div class="filter-grid">
+    <label class="field">
+      <span>Allowed (any of)</span>
+      <select multiple bind:value={filterAllowed}>
+        {#each collectionNames as name (name)}<option value={name}>{name}</option>{/each}
+      </select>
+    </label>
+    <label class="field">
+      <span>Required (all of)</span>
+      <select multiple bind:value={filterRequired}>
+        {#each collectionNames as name (name)}<option value={name}>{name}</option>{/each}
+      </select>
+    </label>
+    <label class="field">
+      <span>Excluded (none of)</span>
+      <select multiple bind:value={filterExcluded}>
+        {#each collectionNames as name (name)}<option value={name}>{name}</option>{/each}
+      </select>
+    </label>
+    <label class="field">
+      <span>Name contains</span>
+      <input bind:value={filterSearch} placeholder="e.g. doom" />
+    </label>
+    <label class="field">
+      <span>Kind</span>
+      <select bind:value={filterKind}>
+        <option value="">Any</option>
+        <option value="steam">Steam</option>
+        <option value="shortcut">Non-Steam shortcut</option>
+      </select>
+    </label>
+  </div>
+  <div class="row" style="gap:0.7rem;margin-top:0.7rem">
+    <button class="btn btn-ghost" onclick={clearFilter}>Clear filter</button>
+    {#if collectionNames.length === 0}
+      <span class="muted-sm">No collections to filter by yet — create some first.</span>
+    {/if}
+  </div>
+</div>
+
+<div class="glass-strong" style="padding:1rem 1.1rem;margin-bottom:1rem">
   <div class="section-title">Create collections from…</div>
   <div class="grid choices">
     {#each options as option (option.kind)}
@@ -225,6 +347,27 @@
   .choices {
     grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
     margin: 0.8rem 0 1rem;
+  }
+
+  .filter-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.7rem;
+  }
+
+  .filter-grid select[multiple] {
+    min-height: 96px;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .field span {
+    font-size: 0.78rem;
+    color: var(--text-mute);
   }
 
   .choice {

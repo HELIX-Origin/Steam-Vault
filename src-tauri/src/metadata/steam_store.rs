@@ -1,7 +1,7 @@
 //! Keyless Steam store metadata.
 //!
 //! Endpoints:
-//! - `https://store.steampowered.com/api/appdetails?appids=<csv>` — genres,
+//! - `https://store.steampowered.com/api/appdetails?appids=<id>` — genres,
 //!   developers, publishers, feature-flag categories, release date,
 //!   header/capsule images, and the Metacritic critic score.
 //! - `https://store.steampowered.com/actions/ajaxgetstoretags?appid=<id>` —
@@ -9,12 +9,22 @@
 
 use std::collections::BTreeMap;
 
+use futures::StreamExt;
 use serde_json::Value;
 
 use crate::error::AppResult;
 use crate::steam::models::AppMeta;
 
-/// Fetch normalized metadata for up to ~100 appids in one request.
+/// How many `appdetails` requests may be in flight at once. Steam tolerates a
+/// modest burst, but we stay conservative to avoid tripping rate limiting.
+const MAX_CONCURRENT_REQUESTS: usize = 8;
+
+/// Fetch normalized metadata for a set of app ids.
+///
+/// Steam's bulk form (`appids=1,2,3`) is **no longer accepted** — it returns
+/// HTTP 400 — so each app id is requested individually with bounded
+/// concurrency. Individual failures are skipped rather than failing the batch,
+/// so callers still receive whatever the store answered.
 pub async fn fetch_app_details(
     client: &reqwest::Client,
     app_ids: &[u32],
@@ -26,31 +36,41 @@ pub async fn fetch_app_details(
         return Ok(out);
     }
 
-    let ids = app_ids
-        .iter()
-        .map(u32::to_string)
-        .collect::<Vec<_>>()
-        .join(",");
-    let url =
-        format!("https://store.steampowered.com/api/appdetails?appids={ids}&cc={cc}&l={lang}");
-    let response = client.get(&url).send().await?;
-    let value: Value = response.json().await?;
+    let results: Vec<Option<(u32, AppMeta)>> = futures::stream::iter(app_ids.iter().copied())
+        .map(|app_id| fetch_one(client, app_id, cc, lang))
+        .buffer_unordered(MAX_CONCURRENT_REQUESTS)
+        .collect()
+        .await;
 
-    if let Some(map) = value.as_object() {
-        for (key, entry) in map {
-            let Ok(app_id) = key.parse::<u32>() else {
-                continue;
-            };
-            if !entry.get("success").and_then(Value::as_bool).unwrap_or(false) {
-                continue;
-            }
-            let Some(data) = entry.get("data") else {
-                continue;
-            };
-            out.insert(app_id, parse_details(app_id, data));
-        }
+    for (app_id, meta) in results.into_iter().flatten() {
+        out.insert(app_id, meta);
     }
     Ok(out)
+}
+
+/// Fetch one app's store details.
+///
+/// Returns `None` when the store has no data for the id (not a store app,
+/// delisted) or the request fails — callers treat those as "unavailable".
+async fn fetch_one(
+    client: &reqwest::Client,
+    app_id: u32,
+    cc: &str,
+    lang: &str,
+) -> Option<(u32, AppMeta)> {
+    let url =
+        format!("https://store.steampowered.com/api/appdetails?appids={app_id}&cc={cc}&l={lang}");
+    let response = client.get(&url).send().await.ok()?;
+    if !response.status().is_success() {
+        return None;
+    }
+    let value: Value = response.json().await.ok()?;
+    let entry = value.get(app_id.to_string())?;
+    if !entry.get("success").and_then(Value::as_bool).unwrap_or(false) {
+        return None;
+    }
+    let data = entry.get("data")?;
+    Some((app_id, parse_details(app_id, data)))
 }
 
 fn parse_details(app_id: u32, data: &Value) -> AppMeta {

@@ -6,7 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use super::{Platform, PlatformGame, PlatformScan, PlatformStatus};
+use super::{Platform, PlatformGame, PlatformScan, PlatformStatus, ScanConfig};
 
 /// The outcome of one detector run.
 struct Detection {
@@ -40,33 +40,79 @@ const ORDER: [Platform; 10] = [
 ];
 
 /// Scan every supported non-Steam platform on this machine.
-pub fn scan_all() -> PlatformScan {
+///
+/// Detection honours the user's per-platform preferences ([`ScanConfig`]) and
+/// folds in two extra sources so games installed outside a launcher's default
+/// location — notably on an external drive — are still discovered:
+/// explicitly configured folders, and well-known game folders found on every
+/// mounted drive.
+pub fn scan_all(config: &ScanConfig) -> PlatformScan {
     let mut by_platform: BTreeMap<Platform, Detection> = BTreeMap::new();
 
-    merge(&mut by_platform, Platform::Gog, detect_gog());
-    merge(&mut by_platform, Platform::Epic, detect_epic());
-    merge(&mut by_platform, Platform::Itch, detect_itch());
-    merge(&mut by_platform, Platform::Amazon, detect_amazon());
+    if config.is_enabled(Platform::Gog) {
+        merge(&mut by_platform, Platform::Gog, detect_gog());
+    }
+    if config.is_enabled(Platform::Epic) {
+        merge(&mut by_platform, Platform::Epic, detect_epic());
+    }
+    if config.is_enabled(Platform::Itch) {
+        merge(&mut by_platform, Platform::Itch, detect_itch());
+    }
+    if config.is_enabled(Platform::Amazon) {
+        merge(&mut by_platform, Platform::Amazon, detect_amazon());
+    }
     for (platform, detection) in detect_registry_based() {
-        merge(&mut by_platform, platform, detection);
+        if config.is_enabled(platform) {
+            merge(&mut by_platform, platform, detection);
+        }
     }
 
-    let mut xbox = Detection::empty();
-    xbox.note = Some(
-        "Microsoft Store / Game Pass titles are not registered in the classic Uninstall registry \
-         and are not detected yet."
-            .into(),
-    );
-    merge(&mut by_platform, Platform::Xbox, xbox);
+    // User-configured folders plus well-known folders on every mounted drive.
+    for platform in ORDER {
+        if !config.is_enabled(platform) {
+            continue;
+        }
+        let mut roots = config.roots_for(platform);
+        if config.include_other_drives {
+            roots.extend(drive_candidates(platform));
+        }
+        roots.sort();
+        roots.dedup();
+        if !roots.is_empty() {
+            merge(
+                &mut by_platform,
+                platform,
+                detect_custom_roots(platform, &roots),
+            );
+        }
+    }
+
+    if config.is_enabled(Platform::Xbox) {
+        let mut xbox = Detection::empty();
+        xbox.note = Some(
+            "Microsoft Store / Game Pass titles are not registered in the classic Uninstall \
+             registry, so only folders named XboxGames on your drives are detected."
+                .into(),
+        );
+        merge(&mut by_platform, Platform::Xbox, xbox);
+    }
 
     let mut games = Vec::new();
     let mut platforms = Vec::new();
     let mut seen: BTreeSet<(Platform, String)> = BTreeSet::new();
 
     for platform in ORDER {
-        let detection = by_platform
-            .remove(&platform)
-            .unwrap_or_else(Detection::empty);
+        let enabled = config.is_enabled(platform);
+        let detection = if enabled {
+            by_platform
+                .remove(&platform)
+                .unwrap_or_else(Detection::empty)
+        } else {
+            Detection::empty()
+        };
+
+        let roots = detection.roots;
+        let note = detection.note;
         let mut count = 0;
         for game in detection.games {
             if seen.insert((platform, dedup_key(&game))) {
@@ -74,17 +120,100 @@ pub fn scan_all() -> PlatformScan {
                 count += 1;
             }
         }
+        let available = !roots.is_empty() || count > 0;
+
         platforms.push(PlatformStatus {
             platform,
             label: platform.label().to_string(),
-            available: !detection.roots.is_empty() || count > 0,
+            available,
             count,
-            roots: detection.roots,
-            notes: detection.note,
+            roots,
+            notes: if enabled {
+                note
+            } else {
+                Some("Disabled in Settings.".into())
+            },
         });
     }
 
     PlatformScan { games, platforms }
+}
+
+/// Well-known install folder names per platform, searched on every drive.
+fn drive_folder_names(platform: Platform) -> &'static [&'static str] {
+    match platform {
+        Platform::Gog => &["GOG Games", "GOG Galaxy", "Games\\GOG"],
+        Platform::Epic => &["Epic Games", "Program Files\\Epic Games"],
+        Platform::Itch => &["itch", "Games\\itch"],
+        Platform::Ubisoft => &["Ubisoft", "Ubisoft Game Launcher", "Games\\Ubisoft"],
+        Platform::Ea => &["EA Games", "Origin Games", "Program Files\\EA Games"],
+        Platform::BattleNet => &["Battle.net", "Games\\Battle.net"],
+        Platform::Amazon => &["Amazon Games", "Games\\Amazon Games"],
+        Platform::Rockstar => &["Rockstar Games", "Games\\Rockstar Games"],
+        Platform::Xbox => &["XboxGames", "Games\\XboxGames"],
+        Platform::Steam | Platform::Other => &[],
+    }
+}
+
+/// Every mounted drive root (`C:\`, `D:\`, …). Windows only; elsewhere empty.
+fn drive_roots() -> Vec<PathBuf> {
+    #[cfg(windows)]
+    {
+        ('A'..='Z')
+            .map(|letter| PathBuf::from(format!("{letter}:\\")))
+            .filter(|path| path.is_dir())
+            .collect()
+    }
+    #[cfg(not(windows))]
+    {
+        Vec::new()
+    }
+}
+
+/// Well-known folders for a platform that exist on any mounted drive.
+fn drive_candidates(platform: Platform) -> Vec<String> {
+    let names = drive_folder_names(platform);
+    if names.is_empty() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for drive in drive_roots() {
+        for name in names {
+            let candidate = drive.join(name);
+            if candidate.is_dir() {
+                out.push(candidate.display().to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Discover one game per immediate subdirectory of each configured folder.
+fn detect_custom_roots(platform: Platform, roots: &[String]) -> Detection {
+    let mut detection = Detection::empty();
+    for root in roots {
+        detection.roots.push(root.clone());
+        let Ok(entries) = std::fs::read_dir(Path::new(root)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            detection.games.push(PlatformGame {
+                name: entry.file_name().to_string_lossy().to_string(),
+                platform,
+                platform_id: None,
+                install_dir: Some(path.display().to_string()),
+                exe: find_executable(&path, 3),
+                size_on_disk: None,
+                launch_uri: None,
+                source: Some("Folder scan".into()),
+            });
+        }
+    }
+    detection
 }
 
 /// A stable identity for de-duplicating the same game across detectors.

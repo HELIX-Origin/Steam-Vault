@@ -8,6 +8,38 @@
   let busy = false;
   let saved = false;
 
+  /** Non-Steam sources surfaced in Settings (mirrors the backend platform ids). */
+  const platformList: { id: string; label: string }[] = [
+    { id: "gog", label: "GOG" },
+    { id: "epic", label: "Epic Games" },
+    { id: "itch", label: "itch.io" },
+    { id: "ubisoft", label: "Ubisoft Connect" },
+    { id: "ea", label: "EA" },
+    { id: "battlenet", label: "Battle.net" },
+    { id: "amazon", label: "Amazon Games" },
+    { id: "rockstar", label: "Rockstar" },
+    { id: "xbox", label: "Xbox / Microsoft Store" },
+    { id: "other", label: "Other studios" }
+  ];
+
+  let sources: { id: string; label: string; enabled: boolean; rootsText: string }[] = [];
+
+  /** Project saved preferences onto the fixed platform list. */
+  function buildSources() {
+    const savedById = new Map(
+      (form?.platformSources ?? []).map((source) => [source.id, source])
+    );
+    sources = platformList.map((platform) => {
+      const entry = savedById.get(platform.id);
+      return {
+        id: platform.id,
+        label: platform.label,
+        enabled: entry?.enabled ?? true,
+        rootsText: (entry?.roots ?? []).join("; ")
+      };
+    });
+  }
+
   onMount(async () => {
     try {
       const [loaded, detected] = await Promise.all([api.getSettings(), api.detectSteam()]);
@@ -16,6 +48,7 @@
       install.set(detected);
       if (!form.steamRoot && detected) form.steamRoot = detected.root;
       if (!form.accountId3 && detected?.accounts[0]) form.accountId3 = detected.accounts[0].id3;
+      buildSources();
     } catch (e) {
       error.set(errorMessage(e));
     }
@@ -37,6 +70,14 @@
 
   async function save() {
     if (!form) return;
+    form.platformSources = sources.map((source) => ({
+      id: source.id,
+      enabled: source.enabled,
+      roots: source.rootsText
+        .split(";")
+        .map((value) => value.trim())
+        .filter(Boolean)
+    }));
     busy = true;
     try {
       const updated = await api.saveSettings(form);
@@ -126,6 +167,37 @@
     </section>
 
     <section class="glass-strong card">
+      <h2 class="section-title">Non-Steam sources</h2>
+      <p class="muted-sm">
+        Choose which launchers are scanned for games, and add extra folders — handy when your games
+        live on an external drive. Separate multiple folders with a semicolon.
+      </p>
+      <div class="sources">
+        {#each sources as source (source.id)}
+          <div class="source">
+            <label class="row" style="gap:0.5rem;margin:0">
+              <input
+                type="checkbox"
+                checked={source.enabled}
+                style="width:auto"
+                onchange={(event) => (source.enabled = event.currentTarget.checked)}
+              />
+              <strong>{source.label}</strong>
+            </label>
+            <input
+              placeholder="Extra folder(s)…"
+              value={source.rootsText}
+              oninput={(event) => (source.rootsText = event.currentTarget.value)}
+            />
+          </div>
+        {/each}
+      </div>
+      <p class="muted-sm" style="margin-top:0.8rem">
+        Steam Vault also looks on every mounted drive for well-known game folders.
+      </p>
+    </section>
+
+    <section class="glass-strong card">
       <h2 class="section-title">Preferences</h2>
       <label class="row" style="gap:0.5rem;margin-bottom:1rem">
         <input type="checkbox" bind:checked={form.autoBackup} style="width:auto" />
@@ -157,5 +229,23 @@
     padding: 0.35rem 0;
     border-bottom: 1px solid var(--border);
     margin-top: 0.4rem;
+  }
+
+  .sources {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-top: 0.8rem;
+  }
+
+  .source {
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) 1.3fr;
+    align-items: center;
+    gap: 0.7rem;
+  }
+
+  .source input[type="checkbox"] {
+    margin: 0;
   }
 </style>

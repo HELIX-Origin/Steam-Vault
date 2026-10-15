@@ -16,12 +16,23 @@ mod settings;
 mod steam;
 
 use commands::AppState;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::new())
+        .setup(|app| {
+            // Pin the taskbar/window icon to the Steam Vault brand mark so the
+            // frameless window never falls back to a generic default icon.
+            if let (Some(window), Some(icon)) =
+                (app.get_webview_window("main"), app.default_window_icon())
+            {
+                let _ = window.set_icon(icon.clone());
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             commands::get_providers,
             commands::detect_steam,
