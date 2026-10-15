@@ -116,6 +116,16 @@ likely to break it.
 <p>High-performance embedded metadata cache with WAL mode and zero-touch migration.</p>
 </div>
 <div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🗄️</span>
+<h3>Community Catalog</h3>
+<p>Precompiled offline database of curated multi-platform games with online sync and archive portability.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🏷️</span>
+<h3>Console Tagging</h3>
+<p>Determines console platforms for ROMs, renders UI badges, and writes binary shortcut tags for Steam grouping.</p>
+</div>
+<div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🛡️</span>
 <h3>Safe writes</h3>
 <p>Timestamped backups before every write, and changes are refused while Steam is running.</p>
@@ -140,6 +150,7 @@ Steam Vault combines multiple metadata sources. Only <strong>Steam Web API</stro
 <tr><th>Provider</th><th>Key</th><th>Provides</th></tr>
 </thead>
 <tbody>
+<tr><td>Community Catalog</td><td>No</td><td>Curated offline seed with multi-platform OS and console metadata</td></tr>
 <tr><td>Steam Store</td><td>No</td><td>Genres, developers, publishers, release dates, flags</td></tr>
 <tr><td>Steam Store Search</td><td>No</td><td>Keyless title-to-appid matching for shortcuts &amp; indies</td></tr>
 <tr><td>Steam Web API</td><td>Yes</td><td>Owned games, playtime, player summaries</td></tr>
@@ -148,7 +159,7 @@ Steam Vault combines multiple metadata sources. Only <strong>Steam Web API</stro
 <tr><td>VNDB</td><td>No</td><td>Visual novel metadata, developers, release dates, tags</td></tr>
 <tr><td>PCGamingWiki</td><td>No</td><td>Engine, developers, publishers, release dates</td></tr>
 <tr><td>Local Sniffer</td><td>No</td><td>itch manifests, Ren'Py, RPG Maker, PE VersionInfo headers</td></tr>
-<tr><td>Wikipedia</td><td>No</td><td>Article summaries</td></tr>
+<tr><td>Wikipedia</td><td>No</td><td>Infobox parser: developers, publishers, genres, release year, console platforms, and summaries</td></tr>
 </tbody>
 </table>
 <p>

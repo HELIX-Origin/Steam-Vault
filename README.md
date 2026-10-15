@@ -32,6 +32,8 @@ SvelteKit frontend) that targets **stable, documented data sources** rather than
   Steam Web API so everything you own can be organized.
 - **External platform & emulator import** — detect games installed by GOG, Epic Games, itch.io, Amazon Games,
   Ubisoft Connect, EA, Battle.net, and Rockstar, as well as ROMs across 11 popular emulators (Dolphin, PCSX2, DuckStation, Project64, PPSSPP, RPCS3, Citra, Cemu, Ryujinx, mGBA, Snes9x, RetroArch), then import them as non-Steam shortcuts with tailored launch parameters.
+- **Console platform detection & shortcut tagging** — automatically resolves specific console hardware (GameCube, Wii, PS1, PS2, N64, SNES, GBA, etc.) from ROM extensions and emulator paths, displays console badges in the Platforms view, and writes console platforms directly into Steam's binary `shortcuts.vdf` `tags` for native category grouping.
+- **Embedded Community Game Catalog** — precompiled SQLite seed database of curated multi-platform games (`catalog_seed.bin`) for instant offline title and metadata lookup, with online sync from GitHub releases (`Steam-Vault-Catalog`) and archive export/import.
 - **Advanced filter builder & dynamic smart collections** — Allowed (OR), Required (AND), Excluded (NOT), text search, named preset saving/loading, and Valve `filterSpec` smart collections with one-click live re-evaluation.
 - **AutoCats** — automatic categories from genre, developer, publisher, store flags, tags, release
   year, and user score, with multi-entity splitting and platform fallbacks.
@@ -48,6 +50,7 @@ SvelteKit frontend) that targets **stable, documented data sources** rather than
 
 | Provider | Key required | Purpose |
 | --- | --- | --- |
+| **Community Game Catalog** | ❌ No | Curated offline database with multi-platform OS & console hardware |
 | **Steam Store** (`appdetails`) | ❌ No | Genres, developers, publishers, release dates, feature flags |
 | **Steam Store Search** | ❌ No | Match non-Steam & indie titles to official Steam app IDs |
 | **Steam Web API** | ✅ Yes | Owned games, playtime, player summaries |
@@ -56,7 +59,7 @@ SvelteKit frontend) that targets **stable, documented data sources** rather than
 | **VNDB** | ❌ No | Visual novel developers, publishers, release dates, tags, covers |
 | **PCGamingWiki** | ❌ No | Engine, developers, publishers, release dates |
 | **Local Game Sniffer** | ❌ No | itch.io manifests, Ren'Py, RPG Maker, and PE VersionInfo headers |
-| **Wikipedia** | ❌ No | Article summaries used as a fallback description |
+| **Wikipedia** | ❌ No | Infobox wikitext parser for console games, developers, publishers, genres, release year, and summaries |
 
 > **Note:** RAWG support is intentionally **not** included (the service is defunct). Steam Web API,
 > SteamGridDB, and IGDB are the **only** providers that require an API key.
@@ -121,17 +124,9 @@ platform-aware window controls) for a cleaner, more cohesive look. The full visu
 remains tracked as deferred work.
 
 ## 🗺️ Status
-
-Early development. **M1 (Foundation)** delivered Steam discovery, library/collection reads and
-writes, non-Steam shortcuts, the metadata provider layer, AutoCats, and the app shell.
-**M2 (Whole-Library Organizing)** adds the custom title bar, external platform detection and
-import, the full owned-library sync, and collection creation from any sorting option. Recent work
-adds a **filter builder** in Organize, refined **non-Steam source** settings with **Find folders**
-auto-detection, **Microsoft Store / Xbox Game Pass** detection, storefront launch URIs on import,
-custom per-shortcut platform re-tagging, automated log file cleanup, and a **Storage** view for
-inspecting libraries and drives and moving games between them.
-**M4 (Artwork)** adds the **Artwork** view for applying and removing custom grid, hero, logo, and
-icon art — from SteamGridDB or your own image files — for both Steam games and non-Steam shortcuts.
+ 
+- **v1.0.0 (Production Launch)** delivered Steam discovery, library/collection reads and writes, non-Steam shortcuts, whole owned-library sync, custom titlebar, external platform detection, storage manager, custom artwork manager, 30-language hand-rolled i18n localization, dynamic smart collections (`filterSpec`), embedded SQLite cache, and modern obsidian dark glassmorphism design.
+- **v1.1.0 (Catalog & Console Expansion)** adds the embedded Community Game Catalog seed (`catalog_seed.bin`) with online synchronization, high-precision console platform determination with UI badges, automated `shortcuts.vdf` binary console tagging, and the keyless Wikipedia Video Game & Console metadata infobox parser.
 
 ## 📖 Documentation
 

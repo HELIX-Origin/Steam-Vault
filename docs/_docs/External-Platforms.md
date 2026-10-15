@@ -46,23 +46,25 @@ Each platform is read from the config or library that its launcher writes:
 | **Emulators & ROMs** | Detects installed emulators (Dolphin, PCSX2, DuckStation, Project64, PPSSPP, RPCS3, Citra, Cemu, Ryujinx, mGBA, Snes9x, RetroArch) and scans their ROM folders |
 | **Other studios** | Windows Uninstall registry (publisher heuristic) |
 
-## 🕹️ Emulators and ROMs
+## 🕹️ Emulators, ROMs & Console Platforms
 
-Steam Vault can discover your installed emulators and recursively scan configured ROM libraries. Supported emulators include:
+Steam Vault discovers your installed emulators, inspects configuration files for ROM library paths, and determines the exact **console platform** for each title based on ROM extensions and emulator instances:
 
-- **Nintendo GameCube / Wii:** Dolphin Emulator
-- **Nintendo 64:** Project64, Mupen64Plus
-- **Sony PlayStation 1 & 2:** PCSX2, DuckStation
-- **Sony PlayStation 3 & Portable:** RPCS3, PPSSPP
-- **Nintendo 3DS, Wii U & Switch:** Citra, Cemu, Ryujinx
-- **Retro Handhelds & Consoles:** mGBA, Snes9x, RetroArch
+- **Nintendo GameCube / Wii:** Dolphin Emulator (`.iso`, `.gcm`, `.wbfs`, `.ciso`, `.rvz`)
+- **Nintendo 64:** Project64, Mupen64Plus (`.z64`, `.n64`, `.v64`)
+- **Sony PlayStation 1 & 2:** PCSX2, DuckStation (`.iso`, `.bin`, `.chd`, `.cue`, `.mdf`, `.img`)
+- **Sony PlayStation 3 & Portable:** RPCS3, PPSSPP (`.iso`, `.cso`, `.eboot`, `EBOOT.PBP`)
+- **Nintendo 3DS, Wii U & Switch:** Citra, Cemu, Ryujinx (`.3ds`, `.cia`, `.rpx`, `.wud`, `.wux`, `.nsp`, `.xci`)
+- **Retro Handhelds & Consoles:** mGBA, Snes9x, RetroArch (`.gba`, `.gbc`, `.gb`, `.sfc`, `.smc`, `.nes`, `.md`, `.gen`)
 
 When imported, ROM shortcuts are configured with the emulator executable and appropriate command-line flags (e.g., `-b -e "<rom>"` for Dolphin) so they boot directly into full gameplay from Steam's Big Picture mode or desktop client.
+
+Furthermore, Steam Vault automatically tags imported ROM shortcuts with their specific console name in binary `shortcuts.vdf` (`tags: { "0": "GameCube" }`). This allows the native Steam client to group emulated games under their console category, and allows Steam Vault to import them directly into collections.
 
 ## 🗂️ Importing games
 
 1. Open the **Platforms** view and press **Scan for games**.
-2. Each platform card reports how many games were found and which source was consulted.
+2. Each platform card reports how many games were found, which source was consulted, and displays console platform badges for ROMs.
 3. Select the games you want and press **Import selected**.
 
 Imported games are written to Steam's `shortcuts.vdf` as **non-Steam shortcuts**, exactly as if you
@@ -72,7 +74,8 @@ had added them through Steam. Steam Vault:
   so re-importing the same game is a no-op;
 - writes storefront launch URIs (Epic `com.epicgames.launcher://apps/…`, itch `itch://games/…`, Xbox
   AppX package protocols) into the shortcut's launch options;
-- records which platform each shortcut came from, so the **Platform** sorting option can group them;
+- records which platform and console hardware each shortcut came from;
+- tags the shortcut with its console platform so Steam natively groups it;
 - refuses to write while Steam is running, and backs up `shortcuts.vdf` first.
 
 ## 🧭 After importing

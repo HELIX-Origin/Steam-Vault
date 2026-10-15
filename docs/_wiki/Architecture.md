@@ -36,7 +36,7 @@ The backend is split into focused modules:
 | `metadata/` | One client per provider, plus the shared HTTP client and provider registry. |
 | `autocat` | The rule engine that turns metadata into proposed collections. |
 | `filter` | The Allowed / Required / Excluded filter model. |
-| `cache` | Embedded SQLite database (`metadata.db`) with WAL mode, indexing, and TTL checking. |
+| `cache` | Embedded SQLite database (`metadata.db`) with WAL mode, indexing, TTL checking, and precompiled Community Game Catalog seed (`catalog_seed.bin` / `catalog.db`). |
 | `settings` | Loading and saving local settings and API keys. |
 | `backup` | Timestamped file backups taken before any write. |
 | `commands` | The Tauri IPC surface and shared application state. |

@@ -55,14 +55,20 @@ snake_case Rust parameters.
 | `update_collection` | Add/remove games and/or rename a collection. |
 | `create_collection` / `delete_collection` | Manage collections. |
 | `fetch_steam_store_metadata` | Fetch/cache Steam Store metadata for app ids. |
+| `sync_library_metadata` | Bulk warm cache for all games in the owned library. |
 | `fetch_owned_games` | Steam Web API owned games (keyed). |
 | `steamgriddb_search` / `steamgriddb_assets` | SteamGridDB search and artwork (keyed). |
+| `steamgriddb_for_game` | SteamGridDB assets resolved by exact app id (Steam) or by name (non-Steam shortcut). |
+| `auto_fetch_artwork_for_games` | Automatically resolve missing artwork for multiple games or shortcuts. |
 | `igdb_search` | IGDB search (keyed). |
 | `pcgamingwiki_lookup` / `wikipedia_summary` | Keyless supplemental providers. |
+| `wikipedia_game_lookup` | Keyless MediaWiki wikitext infobox parser for console games (developer, publisher, genre, year, console platforms). |
+| `vndb_lookup` | Keyless VNDB Kana API provider for visual novel metadata. |
+| `steam_store_search` | Keyless Steam storefront title search to resolve App IDs for non-Steam games. |
 | `compute_autocats` | Build an AutoCat plan without writing. |
-| `detect_platforms` | Scans the machine for games installed by other launchers. |
+| `detect_platforms` | Scans the machine for games installed by other launchers and emulators. |
 | `find_platform_folders` | Auto-detects existing library / config folders for a platform. |
-| `import_platform_games` | Writes selected platform games to `shortcuts.vdf` as shortcuts. |
+| `import_platform_games` | Writes selected platform games to `shortcuts.vdf` as shortcuts with tags and console identification. |
 | `set_game_platform` | Sets or clears the persisted platform storefront attribution for a shortcut. |
 | `get_owned_library` / `refresh_owned_games` | Returns / fetches the full owned Steam library. |
 | `compute_categorization` / `apply_categorization` | Previews and writes collections from a sorting option. |
@@ -74,7 +80,13 @@ snake_case Rust parameters.
 | `read_artwork` | Read one slot's image as a data URL for preview. |
 | `apply_artwork_from_url` / `apply_artwork_from_file` | Write an image into a slot from a fetched URL or a local file. |
 | `remove_artwork` | Clear a slot, backing up the previous image first. |
-| `steamgriddb_for_game` | SteamGridDB assets resolved by exact app id (Steam) or by name (non-Steam shortcut). |
+| `get_filter_presets` / `save_filter_preset` / `delete_filter_preset` | Persist and manage named filter-spec presets. |
+| `evaluate_filter` | Evaluate Allowed/Required/Excluded dynamic filter specs against the current library. |
+| `save_smart_collection` / `refresh_smart_collection` | Save and re-evaluate native Valve `filterSpec` smart collections. |
+| `get_catalog_stats` | Report total games and version in the community game catalog database. |
+| `export_catalog_archive` / `import_catalog_archive` | Export or import compressed catalog database archives (`catalog.db.gz`). |
+| `sync_online_catalog` | Fetch and update the offline catalog from GitHub Releases or custom URLs. |
+| `fetch_online_game_entry` | Lookup a specific game title directly from the community catalog. |
 
 ## 🎮 External platforms & the owned library
 

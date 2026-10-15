@@ -18,6 +18,7 @@ All configuration lives in **Settings**. Values are stored locally on your machi
 | **Account** | Which Steam account to organize. Leave it on *Automatic* to use the first account found. |
 | **Store country** | Two-letter region used for Steam Store metadata (for example `us`). |
 | **Language** | Display language and metadata language. Select from all 30 officially supported Steam languages. See [Localization](Localization.md). |
+| **Community Game Catalog** | Embedded offline database of curated multi-platform games. Supports one-click online synchronization from GitHub Releases or custom URLs, plus export/import archive utilities. |
 | **Back up before writing** | Take a timestamped backup of every file before it is modified. |
 | **Non-Steam sources** | Which other launchers to scan for installed games, and extra config / game-folder locations to search. |
 | **API keys** | Keys for the three keyed providers (see below). |

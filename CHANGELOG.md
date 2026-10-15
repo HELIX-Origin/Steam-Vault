@@ -5,6 +5,31 @@ All notable changes to Steam Vault are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-15
+
+### Added
+
+- **Integrated Community Game Catalog (`Steam-Vault-Catalog`)**:
+  - Precompiled embedded SQLite catalog seed (`src-tauri/src/catalog_seed.bin`) with curated multi-platform games for offline title and metadata lookup.
+  - Online catalog synchronization (`sync_online_catalog`) downloading compressed catalog databases (`catalog.db.gz`) from GitHub Releases or custom URLs.
+  - Catalog backup and restoration (`export_catalog_archive`, `import_catalog_archive`) enabling offline portability and custom database overrides.
+  - Live catalog entry lookup (`fetch_online_game_entry`) and catalog statistics reporting (`get_catalog_stats`).
+- **Console Platform Determination & Categorization**:
+  - High-precision console detection (`determine_console_platform`) identifying specific console hardware (GameCube, Wii, Wii U, Nintendo Switch, N64, SNES, NES, GBA, GBC, GB, NDS, 3DS, PS1, PS2, PS3, PSP, Genesis, Saturn, Dreamcast, Atari 2600) from ROM extensions and emulator paths.
+  - Console badges displayed alongside emulator names in the Platforms view.
+  - Automatic shortcut tagging: console platforms written directly into binary `shortcuts.vdf` `tags` so Steam client natively categorizes emulated games under their console name, and Steam Vault ingests them into collections on scan.
+- **Wikipedia Video Game & Console Metadata Provider**:
+  - Keyless MediaWiki wikitext infobox parser (`wikipedia_game_lookup`) extracting developers, publishers, genres, release year, console platforms, and lead summaries.
+  - Fallback metadata resolver in `ensure_game_metadata` for console ROM shortcuts lacking PC storefront listings.
+  - Strongly-typed Tauri command `wikipedia_game_lookup` exposed to frontend.
+- **Multi-Platform OS & Hardware Taxonomy**:
+  - Catalog records and platform metadata support multi-platform operating systems (`windows`, `macos`, `linux`) and distinct console hardware, strictly separating software categories from platforms.
+
+### Changed
+
+- Updated binary VDF parser (`Bvdf`) with string accessor `as_str()` for tag dictionary inspection.
+- Improved non-Steam shortcut collection assignment during import and scan.
+
 ## [1.0.0] - 2026-10-15
 
 ### Added
