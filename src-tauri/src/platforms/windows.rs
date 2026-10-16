@@ -659,21 +659,20 @@ mod imp {
 pub use imp::*;
 
 #[cfg(not(target_os = "windows"))]
-mod imp {
-    use std::path::PathBuf;
-    use crate::platforms::{Detection, Platform, ScanConfig};
+use std::path::PathBuf;
+#[cfg(not(target_os = "windows"))]
+use crate::platforms::{Detection, Platform, ScanConfig};
 
-    pub fn detect_platform_launchers(
-        _config: &ScanConfig,
-        _mounted_drives: &[PathBuf],
-    ) -> Vec<(Platform, Detection)> {
-        Vec::new()
-    }
-
-    pub fn default_library_folders(_platform: Platform) -> Vec<String> {
-        Vec::new()
-    }
+#[cfg(not(target_os = "windows"))]
+pub fn detect_platform_launchers(
+    _config: &ScanConfig,
+    _mounted_drives: &[PathBuf],
+) -> Vec<(Platform, Detection)> {
+    Vec::new()
 }
 
 #[cfg(not(target_os = "windows"))]
-pub use imp::*;
+pub fn default_library_folders(_platform: Platform) -> Vec<String> {
+    Vec::new()
+}
+

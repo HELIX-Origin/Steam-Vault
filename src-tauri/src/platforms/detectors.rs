@@ -1661,6 +1661,7 @@ fn scan_itch_dir(dir: &Path, detection: &mut Detection) {
 // ---------------------------------------------------------------------------
 
 fn detect_ubisoft() -> Detection {
+    #[allow(unused_mut)]
     let mut detection = Detection::empty();
 
     #[cfg(windows)]
@@ -1809,6 +1810,7 @@ fn detect_ubisoft() -> Detection {
 // ---------------------------------------------------------------------------
 
 fn detect_ea() -> Detection {
+    #[allow(unused_mut)]
     let mut detection = Detection::empty();
 
     #[cfg(windows)]

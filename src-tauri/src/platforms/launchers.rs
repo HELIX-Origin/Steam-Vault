@@ -1271,7 +1271,7 @@ fn detect_platform_launcher_installed(_id: &str, _mounted_drives: &[PathBuf]) ->
 
 fn detect_emulator_installed(
     emulator_configs: &[EmulatorConfig],
-    mounted_drives: &[PathBuf],
+    _mounted_drives: &[PathBuf],
 ) -> (bool, Option<String>) {
     // 1. Check if user configured any valid emulator executable
     for config in emulator_configs {
@@ -1298,7 +1298,7 @@ fn detect_emulator_installed(
             "mGBA.exe",
         ];
 
-        for root in mounted_drives {
+        for root in _mounted_drives {
             for sub in [
                 "Program Files\\EmulationStation-DE",
                 "Program Files\\RetroArch",

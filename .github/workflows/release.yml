@@ -22,6 +22,7 @@ jobs:
     outputs:
       release_id: ${{ steps.create_release.outputs.release_id }}
       tag_name: ${{ steps.create_release.outputs.tag_name }}
+      version_clean: ${{ steps.create_release.outputs.version_clean }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -117,6 +118,7 @@ jobs:
 
             core.setOutput('release_id', release.id.toString());
             core.setOutput('tag_name', tag);
+            core.setOutput('version_clean', tag.replace(/^v/, ''));
 
   build-and-upload:
     name: Build & Upload (${{ matrix.platform }})
@@ -201,6 +203,7 @@ jobs:
         continue-on-error: true
         with:
           identifier: HELIXOrigin.SteamVault
-          version: ${{ needs.create-release.outputs.tag_name }}
+          version: ${{ needs.create-release.outputs.version_clean }}
+          release-tag: ${{ needs.create-release.outputs.tag_name }}
           token: ${{ secrets.WINGET_TOKEN || secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
 
