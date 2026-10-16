@@ -26,7 +26,10 @@
     "verify": "node scripts/test.mjs check rust frontend build i18n",
     "sign": "node scripts/sign.mjs",
     "sign:local": "node scripts/sign.mjs",
-    "winget:manifest": "node scripts/generate-winget-manifest.mjs"
+    "winget:manifest": "node scripts/generate-winget-manifest.mjs",
+    "winget:manifest:generate": "node scripts/generate-winget-manifest.mjs",
+    "winget:manifest:verify": "node scripts/generate-winget-manifest.mjs --verify",
+    "winget:manifest:install": "node scripts/generate-winget-manifest.mjs --install"
   },
   "author": "HELIX Origin",
   "license": "BSD-3-Clause",

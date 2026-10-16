@@ -99,26 +99,27 @@ jobs:
           $hash = "${{ steps.verify_release.outputs.installer_sha256 }}"
           node scripts/generate-winget-manifest.mjs --version $ver --sha256 $hash
 
-      - name: Install wingetcreate CLI & Validate Manifests
+      - name: Validate WinGet Manifests
         shell: pwsh
         run: |
           $ver = "${{ steps.resolve.outputs.version }}"
           $manifestDir = "winget/manifests/h/HELIXOrigin/SteamVault/$ver"
-          Write-Host "Validating manifests in $manifestDir..."
+          Write-Host "Validating manifests in $manifestDir using Windows Package Manager..."
+          winget validate --manifest $manifestDir
+          Write-Host "Manifest validation passed successfully!"
+
+      - name: Submit Package to WinGet Repository
+        if: ${{ !github.event.inputs.dry_run }}
+        shell: pwsh
+        env:
+          WINGET_PAT: ${{ secrets.WINGET_TOKEN || secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+        run: |
+          $ver = "${{ steps.resolve.outputs.version }}"
+          $manifestDir = "winget/manifests/h/HELIXOrigin/SteamVault/$ver"
 
           # Download official Microsoft wingetcreate tool
           $url = "https://github.com/microsoft/winget-create/releases/latest/download/windows-x64-wingetcreate.exe"
           Invoke-WebRequest -Uri $url -OutFile "wingetcreate.exe"
 
-          .\wingetcreate.exe validate $manifestDir
-          Write-Host "Manifest validation passed successfully!"
-
-      - name: Submit Package to WinGet Repository
-        if: ${{ !github.event.inputs.dry_run }}
-        uses: vedantmgoyal9/winget-releaser@v2
-        with:
-          identifier: HELIXOrigin.SteamVault
-          version: ${{ steps.resolve.outputs.version }}
-          release-tag: ${{ steps.resolve.outputs.tag }}
-          installers-regex: ${{ github.event.inputs.installers_regex || 'x64-setup\.exe$' }}
-          token: ${{ secrets.WINGET_TOKEN || secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+          Write-Host "Submitting package $ver via wingetcreate submit..."
+          .\wingetcreate.exe submit -p "Update: HELIXOrigin.SteamVault to $ver" --token $env:WINGET_PAT -n $manifestDir

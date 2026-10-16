@@ -17,6 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 
 const log = (tag, msg) => console.log(`\x1b[36m[${tag}]\x1b[0m ${msg}`);
 const err = (tag, msg) => console.error(`\x1b[31m[${tag}]\x1b[0m ${msg}`);
@@ -34,6 +35,10 @@ function parseArgs() {
       options.sha256 = args[++i].toUpperCase();
     } else if (args[i] === '--local-file' && args[i + 1]) {
       options.localFile = args[++i];
+    } else if (args[i] === '--validate' || args[i] === '--verify') {
+      options.validate = true;
+    } else if (args[i] === '--install' || args[i] === '--install-test') {
+      options.installTest = true;
     }
   }
   return options;
@@ -78,6 +83,18 @@ async function main() {
     }
   }
 
+  // Read from existing manifest if present and non-zero
+  if (!installerSha256) {
+    const existingInstallerYaml = path.join(rootDir, 'winget', 'manifests', 'h', 'HELIXOrigin', 'SteamVault', version, `${packageIdentifier}.installer.yaml`);
+    if (fs.existsSync(existingInstallerYaml)) {
+      const match = fs.readFileSync(existingInstallerYaml, 'utf8').match(/InstallerSha256:\s*([A-Fa-f0-9]{64})/);
+      if (match && match[1] && !match[1].startsWith('0000000000000000')) {
+        installerSha256 = match[1].toUpperCase();
+        log('WinGet', `Preserving existing SHA256 from manifest: ${installerSha256}`);
+      }
+    }
+  }
+
   if (!installerSha256) {
     installerSha256 = '0000000000000000000000000000000000000000000000000000000000000000';
     log('WinGet', 'Note: No local installer or --sha256 supplied; placeholder hash inserted.');
@@ -89,19 +106,19 @@ async function main() {
   const installerUrl = `https://github.com/HELIX-Origin/Steam-Vault/releases/download/v${version}/Steam.Vault_${version}_x64-setup.exe`;
 
   // 1. Version manifest
-  const versionYaml = `# Created using wingetcreate 1.6.0.0
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.6.0.schema.json
+  const versionYaml = `# Created using wingetcreate 1.12.13.0
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.version.1.12.0.schema.json
 
 PackageIdentifier: ${packageIdentifier}
 PackageVersion: ${version}
 DefaultLocale: en-US
 ManifestType: version
-ManifestVersion: 1.6.0
+ManifestVersion: 1.12.0
 `;
 
   // 2. Installer manifest
-  const installerYaml = `# Created using wingetcreate 1.6.0.0
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+  const installerYaml = `# Created using wingetcreate 1.12.13.0
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
 
 PackageIdentifier: ${packageIdentifier}
 PackageVersion: ${version}
@@ -118,12 +135,12 @@ Installers:
     InstallerLocale: en-US
     UpgradeBehavior: install
 ManifestType: installer
-ManifestVersion: 1.6.0
+ManifestVersion: 1.12.0
 `;
 
   // 3. Locale manifest
-  const localeYaml = `# Created using wingetcreate 1.6.0.0
-# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+  const localeYaml = `# Created using wingetcreate 1.12.13.0
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.12.0.schema.json
 
 PackageIdentifier: ${packageIdentifier}
 PackageVersion: ${version}
@@ -148,7 +165,7 @@ Tags:
   - tauri
   - gaming
 ManifestType: defaultLocale
-ManifestVersion: 1.6.0
+ManifestVersion: 1.12.0
 `;
 
   const vFile = path.join(manifestDir, `${packageIdentifier}.yaml`);
@@ -163,6 +180,36 @@ ManifestVersion: 1.6.0
   log('WinGet', `  -> ${path.basename(vFile)}`);
   log('WinGet', `  -> ${path.basename(iFile)}`);
   log('WinGet', `  -> ${path.basename(lFile)}`);
+
+  if (options.validate) {
+    log('WinGet', `Validating manifest with 'winget validate --manifest "${manifestDir}"'...`);
+    const res = spawnSync('winget', ['validate', '--manifest', manifestDir], {
+      stdio: 'inherit'
+    });
+    if (res.status !== 0) {
+      throw new Error(`winget validate failed with exit code ${res.status}`);
+    }
+    log('WinGet', '✔ Local manifest validation succeeded!');
+  }
+
+  if (options.installTest) {
+    log('WinGet', `Testing local install with 'winget install --manifest "${manifestDir}"'...`);
+    const res = spawnSync('winget', [
+      'install',
+      '--manifest',
+      manifestDir,
+      '--silent',
+      '--accept-package-agreements',
+      '--accept-source-agreements'
+    ], {
+      stdio: 'inherit'
+    });
+    if (res.status !== 0) {
+      log('WinGet', `Note: winget install returned exit code ${res.status}. If LocalManifestFiles is disabled, enable it by running 'winget settings --enable LocalManifestFiles' as Administrator.`);
+    } else {
+      log('WinGet', '✔ Local manifest install test completed successfully!');
+    }
+  }
 }
 
 main().catch((e) => {
