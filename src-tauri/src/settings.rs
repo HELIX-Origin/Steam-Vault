@@ -39,6 +39,9 @@ pub struct Settings {
     /// Optional user-configured path to Legendary CLI binary or directory.
     #[serde(default)]
     pub legendary_path: Option<String>,
+    /// Optional free game promotion notifications for enabled storefront platforms.
+    #[serde(default)]
+    pub enable_free_game_notifications: bool,
 }
 
 fn default_true() -> bool {
@@ -62,6 +65,7 @@ impl Default for Settings {
             platform_sources: Vec::new(),
             emulator_configs: Vec::new(),
             legendary_path: None,
+            enable_free_game_notifications: false,
         }
     }
 }

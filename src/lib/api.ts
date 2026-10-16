@@ -13,9 +13,11 @@ import type {
   CategorizationPlan,
   CategorizeRequest,
   Collection,
+  EosOverlayStatus,
   EsDeSystemInfo,
   Filter,
   FilterPreset,
+  FreeGamePromotion,
   Game,
   GameArtwork,
   IgdbGame,
@@ -27,6 +29,7 @@ import type {
   MovePreview,
   OwnedGame,
   OwnedLibrary,
+  PatchNote,
   PlatformGame,
   PlatformScan,
   ProviderInfo,
@@ -36,6 +39,7 @@ import type {
   SteamInstall,
   SteamSearchResult,
   StorageReport,
+  StoreDeal,
 } from "./types";
 
 export const api = {
@@ -233,6 +237,21 @@ export const api = {
   legendaryLogout: () => invoke<LegendaryAuthStatus>("legendary_logout"),
   setLegendaryPath: (path: string | null) =>
     invoke<LegendaryAuthStatus>("set_legendary_path", { path: path ?? null }),
+  openEpicLoginWindow: () => invoke<boolean>("open_epic_login_window"),
+  getEosOverlayStatus: () => invoke<EosOverlayStatus>("get_eos_overlay_status"),
+  installEosOverlay: () => invoke<EosOverlayStatus>("install_eos_overlay"),
+  getFreeGamePromotions: (platforms?: string[]) =>
+    invoke<FreeGamePromotion[]>("get_free_game_promotions", {
+      platforms: platforms ?? null,
+    }),
+  getStoreDeals: (platforms?: string[]) =>
+    invoke<StoreDeal[]>("get_store_deals", {
+      platforms: platforms ?? null,
+    }),
+  getLibraryPatchNotes: (games?: [string, string][]) =>
+    invoke<PatchNote[]>("get_library_patch_notes", {
+      games: games ?? null,
+    }),
 
   // In-Memory Fast Cache & Serverless KV Persistence (Redis-compatible)
   kvGet: (key: string) => invoke<string | null>("kv_get", { key }),

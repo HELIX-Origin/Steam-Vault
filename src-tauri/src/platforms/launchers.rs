@@ -327,14 +327,18 @@ pub fn get_legendary_auth_status() -> LegendaryAuthStatus {
         let stderr = String::from_utf8_lossy(&out.stderr);
         let full = format!("{stdout}\n{stderr}");
 
-        let is_logged_in = !full.contains("not logged in") && (full.contains("Logged in as") || full.contains("Account:"));
+        let is_logged_in = !full.contains("not logged in")
+            && (full.contains("Logged in as")
+                || full.contains("Account:")
+                || full.contains("Epic account:"));
         let mut account_name = None;
         let mut account_id = None;
 
         for line in full.lines() {
-            if line.contains("Logged in as") {
-                if let Some(pos) = line.find("Logged in as") {
-                    let rest = line[pos + 12..].trim();
+            let trimmed = line.trim();
+            if trimmed.contains("Logged in as") {
+                if let Some(pos) = trimmed.find("Logged in as") {
+                    let rest = trimmed[pos + 12..].trim();
                     if let Some(open_paren) = rest.find('(') {
                         account_name = Some(rest[..open_paren].trim().to_string());
                         if let Some(close_paren) = rest.find(')') {
@@ -344,8 +348,8 @@ pub fn get_legendary_auth_status() -> LegendaryAuthStatus {
                         account_name = Some(rest.to_string());
                     }
                 }
-            } else if line.trim_start().starts_with("Account:") {
-                let rest = line.trim_start()["Account:".len()..].trim();
+            } else if trimmed.starts_with("Account:") {
+                let rest = trimmed["Account:".len()..].trim();
                 if let Some(open_paren) = rest.find('(') {
                     account_name = Some(rest[..open_paren].trim().to_string());
                     if let Some(close_paren) = rest.find(')') {
@@ -354,6 +358,19 @@ pub fn get_legendary_auth_status() -> LegendaryAuthStatus {
                 } else {
                     account_name = Some(rest.to_string());
                 }
+            } else if trimmed.starts_with("Epic account:") {
+                let rest = trimmed["Epic account:".len()..].trim();
+                if let Some(open_paren) = rest.find('(') {
+                    account_name = Some(rest[..open_paren].trim().to_string());
+                    if let Some(close_paren) = rest.find(')') {
+                        account_id = Some(rest[open_paren + 1..close_paren].trim().to_string());
+                    }
+                } else {
+                    account_name = Some(rest.to_string());
+                }
+            } else if trimmed.starts_with("Account ID:") {
+                let rest = trimmed["Account ID:".len()..].trim();
+                account_id = Some(rest.to_string());
             }
         }
 
@@ -481,6 +498,113 @@ pub fn legendary_logout() -> AppResult<LegendaryAuthStatus> {
     Ok(get_legendary_auth_status())
 }
 
+/// Status of the Epic Online Services (EOS) overlay installed via Legendary.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EosOverlayStatus {
+    pub is_installed: bool,
+    pub is_enabled: bool,
+    pub version: Option<String>,
+    pub path: Option<String>,
+}
+
+pub fn get_eos_overlay_status() -> EosOverlayStatus {
+    let bin = legendary_binary_path();
+    if !bin.is_file() {
+        return EosOverlayStatus {
+            is_installed: false,
+            is_enabled: false,
+            version: None,
+            path: None,
+        };
+    }
+
+    let output = std::process::Command::new(&bin)
+        .args(["eos-overlay", "info"])
+        .output();
+
+    if let Ok(out) = output {
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        let full = format!("{stdout}\n{stderr}");
+
+        let mut is_installed = false;
+        let mut is_enabled = false;
+        let mut version = None;
+        let mut path = None;
+
+        for line in full.lines() {
+            let trimmed = line.trim();
+            if trimmed.contains("Installed version:") {
+                let v = trimmed.split("Installed version:").nth(1).unwrap_or("").trim();
+                if !v.is_empty() && v != "None" {
+                    is_installed = true;
+                    version = Some(v.to_string());
+                }
+            } else if trimmed.contains("Installed path:") {
+                let p = trimmed.split("Installed path:").nth(1).unwrap_or("").trim();
+                if !p.is_empty() && p != "None" {
+                    path = Some(p.to_string());
+                }
+            } else if trimmed.contains("Overlay enabled:") {
+                let en = trimmed.split("Overlay enabled:").nth(1).unwrap_or("").trim().to_lowercase();
+                if en.starts_with("yes") || en.starts_with("true") {
+                    is_enabled = true;
+                }
+            }
+        }
+
+        EosOverlayStatus {
+            is_installed,
+            is_enabled,
+            version,
+            path,
+        }
+    } else {
+        EosOverlayStatus {
+            is_installed: false,
+            is_enabled: false,
+            version: None,
+            path: None,
+        }
+    }
+}
+
+pub fn install_eos_overlay() -> AppResult<EosOverlayStatus> {
+    let bin = legendary_binary_path();
+    if !bin.is_file() {
+        return Err(AppError::msg(
+            "Legendary CLI is not installed or detected. Please configure or install Legendary first.",
+        ));
+    }
+
+    let auth = get_legendary_auth_status();
+    if !auth.is_logged_in {
+        return Err(AppError::msg(
+            "Authentication required: Please log into Epic Games via Legendary before downloading the Epic Online Services overlay.",
+        ));
+    }
+
+    let install_output = std::process::Command::new(&bin)
+        .args(["eos-overlay", "install", "-y"])
+        .output()
+        .map_err(|e| AppError::msg(format!("Failed to download/install EOS overlay: {e}")))?;
+
+    if !install_output.status.success() {
+        let stderr = String::from_utf8_lossy(&install_output.stderr);
+        let stdout = String::from_utf8_lossy(&install_output.stdout);
+        return Err(AppError::msg(format!(
+            "Failed to install Epic Games overlay service: {stderr} {stdout}"
+        )));
+    }
+
+    let _ = std::process::Command::new(&bin)
+        .args(["eos-overlay", "enable"])
+        .output();
+
+    Ok(get_eos_overlay_status())
+}
+
 /// Status and metadata for a supported external game launcher.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -499,7 +623,7 @@ pub struct LauncherStatus {
 pub fn launcher_download_url(platform_id: &str) -> &'static str {
     match platform_id {
         "gog" => "https://www.gog.com/galaxy",
-        "epic" => "https://store.epicgames.com/download",
+        "epic" => "https://github.com/legendary-gl/legendary/releases",
         "itch" => "https://itch.io/app",
         "ubisoft" => "https://ubisoftconnect.com/",
         "ea" => "https://www.ea.com/ea-app",
@@ -525,8 +649,8 @@ pub fn launcher_download_url(platform_id: &str) -> &'static str {
 pub fn launcher_alternative_info(platform_id: &str) -> (Option<&'static str>, Option<&'static str>) {
     match platform_id {
         "epic" => (
-            Some("https://github.com/legendary-gl/legendary"),
-            Some("Legendary CLI & EOS Service (No Launcher Required)"),
+            Some("https://github.com/legendary-gl/legendary/releases"),
+            Some("Legendary CLI"),
         ),
         _ => (None, None),
     }
@@ -536,7 +660,7 @@ pub fn launcher_alternative_info(platform_id: &str) -> (Option<&'static str>, Op
 pub fn launcher_name(platform_id: &str) -> &'static str {
     match platform_id {
         "gog" => "GOG Galaxy",
-        "epic" => "Epic Games Launcher",
+        "epic" => "Epic Games",
         "itch" => "itch.io",
         "ubisoft" => "Ubisoft Connect",
         "ea" => "EA App",
@@ -648,7 +772,12 @@ fn detect_platform_launcher_installed(id: &str, mounted_drives: &[PathBuf]) -> (
             (false, None, None)
         }
         "epic" => {
-            // 1. Official Epic Games Launcher
+            // 1. Primary: Legendary CLI (Steam Vault native Epic Games service)
+            if let Some(legendary_exe) = find_legendary_windows(mounted_drives) {
+                return (true, Some(legendary_exe), Some("Legendary CLI".to_string()));
+            }
+
+            // 2. Secondary fallback: Official Epic Games Launcher
             let hklm = RegKey::predef(HKEY_LOCAL_MACHINE);
             for sub in [
                 "SOFTWARE\\WOW6432Node\\EpicGames\\Unreal Engine",
@@ -659,7 +788,7 @@ fn detect_platform_launcher_installed(id: &str, mounted_drives: &[PathBuf]) -> (
                         let p = PathBuf::from(&app_data);
                         let exe = p.join("Launcher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe");
                         if exe.is_file() {
-                            return (true, Some(exe.display().to_string()), None);
+                            return (true, Some(exe.display().to_string()), Some("Epic Games Launcher".to_string()));
                         }
                     }
                 }
@@ -673,17 +802,12 @@ fn detect_platform_launcher_installed(id: &str, mounted_drives: &[PathBuf]) -> (
                     root.join("Epic Games\\Launcher\\Portal\\Binaries\\Win64\\EpicGamesLauncher.exe"),
                 ] {
                     if candidate.is_file() {
-                        return (true, Some(candidate.display().to_string()), None);
+                        return (true, Some(candidate.display().to_string()), Some("Epic Games Launcher".to_string()));
                     }
                 }
             }
 
-            // 2. Alternative method: Legendary CLI (native Epic Games service CLI)
-            if let Some(legendary_exe) = find_legendary_windows(mounted_drives) {
-                return (true, Some(legendary_exe), Some("Legendary CLI (Native EOS Service)".to_string()));
-            }
-
-            // 3. Alternative method: Epic Online Services or Local Manifest Store
+            // 3. Fallback: Local Manifest Store
             if let Some(prog_data) = crate::platforms::detectors::env_dir("ProgramData") {
                 let manifests = prog_data.join("Epic\\EpicGamesLauncher\\Data\\Manifests");
                 if manifests.is_dir() {
@@ -691,7 +815,7 @@ fn detect_platform_launcher_installed(id: &str, mounted_drives: &[PathBuf]) -> (
                         .map(|entries| entries.filter_map(Result::ok).any(|e| e.path().extension().is_some_and(|x| x == "item")))
                         .unwrap_or(false);
                     if has_items {
-                        return (true, None, Some("Epic Online Services / Native Manifests".to_string()));
+                        return (true, None, Some("Local Manifest Store".to_string()));
                     }
                 }
             }
@@ -1235,7 +1359,7 @@ mod tests {
     fn test_launcher_urls_and_names() {
         assert_eq!(launcher_name("gog"), "GOG Galaxy");
         assert_eq!(launcher_download_url("gog"), "https://www.gog.com/galaxy");
-        assert_eq!(launcher_name("epic"), "Epic Games Launcher");
+        assert_eq!(launcher_name("epic"), "Epic Games");
         assert_eq!(launcher_name("itch"), "itch.io");
         assert_eq!(launcher_name("ubisoft"), "Ubisoft Connect");
         assert_eq!(launcher_name("ea"), "EA App");

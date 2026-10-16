@@ -5,6 +5,39 @@ All notable changes to Steam Vault are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-10-15
+
+### Added
+
+- **Multi-Platform Free Game Promotions & Giveaways**:
+  - Structured modular per-platform promotion fetchers (`platforms::promotions::epic`, `platforms::promotions::steam`, `platforms::promotions::gog`, and `platforms::promotions::gamerpower`) supporting verified 100% free-to-keep promotions across all enabled storefronts.
+- **Store Deals & Major Discounts**:
+  - Added real-time store deals integration checking featured Steam specials, Epic Games promotional discounts, and GOG catalog sales.
+- **Library Patch Notes & Update Announcements**:
+  - Integrated official game patch notes feed for installed library titles via Steam's News API with BBCode sanitization and direct announcement links.
+- **Unified 3-Tab Notifications Subpage on Dashboard**:
+  - Added dedicated tabbed notifications sub-panel accessible from the dashboard header with "🎁 Free Games" (with active vs. upcoming giveaways cleanly separated), "🏷️ Deals & Promotions", and "📰 Patch Notes & Updates".
+- **Downloads & Component Status Subpage**:
+  - Added downloads sub-page on dashboard providing real-time status visibility for tools (Legendary CLI) and gaming components.
+- **Epic Online Services (EOS) Overlay Integration**:
+  - Implemented EOS overlay status detection and one-click installation via Legendary CLI backend.
+
+### Changed
+
+- **Settings Navigation & Global Sidebar**:
+  - Relocated the Settings access button to a dedicated gear cog button pinned at the bottom-left corner of the sidebar, freeing up the primary navigation bar.
+- **Epic Games Platform Card Cleanliness**:
+  - Standardized the Epic Games platform card to match uniform launcher styling without nested or redundant panels.
+- **Custom Path Configuration**:
+  - Added `⚙ Legendary & EOS Settings` drawer for configuring custom binary paths and EOS overlay management.
+
+### Fixed
+
+- **Free Game Promotion False Positives**:
+  - Fixed promotion filter bug where non-free on-sale games leaked into free game notifications by strictly validating `price.totalPrice.discountPrice == 0` and active 0% promotional offers.
+- **Legendary Account Status Detection**:
+  - Fixed auth status parser to check `line.starts_with("Epic account:")` and `Account ID:`, correctly identifying active authenticated sessions.
+
 ## [1.3.0] - 2026-10-15
 
 ### Added

@@ -12,8 +12,7 @@
   const nav = [
     { href: "/", key: "nav.dashboard", icon: "◈" },
     { href: "/library", key: "nav.library", icon: "▤" },
-    { href: "/storage", key: "nav.storage", icon: "▥" },
-    { href: "/settings", key: "nav.settings", icon: "⚙" }
+    { href: "/storage", key: "nav.storage", icon: "▥" }
   ];
 
   onMount(async () => {
@@ -54,6 +53,18 @@
           </a>
         {/each}
       </nav>
+
+      <div class="sidebar-footer">
+        <a
+          class="settings-btn"
+          class:active={page.url.pathname.startsWith("/settings")}
+          href="/settings"
+          title={$t("nav.settings")}
+        >
+          <span class="cog-icon">⚙</span>
+          <span class="settings-text">{$t("nav.settings")}</span>
+        </a>
+      </div>
     </aside>
 
     <main class="content">
@@ -197,6 +208,55 @@
     font-size: 0.95rem;
   }
 
+  .sidebar-footer {
+    margin-top: auto;
+    padding-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .settings-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0.6em 0.8em;
+    border-radius: var(--radius-sm);
+    color: var(--text-dim);
+    font-weight: 550;
+    font-size: 0.88rem;
+    border: 1px solid transparent;
+    transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease, transform 0.12s ease;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .settings-btn:hover {
+    background: rgba(255, 255, 255, 0.06);
+    color: #ffffff;
+    transform: translateX(2px);
+  }
+
+  :global([dir="rtl"]) .settings-btn:hover {
+    transform: translateX(-2px);
+  }
+
+  .settings-btn.active {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.22), rgba(168, 85, 247, 0.18));
+    color: #ffffff;
+    border-color: var(--border-glow);
+    box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.14), 0 2px 12px rgba(56, 189, 248, 0.16);
+  }
+
+  .cog-icon {
+    width: 18px;
+    text-align: center;
+    font-size: 1.05rem;
+    display: inline-block;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .settings-btn:hover .cog-icon {
+    transform: rotate(60deg);
+  }
 
   .content {
     overflow-y: auto;

@@ -2,8 +2,9 @@
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
   import { t } from "$lib/i18n";
+  import { listen } from "@tauri-apps/api/event";
   import { error, platformScan } from "$lib/stores";
-  import type { EmulatorConfig, LauncherStatus, LegendaryAuthStatus, Platform, PlatformGame } from "$lib/types";
+  import type { EmulatorConfig, EosOverlayStatus, LauncherStatus, LegendaryAuthStatus, Platform, PlatformGame } from "$lib/types";
 
   type SourceRow = { id: string; label: string; enabled: boolean; roots: string[] };
 
@@ -14,6 +15,7 @@
     scaffoldPath = $bindable(),
     scaffolding = $bindable(),
     scaffoldMsg = $bindable(),
+    freeGameNotifications = $bindable(false),
     scaffoldEsDe,
     addEmulatorConfig,
     removeEmulatorConfig,
@@ -30,6 +32,7 @@
     scaffoldPath: string;
     scaffolding: boolean;
     scaffoldMsg: string | null;
+    freeGameNotifications?: boolean;
     scaffoldEsDe: () => Promise<void>;
     addEmulatorConfig: () => void;
     removeEmulatorConfig: (index: number) => void;
@@ -70,9 +73,12 @@
   let legendaryAuth = $state<LegendaryAuthStatus | null>(null);
   let legendaryPathInput = $state("");
   let savingPath = $state(false);
-  let authCodeInput = $state("");
   let loggingIn = $state(false);
   let authError = $state<string | null>(null);
+
+  let showAdvancedLegendary = $state(false);
+  let eosOverlayStatus = $state<EosOverlayStatus | null>(null);
+  let installingEos = $state(false);
 
   async function loadLaunchers() {
     loadingLaunchers = true;
@@ -101,6 +107,28 @@
     }
   }
 
+  async function loadEosOverlay() {
+    try {
+      eosOverlayStatus = await api.getEosOverlayStatus();
+    } catch (e) {
+      console.warn("Could not query EOS overlay status:", e);
+    }
+  }
+
+  async function handleInstallEosOverlay() {
+    installingEos = true;
+    legendaryMsg = null;
+    try {
+      eosOverlayStatus = await api.installEosOverlay();
+      legendaryMsg = "Epic Games Overlay Service (EOS) successfully installed and enabled!";
+      setTimeout(() => (legendaryMsg = null), 5000);
+    } catch (e) {
+      legendaryMsg = errorMessage(e);
+    } finally {
+      installingEos = false;
+    }
+  }
+
   async function handleSaveLegendaryPath() {
     savingPath = true;
     legendaryMsg = null;
@@ -108,6 +136,7 @@
     try {
       legendaryAuth = await api.setLegendaryPath(legendaryPathInput.trim() || null);
       await loadLaunchers();
+      await loadEosOverlay();
       if (legendaryAuth?.isInstalled) {
         const epicSource = sources.find((s) => s.id === "epic");
         if (epicSource) {
@@ -133,6 +162,7 @@
     try {
       legendaryAuth = await api.setLegendaryPath(null);
       await loadLaunchers();
+      await loadEosOverlay();
       if (legendaryAuth?.executablePath) {
         legendaryPathInput = legendaryAuth.executablePath;
         const epicSource = sources.find((s) => s.id === "epic");
@@ -152,9 +182,28 @@
     }
   }
 
-  onMount(async () => {
-    await loadLaunchers();
-    await refreshLegendaryAuth();
+  onMount(() => {
+    loadLaunchers();
+    refreshLegendaryAuth();
+    loadEosOverlay();
+
+    let unlisten: (() => void) | undefined;
+    listen<LegendaryAuthStatus>("legendary-auth-changed", async (event) => {
+      legendaryAuth = event.payload;
+      await loadLaunchers();
+      await loadEosOverlay();
+      loggingIn = false;
+      legendaryMsg = `Successfully signed in as ${legendaryAuth.accountName ?? "Epic Games account"}!`;
+      setTimeout(() => (legendaryMsg = null), 5000);
+    }).then((fn) => {
+      unlisten = fn;
+    }).catch((e) => {
+      console.warn("Could not listen to legendary-auth-changed:", e);
+    });
+
+    return () => {
+      unlisten?.();
+    };
   });
 
   async function handleOpenUrl(url: string) {
@@ -178,6 +227,7 @@
         sources = [...sources];
       }
       await refreshLegendaryAuth();
+      await loadEosOverlay();
       legendaryMsg = "Legendary CLI & Epic Online Services successfully installed!";
       setTimeout(() => (legendaryMsg = null), 5000);
     } catch (e) {
@@ -187,32 +237,14 @@
     }
   }
 
-  async function handleLegendaryLogin() {
-    if (!authCodeInput.trim()) return;
+  async function handleOpenEpicLoginWindow() {
     loggingIn = true;
     authError = null;
+    legendaryMsg = null;
     try {
-      legendaryAuth = await api.legendaryLogin(authCodeInput.trim(), false);
-      authCodeInput = "";
-      legendaryMsg = `Successfully authenticated as ${legendaryAuth.accountName ?? "Epic Games account"}!`;
-      setTimeout(() => (legendaryMsg = null), 5000);
+      await api.openEpicLoginWindow();
     } catch (e) {
       authError = errorMessage(e);
-    } finally {
-      loggingIn = false;
-    }
-  }
-
-  async function handleLegendaryImport() {
-    loggingIn = true;
-    authError = null;
-    try {
-      legendaryAuth = await api.legendaryLogin(null, true);
-      legendaryMsg = `Successfully imported credentials for ${legendaryAuth.accountName ?? "Epic Games account"}!`;
-      setTimeout(() => (legendaryMsg = null), 5000);
-    } catch (e) {
-      authError = errorMessage(e);
-    } finally {
       loggingIn = false;
     }
   }
@@ -220,6 +252,7 @@
   async function handleLegendaryLogout() {
     try {
       legendaryAuth = await api.legendaryLogout();
+      await loadEosOverlay();
       legendaryMsg = "Logged out from Epic Games in Legendary.";
       setTimeout(() => (legendaryMsg = null), 5000);
     } catch (e) {
@@ -300,13 +333,21 @@
         <button class="btn mini btn-ghost" onclick={loadLaunchers} disabled={loadingLaunchers} title="Re-check installed launchers">
           {loadingLaunchers ? "Checking launchers…" : "↻ Check Launchers"}
         </button>
+        <button
+          class="btn mini btn-ghost"
+          class:btn-accent={showAdvancedLegendary}
+          onclick={() => (showAdvancedLegendary = !showAdvancedLegendary)}
+          title="Configure Legendary CLI path and Epic Online Services overlay"
+        >
+          ⚙ Legendary &amp; EOS Settings
+        </button>
         <button class="btn mini btn-ghost" onclick={handleOpenToolsFolder} title="Open user tools directory where helper binaries and CLI tools are stored">
           Tools Folder ↗
         </button>
       </div>
     </div>
     <p class="muted-sm">
-      Automatically detect games from installed launchers and native gaming services. Launchers that are not installed on your system or drives cannot be enabled until installed or downloaded via your browser. Epic Games can also run lightweight via the built-in Legendary CLI.
+      Automatically detect games from installed launchers and native gaming services. Launchers that are not installed on your system or drives cannot be enabled until installed or downloaded via your browser. Epic Games runs natively and lightweight via Legendary CLI.
     </p>
     <div class="integrations-grid">
       {#each sources.filter((s) => s.id !== "other" && s.id !== "emulator") as source (source.id)}
@@ -330,7 +371,9 @@
                 {#if launcher}
                   {#if isInstalled}
                     <span class="pill pill-ok" style="font-size:0.62rem">Installed</span>
-                    {#if launcher.alternativeMethod}
+                    {#if source.id === "epic"}
+                      <span class="pill pill-accent" style="font-size:0.62rem">Legendary CLI</span>
+                    {:else if launcher.alternativeMethod}
                       <span class="pill pill-accent" style="font-size:0.62rem">{launcher.alternativeMethod}</span>
                     {/if}
                   {:else}
@@ -341,6 +384,10 @@
               <span class="muted-xs">
                 {#if !isInstalled}
                   Disabled — Launcher or native service not detected
+                {:else if source.id === "epic" && legendaryAuth?.accountName}
+                  Logged in as {legendaryAuth.accountName}
+                {:else if source.id === "epic" && !legendaryAuth?.isLoggedIn}
+                  Sign-in required for cloud sync
                 {:else if source.enabled}
                   Active &amp; scanned
                 {:else}
@@ -350,9 +397,18 @@
             </div>
           </label>
 
-          {#if !isInstalled && launcher && launcher.id !== "epic"}
+          {#if !isInstalled && launcher}
             <div class="integration-actions-row">
-              {#if launcher.downloadUrl}
+              {#if source.id === "epic"}
+                <button
+                  class="btn mini btn-ghost launcher-action-btn"
+                  onclick={handleInstallLegendary}
+                  disabled={installingLegendary}
+                  title="Download and install Legendary CLI to the managed tools folder"
+                >
+                  {installingLegendary ? "Downloading…" : "Download Legendary ↗"}
+                </button>
+              {:else if launcher.downloadUrl}
                 <button
                   class="btn mini btn-ghost launcher-action-btn"
                   onclick={() => handleOpenUrl(launcher.downloadUrl)}
@@ -362,177 +418,133 @@
                 </button>
               {/if}
             </div>
-          {:else if launcher?.id === "epic"}
-            <div class="legendary-panel">
-              <!-- Epic Launchers & Legendary Download Bar -->
-              <div class="integration-actions-row" style="margin-bottom:0.5rem;flex-wrap:wrap">
-                {#if launcher.downloadUrl && !isInstalled}
-                  <button
-                    class="btn mini btn-ghost launcher-action-btn"
-                    onclick={() => handleOpenUrl(launcher.downloadUrl)}
-                    title="Download official Epic Games Launcher via web browser"
-                  >
-                    Download Launcher ↗
-                  </button>
-                {/if}
+          {:else if source.id === "epic" && isInstalled}
+            <div class="integration-actions-row">
+              {#if legendaryAuth?.isLoggedIn}
                 <button
                   class="btn mini btn-ghost launcher-action-btn"
-                  onclick={() => handleOpenUrl("https://github.com/legendary-gl/legendary/releases")}
-                  title="Download standalone Legendary CLI executable from GitHub Releases"
+                  onclick={handleLegendaryLogout}
+                  title="Log out from Epic Games in Legendary"
                 >
-                  Download Legendary ↗
+                  Log Out
                 </button>
+              {:else}
                 <button
-                  class="btn mini primary launcher-action-btn"
-                  onclick={handleInstallLegendary}
-                  disabled={installingLegendary}
-                  title="Download and install Legendary CLI directly into tools folder"
+                  class="btn mini btn-accent launcher-action-btn"
+                  onclick={handleOpenEpicLoginWindow}
+                  disabled={loggingIn}
+                  title="Sign in to Epic Games with automatic code detection"
                 >
-                  {installingLegendary ? "Installing…" : "⚡ Install Legendary (Built-in)"}
+                  {loggingIn ? "Connecting…" : "Log In ↗"}
                 </button>
-              </div>
-
-              <!-- Legendary Executable Path Configuration -->
-              <div class="legendary-login-box" style="margin-bottom:0.5rem">
-                <div class="row-between" style="align-items:center;font-size:0.75rem">
-                  <span class="muted-xs">Legendary Executable or Directory:</span>
-                  {#if legendaryAuth?.executablePath}
-                    <span class="pill pill-ok" style="font-size:0.62rem" title={legendaryAuth.executablePath}>
-                      ✓ {legendaryAuth.executablePath}
-                    </span>
-                  {:else}
-                    <span class="pill pill-dim" style="font-size:0.62rem">Not Detected</span>
-                  {/if}
-                </div>
-                <div class="legendary-code-input-row">
-                  <input
-                    type="text"
-                    placeholder="e.g. E:\Games\Epic Games\Legendary"
-                    bind:value={legendaryPathInput}
-                    disabled={savingPath}
-                    onkeydown={(e) => {
-                      if (e.key === "Enter") handleSaveLegendaryPath();
-                    }}
-                  />
-                  <button
-                    class="btn mini btn-accent"
-                    style="font-size:0.72rem;padding:0.2rem 0.55rem"
-                    onclick={handleSaveLegendaryPath}
-                    disabled={savingPath}
-                    title="Save custom Legendary path"
-                  >
-                    {savingPath ? "Saving…" : "Save Path"}
-                  </button>
-                  <button
-                    class="btn mini btn-ghost"
-                    style="font-size:0.72rem;padding:0.2rem 0.55rem"
-                    onclick={handleAutoDetectLegendary}
-                    disabled={savingPath}
-                    title="Scan system and mounted drives for Legendary CLI"
-                  >
-                    ↻ Auto-Detect
-                  </button>
-                </div>
-              </div>
-
-              <!-- Legendary Account & Authentication -->
-              {#if legendaryAuth?.isLoggedIn}
-                <div class="legendary-account-row">
-                  <div class="legendary-account-info">
-                    <span class="legendary-dot"></span>
-                    <div style="min-width:0">
-                      <div class="legendary-user" title={legendaryAuth.accountName ?? "Epic Games Account"}>
-                        {legendaryAuth.accountName ?? "Epic Games Account"}
-                      </div>
-                      {#if legendaryAuth.accountId}
-                        <div class="muted-xs" style="font-size:0.68rem;opacity:0.7">ID: {legendaryAuth.accountId}</div>
-                      {/if}
-                    </div>
-                  </div>
-                  <div class="row" style="gap:0.3rem;align-items:center">
-                    <button
-                      class="btn mini btn-ghost"
-                      style="font-size:0.68rem;padding:0.18rem 0.45rem"
-                      onclick={handleOpenToolsFolder}
-                      title="Open tools folder where legendary binary is stored"
-                    >
-                      Tools Folder ↗
-                    </button>
-                    <button
-                      class="btn mini btn-ghost"
-                      style="font-size:0.68rem;padding:0.18rem 0.45rem"
-                      onclick={handleLegendaryLogout}
-                      title="Log out from Epic Games in Legendary"
-                    >
-                      Log Out
-                    </button>
-                  </div>
-                </div>
-              {:else if legendaryAuth?.isInstalled}
-                <div class="legendary-login-box">
-                  <span class="muted-xs" style="font-size:0.72rem;line-height:1.3">
-                    Connect Epic Games to discover and launch games without the Epic Games Launcher:
-                  </span>
-                  <div class="legendary-auth-actions">
-                    <button
-                      class="btn mini primary"
-                      style="font-size:0.72rem;padding:0.2rem 0.5rem"
-                      onclick={() => handleOpenUrl(legendaryAuth?.authUrl ?? "https://legendary.gl/epiclogin")}
-                      title="Open Epic Games authorization page in browser"
-                    >
-                      1. Log In via Epic Games ↗
-                    </button>
-                    {#if legendaryAuth?.directAuthUrl}
-                      <button
-                        class="btn mini btn-ghost"
-                        style="font-size:0.72rem;padding:0.2rem 0.5rem"
-                        onclick={() => handleOpenUrl(legendaryAuth?.directAuthUrl!)}
-                        title="Direct Epic Games login portal with valid client token"
-                      >
-                        Direct Portal ↗
-                      </button>
-                    {/if}
-                    <button
-                      class="btn mini btn-ghost"
-                      style="font-size:0.72rem;padding:0.2rem 0.5rem"
-                      onclick={handleLegendaryImport}
-                      disabled={loggingIn}
-                      title="Import credentials from existing Epic Games Launcher install"
-                    >
-                      {loggingIn ? "Importing…" : "Import from Launcher"}
-                    </button>
-                  </div>
-                  <div class="legendary-code-input-row">
-                    <input
-                      type="text"
-                      placeholder="2. Paste code, SID, or JSON response here"
-                      bind:value={authCodeInput}
-                      disabled={loggingIn}
-                      onkeydown={(e) => {
-                        if (e.key === "Enter") handleLegendaryLogin();
-                      }}
-                    />
-                    <button
-                      class="btn mini btn-accent"
-                      style="font-size:0.72rem;padding:0.2rem 0.55rem"
-                      onclick={handleLegendaryLogin}
-                      disabled={loggingIn || !authCodeInput.trim()}
-                      title="Save authorization code and sign into Legendary"
-                    >
-                      {loggingIn ? "Signing In…" : "Save Code"}
-                    </button>
-                  </div>
-                  {#if authError}
-                    <div class="legendary-error-text">
-                      {authError}
-                    </div>
-                  {/if}
-                </div>
               {/if}
             </div>
           {/if}
         </div>
       {/each}
+    </div>
+
+    <!-- Advanced Legendary CLI & EOS Service Configuration Drawer -->
+    {#if showAdvancedLegendary}
+      <div class="glass card" style="margin-top:1rem;padding:1rem;border-color:rgba(56,189,248,0.25);background:rgba(15,23,42,0.6)">
+        <div class="row-between" style="align-items:center;margin-bottom:0.75rem">
+          <strong style="font-size:0.92rem">⚙️ Legendary CLI &amp; Epic Online Services Settings</strong>
+          {#if legendaryAuth?.executablePath}
+            <span class="pill pill-ok" style="font-size:0.65rem" title={legendaryAuth.executablePath}>
+              ✓ {legendaryAuth.executablePath}
+            </span>
+          {:else}
+            <span class="pill pill-dim" style="font-size:0.65rem">Not Configured</span>
+          {/if}
+        </div>
+
+        <div style="margin-bottom:1rem">
+          <span class="muted-xs" style="display:block;margin-bottom:0.35rem">
+            Legendary Executable or Application Folder:
+          </span>
+          <div class="row" style="gap:0.4rem;align-items:center">
+            <input
+              type="text"
+              placeholder="e.g. E:\Games\Epic Games\Legendary"
+              bind:value={legendaryPathInput}
+              disabled={savingPath}
+              style="flex:1"
+              onkeydown={(e) => {
+                if (e.key === "Enter") handleSaveLegendaryPath();
+              }}
+            />
+            <button
+              class="btn mini btn-accent"
+              onclick={handleSaveLegendaryPath}
+              disabled={savingPath}
+              title="Save custom Legendary path"
+            >
+              {savingPath ? "Saving…" : "Save Path"}
+            </button>
+            <button
+              class="btn mini btn-ghost"
+              onclick={handleAutoDetectLegendary}
+              disabled={savingPath}
+              title="Scan system and mounted drives for Legendary CLI"
+            >
+              ↻ Auto-Detect
+            </button>
+          </div>
+        </div>
+
+        <div style="padding-top:0.75rem;border-top:1px solid rgba(255,255,255,0.08)">
+          <div class="row-between" style="align-items:center;margin-bottom:0.35rem">
+            <div>
+              <strong style="font-size:0.88rem">Epic Games Overlay Service (EOS)</strong>
+              <p class="muted-xs" style="margin:0.15rem 0 0">
+                Required for in-game Epic Online Services, friend lists, achievements, and cloud multiplayer overlay. Requires active Legendary authentication.
+              </p>
+            </div>
+            {#if eosOverlayStatus?.isInstalled}
+              <span class="pill pill-ok" style="font-size:0.65rem">
+                ✓ Installed {eosOverlayStatus.version ? `(${eosOverlayStatus.version})` : ""}
+              </span>
+            {:else}
+              <span class="pill pill-dim" style="font-size:0.65rem">Not Installed</span>
+            {/if}
+          </div>
+          <div class="row" style="gap:0.5rem;align-items:center;margin-top:0.6rem">
+            <button
+              class="btn mini primary"
+              onclick={handleInstallEosOverlay}
+              disabled={!legendaryAuth?.isLoggedIn || installingEos}
+              title={legendaryAuth?.isLoggedIn ? "Download and enable Epic Games overlay service" : "Requires active Epic Games login via Legendary"}
+            >
+              {installingEos ? "Installing Overlay…" : "⚡ Download Epic Overlay Service"}
+            </button>
+            {#if !legendaryAuth?.isLoggedIn}
+              <span class="muted-xs" style="color:var(--text-muted)">
+                ⚠️ Log into Epic Games via the platform card above to enable overlay download.
+              </span>
+            {/if}
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    <!-- Free Game Notifications & Promotions Opt-in Toggle -->
+    <div class="glass card" style="margin-top:1rem;padding:0.85rem 1rem">
+      <div class="row-between" style="align-items:center">
+        <div>
+          <strong style="font-size:0.92rem">Free Game Promotions &amp; Alerts</strong>
+          <p class="muted-xs" style="margin:0.2rem 0 0">
+            Show alerts on the Executive Dashboard when 100% free games are available to claim from your enabled storefronts (e.g. Epic Games weekly free titles, GOG giveaways).
+          </p>
+        </div>
+        <label class="row" style="align-items:center;gap:0.5rem;cursor:pointer;user-select:none;margin:0">
+          <input
+            type="checkbox"
+            bind:checked={freeGameNotifications}
+            style="width:auto;margin:0"
+          />
+          <span class="muted-sm">{freeGameNotifications ? "Enabled" : "Disabled"}</span>
+        </label>
+      </div>
     </div>
     {#if legendaryMsg}
       <div style="margin-top:0.75rem;padding:0.5rem 0.75rem;background:rgba(56,189,248,0.1);border-radius:6px;font-size:0.8rem;color:var(--text)">

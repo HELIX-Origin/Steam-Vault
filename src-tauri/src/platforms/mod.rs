@@ -14,15 +14,18 @@ pub mod detectors;
 pub mod launchers;
 pub mod linux;
 pub mod macos;
+pub mod promotions;
 pub mod windows;
 
 #[cfg(windows)]
 pub mod registry;
 
 pub use launchers::{
-    detect_all_launchers, get_legendary_auth_status, legendary_authenticate, legendary_logout,
-    LauncherStatus, LegendaryAuthStatus,
+    detect_all_launchers, get_eos_overlay_status, get_legendary_auth_status, install_eos_overlay,
+    legendary_authenticate, legendary_logout, EosOverlayStatus, LauncherStatus,
+    LegendaryAuthStatus,
 };
+pub use promotions::{FreeGamePromotion, PatchNote, StoreDeal};
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

@@ -2916,6 +2916,229 @@ pub fn legendary_logout() -> AppResult<crate::platforms::LegendaryAuthStatus> {
     crate::platforms::legendary_logout()
 }
 
+const CHROME_USER_AGENT: &str = if cfg!(target_os = "windows") {
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+} else if cfg!(target_os = "macos") {
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+} else {
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+};
+
+/// Open a native Epic Games authentication window using Chrome User Agent and automatic code interception.
+#[tauri::command]
+pub fn open_epic_login_window(app: tauri::AppHandle) -> AppResult<bool> {
+    use tauri::Manager;
+
+    if let Some(existing) = app.get_webview_window("epic-auth") {
+        let _ = existing.set_focus();
+        return Ok(true);
+    }
+
+    let auth_status = crate::platforms::get_legendary_auth_status();
+    let login_url = auth_status.direct_auth_url;
+
+    let app_handle = app.clone();
+    let win_builder = tauri::WebviewWindowBuilder::new(
+        &app,
+        "epic-auth",
+        tauri::WebviewUrl::External(
+            login_url
+                .parse()
+                .map_err(|e| AppError::msg(format!("Invalid auth URL: {e}")))?,
+        ),
+    )
+    .title("Sign in to Epic Games")
+    .inner_size(840.0, 720.0)
+    .center()
+    .user_agent(CHROME_USER_AGENT)
+    .on_navigation({
+        let app_clone = app_handle.clone();
+        move |url| {
+            // 1. Intercept internal callback
+            if url.host_str() == Some("legendary-callback.local") {
+                if let Some(code) = url
+                    .query_pairs()
+                    .find(|(k, _)| k == "code")
+                    .map(|(_, v)| v.to_string())
+                {
+                    let app_inner = app_clone.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Ok(status) =
+                            crate::platforms::legendary_authenticate(Some(code), false)
+                        {
+                            use tauri::Emitter;
+                            let _ = app_inner.emit("legendary-auth-changed", status);
+                        }
+                        if let Some(w) = app_inner.get_webview_window("epic-auth") {
+                            let _ = w.close();
+                        }
+                    });
+                }
+                return false;
+            }
+
+            // 2. Intercept code directly if redirect URL matches
+            if let Some(code) = url
+                .query_pairs()
+                .find(|(k, _)| k == "authorizationCode" || k == "code")
+                .map(|(_, v)| v.to_string())
+            {
+                if code.len() >= 16 {
+                    let app_inner = app_clone.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Ok(status) =
+                            crate::platforms::legendary_authenticate(Some(code), false)
+                        {
+                            use tauri::Emitter;
+                            let _ = app_inner.emit("legendary-auth-changed", status);
+                        }
+                        if let Some(w) = app_inner.get_webview_window("epic-auth") {
+                            let _ = w.close();
+                        }
+                    });
+                }
+            }
+
+            true
+        }
+    })
+    .on_page_load(|window, payload| {
+        if matches!(payload.event(), tauri::webview::PageLoadEvent::Finished) {
+            let script = r#"
+                (function() {
+                    function extractCode() {
+                        try {
+                            let code = null;
+                            const url = new URL(window.location.href);
+                            code = url.searchParams.get("authorizationCode") || url.searchParams.get("code");
+                            if (!code && window.location.hash) {
+                                const hash = new URLSearchParams(window.location.hash.substring(1));
+                                code = hash.get("authorizationCode") || hash.get("code");
+                            }
+                            if (!code && document.body) {
+                                const text = document.body.innerText || document.body.textContent || "";
+                                if (text.includes("authorizationCode")) {
+                                    try {
+                                        const json = JSON.parse(text);
+                                        if (json.authorizationCode) code = json.authorizationCode;
+                                    } catch(e) {
+                                        const m = text.match(/"authorizationCode"\s*:\s*"([a-f0-9]+)"/i);
+                                        if (m) code = m[1];
+                                    }
+                                }
+                            }
+                            if (code && code.length >= 16) {
+                                window.location.href = "https://legendary-callback.local/?code=" + encodeURIComponent(code);
+                            }
+                        } catch(e) {}
+                    }
+                    extractCode();
+                    setTimeout(extractCode, 300);
+                    setTimeout(extractCode, 1000);
+                    setTimeout(extractCode, 2500);
+                })();
+            "#;
+            let _ = window.eval(script);
+        }
+    });
+
+    win_builder
+        .build()
+        .map_err(|e| AppError::msg(format!("Failed to open Epic Games auth window: {e}")))?;
+
+    Ok(true)
+}
+
+/// Query current Epic Games overlay service (EOS) status via Legendary.
+#[tauri::command]
+pub fn get_eos_overlay_status() -> crate::platforms::EosOverlayStatus {
+    crate::platforms::get_eos_overlay_status()
+}
+
+/// Download and install Epic Games overlay service (EOS) via Legendary.
+#[tauri::command]
+pub fn install_eos_overlay() -> AppResult<crate::platforms::EosOverlayStatus> {
+    crate::platforms::install_eos_overlay()
+}
+
+pub use crate::platforms::{FreeGamePromotion, PatchNote, StoreDeal};
+
+/// Fetch current 100% free games and giveaways from enabled storefront platforms (Steam, Epic, GOG, etc.).
+#[tauri::command]
+pub async fn get_free_game_promotions(
+    platforms: Option<Vec<String>>,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<FreeGamePromotion>> {
+    let settings = state.settings.lock().expect("settings lock poisoned").clone();
+    let enabled_platforms: std::collections::HashSet<String> = if let Some(list) = platforms {
+        list.into_iter().collect()
+    } else {
+        settings
+            .platform_sources
+            .iter()
+            .filter(|s| s.enabled)
+            .map(|s| s.id.clone())
+            .collect()
+    };
+
+    let client = crate::metadata::http_client();
+    let promotions = crate::platforms::promotions::fetch_all_free_games(&client, &enabled_platforms).await;
+    Ok(promotions)
+}
+
+/// Fetch highlighted deals, promotions, and discounts across enabled storefront platforms.
+#[tauri::command]
+pub async fn get_store_deals(
+    platforms: Option<Vec<String>>,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<StoreDeal>> {
+    let settings = state.settings.lock().expect("settings lock poisoned").clone();
+    let enabled_platforms: std::collections::HashSet<String> = if let Some(list) = platforms {
+        list.into_iter().collect()
+    } else {
+        settings
+            .platform_sources
+            .iter()
+            .filter(|s| s.enabled)
+            .map(|s| s.id.clone())
+            .collect()
+    };
+
+    let client = crate::metadata::http_client();
+    let deals = crate::platforms::promotions::fetch_all_deals(&client, &enabled_platforms).await;
+    Ok(deals)
+}
+
+/// Fetch patch notes and game update announcements for candidate library games.
+#[tauri::command]
+pub async fn get_library_patch_notes(
+    games: Option<Vec<(String, String)>>,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<PatchNote>> {
+    let candidate_games = if let Some(g) = games {
+        g
+    } else {
+        let root = match steam_root(&state) {
+            Ok(r) => r,
+            Err(_) => return Ok(Vec::new()),
+        };
+        if let Ok(games_list) = library::load_games(&root) {
+            games_list
+                .into_iter()
+                .filter(|g| g.installed)
+                .take(12)
+                .map(|g| (g.app_id.to_string(), g.name))
+                .collect()
+        } else {
+            Vec::new()
+        }
+    };
+
+    let client = crate::metadata::http_client();
+    let notes = crate::platforms::promotions::fetch_library_patch_notes(&client, &candidate_games).await;
+    Ok(notes)
+}
+
 /// Save custom Legendary CLI path/folder preference and return updated status.
 #[tauri::command]
 pub fn set_legendary_path(

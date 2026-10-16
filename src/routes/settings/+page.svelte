@@ -587,6 +587,7 @@
       bind:scaffoldPath
       bind:scaffolding
       bind:scaffoldMsg
+      bind:freeGameNotifications={form.enableFreeGameNotifications}
       {scaffoldEsDe}
       {addEmulatorConfig}
       {removeEmulatorConfig}

@@ -207,6 +207,7 @@ export interface Settings {
   platformSources: PlatformSource[];
   emulatorConfigs?: EmulatorConfig[];
   legendaryPath?: string | null;
+  enableFreeGameNotifications?: boolean;
 }
 
 /** User-configured emulator mapping (mirrors the Rust `EmulatorConfig`). */
@@ -495,4 +496,59 @@ export interface LegendaryAuthStatus {
   directAuthUrl?: string;
   executablePath?: string | null;
 }
+
+export interface EosOverlayStatus {
+  isInstalled: boolean;
+  isEnabled: boolean;
+  version?: string | null;
+  path?: string | null;
+}
+
+export interface FreeGamePromotion {
+  id: string;
+  title: string;
+  platform: string;
+  description?: string | null;
+  url: string;
+  imageUrl?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  isActive: boolean;
+  worth?: string | null;
+}
+
+export interface StoreDeal {
+  id: string;
+  title: string;
+  platform: string;
+  url: string;
+  imageUrl?: string | null;
+  discountPercent: number;
+  originalPrice?: string | null;
+  finalPrice: string;
+  endDate?: string | null;
+}
+
+export interface PatchNote {
+  id: string;
+  appId: string;
+  gameName: string;
+  platform: string;
+  title: string;
+  url: string;
+  date: string;
+  author?: string | null;
+  summary?: string | null;
+}
+
+export interface DownloadItem {
+  id: string;
+  name: string;
+  category: "tool" | "overlay" | "artwork" | "metadata" | "game";
+  progress: number;
+  speed?: string;
+  status: "queued" | "downloading" | "completed" | "failed";
+  error?: string;
+}
+
 
