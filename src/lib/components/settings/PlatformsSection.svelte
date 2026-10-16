@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
   import { t } from "$lib/i18n";
   import { error, platformScan } from "$lib/stores";
-  import type { EmulatorConfig, Platform, PlatformGame } from "$lib/types";
+  import type { EmulatorConfig, LauncherStatus, LegendaryAuthStatus, Platform, PlatformGame } from "$lib/types";
 
   type SourceRow = { id: string; label: string; enabled: boolean; roots: string[] };
 
@@ -60,6 +61,123 @@
   let busy = $state(false);
   let imported = $state<{ added: number; skipped: string[] } | null>(null);
   let includeOtherDrives = $state(false);
+
+  let launcherStatuses = $state<Record<string, LauncherStatus>>({});
+  let loadingLaunchers = $state(true);
+  let installingLegendary = $state(false);
+  let legendaryMsg = $state<string | null>(null);
+
+  let legendaryAuth = $state<LegendaryAuthStatus | null>(null);
+  let authCodeInput = $state("");
+  let loggingIn = $state(false);
+  let authError = $state<string | null>(null);
+
+  async function loadLaunchers() {
+    loadingLaunchers = true;
+    try {
+      const list = await api.getInstalledLaunchers();
+      const map: Record<string, LauncherStatus> = {};
+      for (const item of list) {
+        map[item.id] = item;
+      }
+      launcherStatuses = map;
+    } catch (e) {
+      console.warn("Could not inspect installed launchers:", e);
+    } finally {
+      loadingLaunchers = false;
+    }
+  }
+
+  async function refreshLegendaryAuth() {
+    try {
+      legendaryAuth = await api.getLegendaryStatus();
+    } catch (e) {
+      console.warn("Could not query Legendary auth status:", e);
+    }
+  }
+
+  onMount(async () => {
+    await loadLaunchers();
+    await refreshLegendaryAuth();
+  });
+
+  async function handleOpenUrl(url: string) {
+    if (!url) return;
+    try {
+      await api.openExternalUrl(url);
+    } catch (e) {
+      error.set(errorMessage(e));
+    }
+  }
+
+  async function handleInstallLegendary() {
+    installingLegendary = true;
+    legendaryMsg = null;
+    try {
+      const status = await api.installLegendary();
+      launcherStatuses = { ...launcherStatuses, epic: status };
+      const epicSource = sources.find((s) => s.id === "epic");
+      if (epicSource) {
+        epicSource.enabled = true;
+        sources = [...sources];
+      }
+      await refreshLegendaryAuth();
+      legendaryMsg = "Legendary CLI & Epic Online Services successfully installed!";
+      setTimeout(() => (legendaryMsg = null), 5000);
+    } catch (e) {
+      legendaryMsg = errorMessage(e);
+    } finally {
+      installingLegendary = false;
+    }
+  }
+
+  async function handleLegendaryLogin() {
+    if (!authCodeInput.trim()) return;
+    loggingIn = true;
+    authError = null;
+    try {
+      legendaryAuth = await api.legendaryLogin(authCodeInput.trim(), false);
+      authCodeInput = "";
+      legendaryMsg = `Successfully authenticated as ${legendaryAuth.accountName ?? "Epic Games account"}!`;
+      setTimeout(() => (legendaryMsg = null), 5000);
+    } catch (e) {
+      authError = errorMessage(e);
+    } finally {
+      loggingIn = false;
+    }
+  }
+
+  async function handleLegendaryImport() {
+    loggingIn = true;
+    authError = null;
+    try {
+      legendaryAuth = await api.legendaryLogin(null, true);
+      legendaryMsg = `Successfully imported credentials for ${legendaryAuth.accountName ?? "Epic Games account"}!`;
+      setTimeout(() => (legendaryMsg = null), 5000);
+    } catch (e) {
+      authError = errorMessage(e);
+    } finally {
+      loggingIn = false;
+    }
+  }
+
+  async function handleLegendaryLogout() {
+    try {
+      legendaryAuth = await api.legendaryLogout();
+      legendaryMsg = "Logged out from Epic Games in Legendary.";
+      setTimeout(() => (legendaryMsg = null), 5000);
+    } catch (e) {
+      error.set(errorMessage(e));
+    }
+  }
+
+  async function handleOpenToolsFolder() {
+    try {
+      await api.openToolsFolder();
+    } catch (e) {
+      error.set(errorMessage(e));
+    }
+  }
 
   function key(game: PlatformGame): string {
     return `${game.platform}|${game.installDir ?? game.exe ?? game.name}`.toLowerCase();
@@ -122,29 +240,177 @@
   <section class="glass-strong card" style="margin-bottom:1.25rem">
     <div class="row-between" style="align-items:center;margin-bottom:0.4rem">
       <h2 class="section-title" style="margin:0">Storefront &amp; Platform Integrations</h2>
-      <span class="pill pill-dim">Local Storefronts</span>
+      <div class="row" style="align-items:center;gap:0.5rem">
+        <button class="btn mini btn-ghost" onclick={loadLaunchers} disabled={loadingLaunchers} title="Re-check installed launchers">
+          {loadingLaunchers ? "Checking launchers…" : "↻ Check Launchers"}
+        </button>
+        <button class="btn mini btn-ghost" onclick={handleOpenToolsFolder} title="Open user tools directory where helper binaries and CLI tools are stored">
+          Tools Folder ↗
+        </button>
+      </div>
     </div>
     <p class="muted-sm">
-      Automatically detect games from installed launchers and storefront integrations. Toggle each platform on or off. All default and user installation locations are automatically discovered through each platform's own configuration.
+      Automatically detect games from installed launchers and native gaming services. Launchers that are not installed on your system or drives cannot be enabled until installed or downloaded via your browser. Epic Games can also run lightweight via the built-in Legendary CLI.
     </p>
     <div class="integrations-grid">
       {#each sources.filter((s) => s.id !== "other" && s.id !== "emulator") as source (source.id)}
-        <label class="integration-item">
-          <input
-            type="checkbox"
-            checked={source.enabled}
-            onchange={(event) => {
-              source.enabled = event.currentTarget.checked;
-              sources = [...sources];
-            }}
-          />
-          <div class="integration-label">
-            <strong>{source.label}</strong>
-            <span class="muted-xs">{source.enabled ? "Active" : "Disabled"}</span>
-          </div>
-        </label>
+        {@const launcher = launcherStatuses[source.id]}
+        {@const isInstalled = launcher ? launcher.installed : true}
+        <div class="integration-item glass" class:is-disabled={!isInstalled}>
+          <label class="integration-toggle-row" class:not-allowed={!isInstalled}>
+            <input
+              type="checkbox"
+              checked={source.enabled && isInstalled}
+              disabled={!isInstalled}
+              onchange={(event) => {
+                if (!isInstalled) return;
+                source.enabled = event.currentTarget.checked;
+                sources = [...sources];
+              }}
+            />
+            <div class="integration-label">
+              <div class="row" style="align-items:center;gap:0.4rem;flex-wrap:wrap">
+                <strong>{source.label}</strong>
+                {#if launcher}
+                  {#if isInstalled}
+                    <span class="pill pill-ok" style="font-size:0.62rem">Installed</span>
+                    {#if launcher.alternativeMethod}
+                      <span class="pill pill-accent" style="font-size:0.62rem">{launcher.alternativeMethod}</span>
+                    {/if}
+                  {:else}
+                    <span class="pill pill-dim" style="font-size:0.62rem">Not Installed</span>
+                  {/if}
+                {/if}
+              </div>
+              <span class="muted-xs">
+                {#if !isInstalled}
+                  Disabled — Launcher or native service not detected
+                {:else if source.enabled}
+                  Active &amp; scanned
+                {:else}
+                  Disabled
+                {/if}
+              </span>
+            </div>
+          </label>
+
+          {#if !isInstalled && launcher}
+            <div class="integration-actions-row">
+              {#if launcher.downloadUrl}
+                <button
+                  class="btn mini btn-ghost launcher-action-btn"
+                  onclick={() => handleOpenUrl(launcher.downloadUrl)}
+                  title="Download official {launcher.name} via web browser"
+                >
+                  Download Launcher ↗
+                </button>
+              {/if}
+              {#if launcher.id === "epic"}
+                <button
+                  class="btn mini primary launcher-action-btn"
+                  onclick={handleInstallLegendary}
+                  disabled={installingLegendary}
+                  title="Download and install Legendary CLI and Epic Online Services into user tools directory"
+                >
+                  {installingLegendary ? "Installing Legendary…" : "⚡ Install Legendary CLI (Built-in)"}
+                </button>
+              {/if}
+            </div>
+          {:else if isInstalled && launcher?.id === "epic"}
+            <div class="legendary-panel">
+              {#if legendaryAuth?.isLoggedIn}
+                <div class="legendary-account-row">
+                  <div class="legendary-account-info">
+                    <span class="legendary-dot"></span>
+                    <div style="min-width:0">
+                      <div class="legendary-user" title={legendaryAuth.accountName ?? "Epic Games Account"}>
+                        {legendaryAuth.accountName ?? "Epic Games Account"}
+                      </div>
+                      {#if legendaryAuth.accountId}
+                        <div class="muted-xs" style="font-size:0.68rem;opacity:0.7">ID: {legendaryAuth.accountId}</div>
+                      {/if}
+                    </div>
+                  </div>
+                  <div class="row" style="gap:0.3rem;align-items:center">
+                    <button
+                      class="btn mini btn-ghost"
+                      style="font-size:0.68rem;padding:0.18rem 0.45rem"
+                      onclick={handleOpenToolsFolder}
+                      title="Open tools folder where legendary binary is stored"
+                    >
+                      Tools Folder ↗
+                    </button>
+                    <button
+                      class="btn mini btn-ghost"
+                      style="font-size:0.68rem;padding:0.18rem 0.45rem"
+                      onclick={handleLegendaryLogout}
+                      title="Log out from Epic Games in Legendary"
+                    >
+                      Log Out
+                    </button>
+                  </div>
+                </div>
+              {:else}
+                <div class="legendary-login-box">
+                  <span class="muted-xs" style="font-size:0.72rem;line-height:1.3">
+                    Connect Epic Games to discover and launch games without the Epic Games Launcher:
+                  </span>
+                  <div class="legendary-auth-actions">
+                    <button
+                      class="btn mini primary"
+                      style="font-size:0.72rem;padding:0.2rem 0.5rem"
+                      onclick={() => handleOpenUrl(legendaryAuth?.authUrl ?? "https://www.epicgames.com/id/login")}
+                      title="Open Epic Games authorization page in browser"
+                    >
+                      1. Log In via Epic Games ↗
+                    </button>
+                    <button
+                      class="btn mini btn-ghost"
+                      style="font-size:0.72rem;padding:0.2rem 0.5rem"
+                      onclick={handleLegendaryImport}
+                      disabled={loggingIn}
+                      title="Import credentials from existing Epic Games Launcher install"
+                    >
+                      {loggingIn ? "Importing…" : "Import from Launcher"}
+                    </button>
+                  </div>
+                  <div class="legendary-code-input-row">
+                    <input
+                      type="text"
+                      placeholder="2. Paste code or JSON response here"
+                      bind:value={authCodeInput}
+                      disabled={loggingIn}
+                      onkeydown={(e) => {
+                        if (e.key === "Enter") handleLegendaryLogin();
+                      }}
+                    />
+                    <button
+                      class="btn mini btn-accent"
+                      style="font-size:0.72rem;padding:0.2rem 0.55rem"
+                      onclick={handleLegendaryLogin}
+                      disabled={loggingIn || !authCodeInput.trim()}
+                      title="Save authorization code and sign into Legendary"
+                    >
+                      {loggingIn ? "Signing In…" : "Save Code"}
+                    </button>
+                  </div>
+                  {#if authError}
+                    <div class="legendary-error-text">
+                      {authError}
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
       {/each}
     </div>
+    {#if legendaryMsg}
+      <div style="margin-top:0.75rem;padding:0.5rem 0.75rem;background:rgba(56,189,248,0.1);border-radius:6px;font-size:0.8rem;color:var(--text)">
+        {legendaryMsg}
+      </div>
+    {/if}
   </section>
 
   <!-- Non-Steam Platform Game Scanner & Importer -->

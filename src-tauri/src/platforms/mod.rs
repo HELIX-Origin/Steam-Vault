@@ -11,12 +11,18 @@
 //! shortcuts by their source storefront.
 
 pub mod detectors;
+pub mod launchers;
 pub mod linux;
 pub mod macos;
 pub mod windows;
 
 #[cfg(windows)]
 pub mod registry;
+
+pub use launchers::{
+    detect_all_launchers, get_legendary_auth_status, legendary_authenticate, legendary_logout,
+    LauncherStatus, LegendaryAuthStatus,
+};
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;

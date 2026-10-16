@@ -28,8 +28,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Self {
-        let mut cache = MetadataCache::open();
-        cache.ingest_uninstall_metadata();
+        let cache = MetadataCache::open();
         AppState {
             settings: Mutex::new(settings::load()),
             cache: Mutex::new(cache),
@@ -486,11 +485,7 @@ pub async fn ensure_steam_metadata(
                 let mut cache = state.cache.lock().expect("cache lock poisoned");
                 for (app_id, meta) in &map {
                     cache.put("steam-store", *app_id, meta);
-                    if let Some(title) = &meta.name {
-                        cache.upsert_catalog_entry(title, meta, Some("steam"), None);
-                    }
                 }
-                let _ = cache.save();
                 fetched += map.len();
             }
         }
@@ -582,7 +577,9 @@ pub async fn ensure_game_metadata(
     for (name, app_id) in missing_steam {
         let cat_opt = {
             let cache = state.cache.lock().expect("cache lock poisoned");
-            cache.find_catalog_by_title(&name)
+            cache
+                .find_catalog_by_steam_id(app_id)
+                .or_else(|| cache.find_catalog_by_title(&name))
         };
         if let Some(meta) = cat_opt {
             let mut cache = state.cache.lock().expect("cache lock poisoned");
@@ -592,18 +589,10 @@ pub async fn ensure_game_metadata(
         } else if let Some(online_meta) = fetch_online_catalog_entry(&client, &name).await {
             let mut cache = state.cache.lock().expect("cache lock poisoned");
             cache.put("steam-store", app_id, &online_meta);
-            if let Some(title) = &online_meta.name {
-                cache.upsert_catalog_entry(title, &online_meta, Some("steam"), None);
-            }
-            let _ = cache.save();
             result.fetched += 1;
         } else if let Ok(Some(meta)) = metadata::extra::pcgamingwiki_lookup(&client, &name).await {
             let mut cache = state.cache.lock().expect("cache lock poisoned");
             cache.put("steam-store", app_id, &meta);
-            if let Some(title) = &meta.name {
-                cache.upsert_catalog_entry(title, &meta, Some("steam"), None);
-            }
-            let _ = cache.save();
             result.fetched += 1;
         }
     }
@@ -649,14 +638,6 @@ pub async fn ensure_game_metadata(
         // 0b. Query community online catalog on-demand if not found locally
         if resolved.is_none() {
             if let Some(online_meta) = fetch_online_catalog_entry(&client, &game.name).await {
-                let mut cache = state.cache.lock().expect("cache lock poisoned");
-                let title = online_meta.name.as_deref().unwrap_or(&game.name);
-                cache.upsert_catalog_entry(
-                    title,
-                    &online_meta,
-                    Some(game.platform.label()),
-                    game.exe.as_deref(),
-                );
                 resolved = Some(online_meta);
             }
         }
@@ -810,14 +791,6 @@ pub async fn ensure_game_metadata(
         let mut cache = state.cache.lock().expect("cache lock poisoned");
         cache.put("shortcut-meta", game.app_id, &final_meta);
         cache.put("steam-store", game.app_id, &final_meta);
-        let platform_str = game.platform.label();
-        cache.upsert_catalog_entry(
-            &game.name,
-            &final_meta,
-            Some(platform_str),
-            game.exe.as_deref(),
-        );
-        let _ = cache.save();
         result.fetched += 1;
     }
 
@@ -896,13 +869,20 @@ pub async fn refresh_game_metadata(
     if resolved.is_none() {
         let cat_opt = {
             let cache = state.cache.lock().expect("cache lock poisoned");
-            if let Some(exe_str) = game.exe.as_deref() {
-                cache
-                    .find_catalog_by_exe(exe_str)
-                    .or_else(|| cache.find_catalog_by_title(&game.name))
+            let by_steam = if game.kind != GameKind::Shortcut && game.app_id > 0 {
+                cache.find_catalog_by_steam_id(game.app_id)
             } else {
-                cache.find_catalog_by_title(&game.name)
-            }
+                None
+            };
+            by_steam
+                .or_else(|| {
+                    if let Some(exe_str) = game.exe.as_deref() {
+                        cache.find_catalog_by_exe(exe_str)
+                    } else {
+                        None
+                    }
+                })
+                .or_else(|| cache.find_catalog_by_title(&game.name))
         };
         if let Some(meta) = cat_opt {
             resolved = Some(meta);
@@ -1056,14 +1036,6 @@ pub async fn refresh_game_metadata(
             cache.put("shortcut-meta", game.app_id, &final_meta);
             cache.put("steam-store", game.app_id, &final_meta);
         }
-        let platform_label = game.platform.label();
-        cache.upsert_catalog_entry(
-            &game.name,
-            &final_meta,
-            Some(platform_label),
-            game.exe.as_deref(),
-        );
-        let _ = cache.save();
         Ok(Some(final_meta))
     } else {
         Ok(None)
@@ -1221,6 +1193,13 @@ pub async fn compute_autocats(
             .get("shortcut-meta", game.app_id, None)
             .or_else(|| cache.get("steam-store", game.app_id, None))
             .or_else(|| {
+                if game.kind != GameKind::Shortcut && game.app_id > 0 {
+                    cache.find_catalog_by_steam_id(game.app_id)
+                } else {
+                    None
+                }
+            })
+            .or_else(|| {
                 game.exe
                     .as_deref()
                     .and_then(|e| cache.find_catalog_by_exe(e))
@@ -1368,6 +1347,7 @@ pub async fn fetch_and_apply_artwork_for_game(
             cache
                 .get("shortcut-meta", app_id, None)
                 .or_else(|| cache.get("steam-store", app_id, None))
+                .or_else(|| cache.find_catalog_by_steam_id(app_id))
                 .or_else(|| cache.find_catalog_by_title(name))
                 .and_then(|m| m.capsule_image.or(m.header_image))
         };
@@ -1399,20 +1379,21 @@ pub async fn fetch_and_apply_artwork_for_game(
         }
     }
 
-    // 3. Fallback: if hero banner is still missing, check cached header_image or catalog
+    // 3. Fallback: if hero banner is still missing, check cached hero_image/header_image or catalog
     if !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::Hero).present {
         let mut hero_url = {
             let cache = state.cache.lock().expect("cache lock poisoned");
             cache
                 .get("shortcut-meta", app_id, None)
                 .or_else(|| cache.get("steam-store", app_id, None))
+                .or_else(|| cache.find_catalog_by_steam_id(app_id))
                 .or_else(|| cache.find_catalog_by_title(name))
-                .and_then(|m| m.header_image)
+                .and_then(|m| m.hero_image.or(m.header_image))
         };
 
         if hero_url.is_none() {
             if let Some(online_meta) = fetch_online_catalog_entry(&client, name).await {
-                hero_url = online_meta.header_image;
+                hero_url = online_meta.hero_image.or(online_meta.header_image);
             }
         }
 
@@ -1508,22 +1489,77 @@ pub async fn import_platform_games(
                         (raw_exe, game.launch_uri.clone().unwrap_or_default())
                     }
                 } else {
-                    (raw_exe, game.launch_uri.clone().unwrap_or_default())
+                    // For direct binaries (e.g. GOG, itch, standalone, Epic), do NOT pass launch_uri as command-line arguments.
+                    // If this is an Epic Games title and Legendary CLI is installed, launch cleanly through Legendary.
+                    if game.platform == Platform::Epic {
+                        let bin = crate::platforms::launchers::legendary_binary_path();
+                        if bin.is_file() {
+                            let app_name = game
+                                .platform_id
+                                .as_deref()
+                                .or_else(|| {
+                                    game.launch_uri.as_ref().and_then(|u| {
+                                        if u.starts_with("legendary://") {
+                                            Some(&u["legendary://".len()..])
+                                        } else if u.starts_with("com.epicgames.launcher://apps/") {
+                                            let after = &u["com.epicgames.launcher://apps/".len()..];
+                                            Some(after.split('?').next().unwrap_or(after))
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                });
+                            if let Some(name) = app_name {
+                                (bin.display().to_string(), format!("launch {name}"))
+                            } else {
+                                (raw_exe.clone(), String::new())
+                            }
+                        } else {
+                            (raw_exe.clone(), String::new())
+                        }
+                    } else {
+                        (raw_exe.clone(), String::new())
+                    }
                 }
             }
             None => {
                 if let Some(ref uri) = game.launch_uri {
-                    #[cfg(windows)]
+                    if game.platform == Platform::Epic
+                        && (uri.starts_with("legendary://")
+                            || uri.starts_with("com.epicgames.launcher://apps/"))
                     {
-                        if uri.starts_with("shell:AppsFolder") {
-                            ("C:\\Windows\\explorer.exe".to_string(), uri.clone())
+                        let bin = crate::platforms::launchers::legendary_binary_path();
+                        if bin.is_file() {
+                            let app_name = if uri.starts_with("legendary://") {
+                                &uri["legendary://".len()..]
+                            } else {
+                                let after = &uri["com.epicgames.launcher://apps/".len()..];
+                                after.split('?').next().unwrap_or(after)
+                            };
+                            (bin.display().to_string(), format!("launch {app_name}"))
                         } else {
-                            ("cmd.exe".to_string(), format!("/c start \"\" \"{}\"", uri))
+                            #[cfg(windows)]
+                            {
+                                ("cmd.exe".to_string(), format!("/c start \"\" \"{}\"", uri))
+                            }
+                            #[cfg(not(windows))]
+                            {
+                                ("xdg-open".to_string(), uri.clone())
+                            }
                         }
-                    }
-                    #[cfg(not(windows))]
-                    {
-                        ("xdg-open".to_string(), uri.clone())
+                    } else {
+                        #[cfg(windows)]
+                        {
+                            if uri.starts_with("shell:AppsFolder") {
+                                ("C:\\Windows\\explorer.exe".to_string(), uri.clone())
+                            } else {
+                                ("cmd.exe".to_string(), format!("/c start \"\" \"{}\"", uri))
+                            }
+                        }
+                        #[cfg(not(windows))]
+                        {
+                            ("xdg-open".to_string(), uri.clone())
+                        }
                     }
                 } else {
                     skipped.push(format!(
@@ -1545,10 +1581,21 @@ pub async fn import_platform_games(
         let mut final_name = game.name.clone();
         {
             let cache = state.cache.lock().expect("cache lock poisoned");
-            if let Some(cat_meta) = cache
-                .find_catalog_by_exe(&exe)
-                .or_else(|| cache.find_catalog_by_title(&game.name))
-            {
+            let cat_meta = match game.platform {
+                platforms::Platform::Gog => game
+                    .platform_id
+                    .as_deref()
+                    .and_then(|id| cache.find_catalog_by_platform_id("gog_id", id)),
+                platforms::Platform::Epic => game
+                    .platform_id
+                    .as_deref()
+                    .and_then(|id| cache.find_catalog_by_platform_id("epic_name", id)),
+                _ => None,
+            }
+            .or_else(|| cache.find_catalog_by_exe(&exe))
+            .or_else(|| cache.find_catalog_by_title(&game.name));
+
+            if let Some(cat_meta) = cat_meta {
                 if let Some(ref cat_title) = cat_meta.name {
                     final_name = cat_title.clone();
                 }
@@ -1777,6 +1824,13 @@ pub async fn compute_categorization(
         let stored = cache
             .get("shortcut-meta", game.app_id, None)
             .or_else(|| cache.get("steam-store", game.app_id, None))
+            .or_else(|| {
+                if game.kind != GameKind::Shortcut && game.app_id > 0 {
+                    cache.find_catalog_by_steam_id(game.app_id)
+                } else {
+                    None
+                }
+            })
             .or_else(|| {
                 game.exe
                     .as_deref()
@@ -2234,12 +2288,13 @@ pub fn refresh_smart_collection(
     crate::steam::filters::refresh_smart_collection(&mut file, &collection_id, &games)
 }
 
-/// Statistics on the local compressed game catalog database.
+/// Statistics on the local compressed game catalog database and artwork cache.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CatalogStats {
     pub total_games: usize,
     pub total_metadata_cached: usize,
+    pub total_cached_artworks: usize,
 }
 
 #[tauri::command]
@@ -2248,7 +2303,111 @@ pub fn get_catalog_stats(state: State<'_, AppState>) -> CatalogStats {
     CatalogStats {
         total_games: cache.catalog_count(),
         total_metadata_cached: cache.count(),
+        total_cached_artworks: cache.artwork_count(),
     }
+}
+
+/// Clear all metadata, artwork, and key-value caches, reseeding the official community catalogue.
+/// Optionally triggers an immediate online catalogue and library metadata re-synchronization.
+#[tauri::command]
+pub async fn clear_metadata_cache(
+    account_id3: Option<String>,
+    redownload: Option<bool>,
+    state: State<'_, AppState>,
+) -> AppResult<crate::cache::CacheResetReport> {
+    let mut report = {
+        let mut cache = state.cache.lock().expect("cache lock poisoned");
+        cache.clear_all_caches()?
+    };
+
+    if redownload.unwrap_or(true) {
+        // 1. Try syncing official online catalogue
+        let _ = sync_online_catalog(None, state.clone()).await;
+
+        // 2. Refresh library metadata and artwork
+        let _ = sync_library_metadata(account_id3, Some(true), Some(true), state.clone()).await;
+
+        let cache = state.cache.lock().expect("cache lock poisoned");
+        report.total_catalog_games = cache.catalog_count();
+        report.total_metadata_records = cache.count();
+        report.message = format!(
+            "Cache reset completed. Reseeded {} catalogue games and cached {} fresh metadata records.",
+            report.total_catalog_games, report.total_metadata_records
+        );
+    }
+
+    Ok(report)
+}
+
+/// Retrieve a cached artwork data URL for a specific app ID and slot.
+#[tauri::command]
+pub fn get_cached_artwork(
+    app_id: u32,
+    slot: String,
+    state: State<'_, AppState>,
+) -> Option<String> {
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    cache.get_cached_artwork(app_id, &slot)
+}
+
+/// Batch retrieve cached artwork data URLs for all requested game app IDs.
+#[tauri::command]
+pub fn get_cached_artwork_batch(
+    app_ids: Vec<u32>,
+    slot: Option<String>,
+    state: State<'_, AppState>,
+) -> BTreeMap<u32, String> {
+    let slot_key = slot.unwrap_or_else(|| "gridPortrait".to_string());
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    let mut map = BTreeMap::new();
+    for app_id in app_ids {
+        if let Some(data_url) = cache.get_cached_artwork(app_id, &slot_key) {
+            map.insert(app_id, data_url);
+        }
+    }
+    map
+}
+
+/// Download an artwork image from a remote URL into the local disk cache.
+#[tauri::command]
+pub async fn cache_artwork_image(
+    app_id: u32,
+    slot: String,
+    url: String,
+    state: State<'_, AppState>,
+) -> AppResult<Option<String>> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+
+    // Check if already in cache
+    {
+        let cache = state.cache.lock().expect("cache lock poisoned");
+        if let Some(existing) = cache.get_cached_artwork(app_id, &slot) {
+            return Ok(Some(existing));
+        }
+    }
+
+    let client = metadata::http_client();
+    let res = client.get(trimmed).send().await?;
+    if !res.status().is_success() {
+        return Ok(None);
+    }
+    let bytes = res.bytes().await?;
+    let ext = if trimmed.ends_with(".png") {
+        "png"
+    } else if trimmed.ends_with(".webp") {
+        "webp"
+    } else if trimmed.ends_with(".ico") {
+        "ico"
+    } else {
+        "jpg"
+    };
+
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    let data_url = cache.cache_artwork_bytes(app_id, &slot, &bytes, ext, Some(trimmed))?;
+    Ok(Some(data_url))
 }
 
 #[tauri::command]
@@ -2308,11 +2467,25 @@ pub async fn fetch_online_catalog_entry(
     client: &reqwest::Client,
     title_or_slug: &str,
 ) -> Option<AppMeta> {
-    let slug = title_or_slug
+    let clean = title_or_slug
         .to_lowercase()
-        .replace(|c: char| !c.is_alphanumeric(), "-")
-        .trim_matches('-')
-        .to_string();
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect::<String>();
+    let mut slug = String::new();
+    let mut prev_dash = false;
+    for c in clean.chars() {
+        if c == '-' {
+            if !prev_dash {
+                slug.push('-');
+                prev_dash = true;
+            }
+        } else {
+            slug.push(c);
+            prev_dash = false;
+        }
+    }
+    let slug = slug.trim_matches('-');
 
     let url = format!(
         "https://raw.githubusercontent.com/HELIX-Origin/Steam-Vault-Catalogue/main/games/{}.json",
@@ -2330,8 +2503,14 @@ pub async fn fetch_online_catalog_entry(
         .and_then(|v| v.as_str())
         .unwrap_or(title_or_slug);
     let meta_obj = val.get("metadata");
+    let ext_ids = val.get("externalIds");
+    let app_id = ext_ids
+        .and_then(|e| e.get("steamAppId"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0) as u32;
 
-    Some(AppMeta {
+    let mut meta = AppMeta {
+        app_id,
         name: Some(title.to_string()),
         developers: meta_obj
             .and_then(|m| m.get("developers"))
@@ -2376,13 +2555,27 @@ pub async fn fetch_online_catalog_entry(
             .and_then(|m| m.get("capsuleImage"))
             .and_then(|v| v.as_str())
             .map(String::from),
+        hero_image: meta_obj
+            .and_then(|m| m.get("heroImage"))
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        logo_image: meta_obj
+            .and_then(|m| m.get("logoImage"))
+            .and_then(|v| v.as_str())
+            .map(String::from),
         locales: val
             .get("locales")
             .and_then(|v| serde_json::from_value(v.clone()).ok())
             .unwrap_or_default(),
+        providers: val
+            .get("providers")
+            .and_then(|v| serde_json::from_value(v.clone()).ok())
+            .unwrap_or_default(),
         fetched_at: Some(chrono::Utc::now().timestamp()),
         ..Default::default()
-    })
+    };
+    meta.enrich_from_providers();
+    Some(meta)
 }
 
 /// Fetch a single game's JSON entry from the official community repository on demand.
@@ -2411,7 +2604,41 @@ pub fn launch_game(
     launch_uri: Option<String>,
     exe: Option<String>,
 ) -> AppResult<bool> {
-    // If we have an app_id, trigger via Steam protocol (Steam handles running native games and imported shortcuts)
+    // 1. Direct executable launch: If a valid executable file exists on disk, run it directly without launching any intermediate wrappers
+    if let Some(path) = exe.filter(|p| !p.is_empty()) {
+        let p = Path::new(&path);
+        if p.is_file() {
+            let mut cmd = std::process::Command::new(p);
+            if let Some(parent) = p.parent() {
+                cmd.current_dir(parent);
+            }
+            if cmd.spawn().is_ok() {
+                return Ok(true);
+            }
+        }
+    }
+
+    // 2. Epic Games via Legendary CLI (avoids launching Epic Games Launcher)
+    if let Some(ref uri) = launch_uri.as_ref().filter(|u| !u.is_empty()) {
+        if uri.starts_with("legendary://") || uri.starts_with("com.epicgames.launcher://apps/") {
+            let app_name = if uri.starts_with("legendary://") {
+                &uri["legendary://".len()..]
+            } else {
+                let after = &uri["com.epicgames.launcher://apps/".len()..];
+                after.split('?').next().unwrap_or(after)
+            };
+            let bin = crate::platforms::launchers::legendary_binary_path();
+            if bin.is_file() && !app_name.is_empty() {
+                let mut cmd = std::process::Command::new(bin);
+                cmd.args(["launch", app_name]);
+                if cmd.spawn().is_ok() {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+
+    // 3. Steam protocol (for Steam games or shortcuts registered in Steam)
     if app_id > 0 {
         let uri = format!("steam://run/{app_id}");
         if open_external_target(&uri).is_ok() {
@@ -2419,22 +2646,11 @@ pub fn launch_game(
         }
     }
 
-    // Direct launcher URI fallback (e.g. goggalaxy://, com.epicgames.launcher://, uplay://)
+    // 4. Storefront URI protocol fallback (e.g. uplay://, battlenet://, origin2://)
     if let Some(uri) = launch_uri.filter(|u| !u.is_empty()) {
         if open_external_target(&uri).is_ok() {
             return Ok(true);
         }
-    }
-
-    // Direct executable fallback
-    if let Some(path) = exe.filter(|p| !p.is_empty()) {
-        let p = Path::new(&path);
-        let mut cmd = std::process::Command::new(p);
-        if let Some(parent) = p.parent() {
-            cmd.current_dir(parent);
-        }
-        cmd.spawn().map_err(|e| AppError::msg(format!("Failed to start executable: {e}")))?;
-        return Ok(true);
     }
 
     Err(AppError::msg("No valid launch method found for game."))
@@ -2645,5 +2861,133 @@ pub fn scaffold_es_de_directories(target_path: String) -> AppResult<Vec<String>>
     }
 
     Ok(created_dirs)
+}
+
+/// Detect the installed status and download URLs of all external platform launchers.
+#[tauri::command]
+pub fn get_installed_launchers(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<crate::platforms::LauncherStatus>> {
+    let settings = state.settings.lock().expect("settings lock poisoned");
+    let emulator_configs = settings.emulator_configs.clone();
+    Ok(crate::platforms::detect_all_launchers(&emulator_configs))
+}
+
+/// Download and install the built-in standalone Legendary CLI and configure EOS service.
+#[tauri::command]
+pub async fn install_legendary() -> AppResult<crate::platforms::LauncherStatus> {
+    crate::platforms::launchers::install_legendary_cli().await
+}
+
+/// Open an external URL in the user's default web browser.
+#[tauri::command]
+pub fn open_external_url(url: String) -> AppResult<bool> {
+    open_external_target(&url)?;
+    Ok(true)
+}
+
+/// Open the user-accessible tools directory in Explorer/Finder/File Manager.
+#[tauri::command]
+pub fn open_tools_folder() -> AppResult<bool> {
+    let dir = crate::platforms::launchers::managed_tools_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    open_external_target(&dir.display().to_string())?;
+    Ok(true)
+}
+
+/// Query current Legendary Epic Games authentication status.
+#[tauri::command]
+pub fn get_legendary_status() -> crate::platforms::LegendaryAuthStatus {
+    crate::platforms::get_legendary_auth_status()
+}
+
+/// Authenticate with Epic Games via Legendary (using browser authorization code or import from launcher).
+#[tauri::command]
+pub fn legendary_login(
+    code: Option<String>,
+    import_launcher: Option<bool>,
+) -> AppResult<crate::platforms::LegendaryAuthStatus> {
+    crate::platforms::legendary_authenticate(code, import_launcher.unwrap_or(false))
+}
+
+/// Log out from Epic Games in Legendary.
+#[tauri::command]
+pub fn legendary_logout() -> AppResult<crate::platforms::LegendaryAuthStatus> {
+    crate::platforms::legendary_logout()
+}
+
+// ---------------------------------------------------------------------------
+// Serverless In-Memory KV & Cache Tier (Redis-compatible)
+// ---------------------------------------------------------------------------
+
+/// Retrieve a value by key from the in-memory fast tier / SQLite persistent KV store.
+#[tauri::command]
+pub fn kv_get(key: String, state: State<'_, AppState>) -> Option<String> {
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    cache.get_kv(&key)
+}
+
+/// Store a key-value pair with optional TTL in seconds.
+#[tauri::command]
+pub fn kv_set(
+    key: String,
+    value: String,
+    ttl_secs: Option<i64>,
+    state: State<'_, AppState>,
+) -> AppResult<bool> {
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    cache.set_kv(&key, &value, ttl_secs);
+    Ok(true)
+}
+
+/// Delete a key from the KV store.
+#[tauri::command]
+pub fn kv_delete(key: String, state: State<'_, AppState>) -> AppResult<bool> {
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    cache.delete_kv(&key);
+    Ok(true)
+}
+
+/// Check if a key exists and has not expired.
+#[tauri::command]
+pub fn kv_has(key: String, state: State<'_, AppState>) -> bool {
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    cache.has_kv(&key)
+}
+
+/// Query keys matching an optional wildcard/prefix pattern.
+#[tauri::command]
+pub fn kv_keys(pattern: Option<String>, state: State<'_, AppState>) -> Vec<String> {
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    cache.keys_kv(pattern.as_deref())
+}
+
+/// Multi-get: retrieve multiple key-value pairs in a single call.
+#[tauri::command]
+pub fn kv_mget(
+    keys: Vec<String>,
+    state: State<'_, AppState>,
+) -> std::collections::HashMap<String, String> {
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    cache.mget_kv(&keys)
+}
+
+/// Multi-set: store multiple key-value pairs in a single transaction.
+#[tauri::command]
+pub fn kv_mset(
+    pairs: Vec<(String, String)>,
+    ttl_secs: Option<i64>,
+    state: State<'_, AppState>,
+) -> AppResult<bool> {
+    let mut cache = state.cache.lock().expect("cache lock poisoned");
+    cache.mset_kv(&pairs, ttl_secs)?;
+    Ok(true)
+}
+
+/// Clean up and purge all expired keys from SQLite and in-memory cache.
+#[tauri::command]
+pub fn kv_clear_expired(state: State<'_, AppState>) -> usize {
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    cache.cleanup_expired_kv()
 }
 

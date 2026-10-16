@@ -107,6 +107,7 @@ export interface AppMeta {
   screenshots?: string[];
   movies?: string[];
   locales?: Record<string, { title?: string; shortDescription?: string | null; aliases?: string[] }>;
+  providers?: Record<string, any>;
 }
 
 export interface MediaItem {
@@ -201,6 +202,7 @@ export interface Settings {
   countryCode: string;
   language: string;
   autoBackup: boolean;
+  enableSteamSync?: boolean;
   autoCats: AutoCat[];
   platformSources: PlatformSource[];
   emulatorConfigs?: EmulatorConfig[];
@@ -463,4 +465,31 @@ export interface ArtworkOutcome {
 export interface CatalogStats {
   totalGames: number;
   totalMetadataCached: number;
+  totalCachedArtworks?: number;
 }
+
+export interface CacheResetReport {
+  totalCatalogGames: number;
+  totalMetadataRecords: number;
+  message: string;
+}
+
+export interface LauncherStatus {
+  id: string;
+  name: string;
+  installed: boolean;
+  executablePath?: string | null;
+  alternativeMethod?: string | null;
+  downloadUrl: string;
+  alternativeUrl?: string | null;
+  alternativeLabel?: string | null;
+}
+
+export interface LegendaryAuthStatus {
+  isInstalled: boolean;
+  isLoggedIn: boolean;
+  accountName?: string | null;
+  accountId?: string | null;
+  authUrl: string;
+}
+

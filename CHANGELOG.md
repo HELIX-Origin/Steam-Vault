@@ -5,6 +5,48 @@ All notable changes to Steam Vault are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-10-15
+
+### Added
+
+- **Executive Gaming Dashboard**:
+  - Transformed the home view into a real-time gaming dashboard featuring an Executive KPI strip (Total Library, Ready to Play, Total Playtime, Starred Favorites, Free Storage capacity).
+  - Added "Jump Back In" hero banner and recently-played/favorite games carousel with instantaneous "▶" game launch action and live playtime stats.
+  - Interactive storefront ecosystem capacity distribution chart with multi-platform proportional progress meter and category filters.
+  - Top Played Titles leaderboard tracking user engagement and total hours invested across the gaming collection.
+  - Quick Actions hub for one-click access to Library views, Storage Explorer, Manual Game Addition, and Platform Integration settings.
+- **Multi-Platform Storage Analytics & Storage Explorer**:
+  - Re-engineered the Storage tab into a multi-platform storage analytics console tracking disk usage across all 12 supported platforms (Steam, GOG, Epic Games, Xbox Game Pass, EA App, Ubisoft Connect, Battle.net, itch.io, Amazon Games, Rockstar Games, Emulators, and Other).
+  - Real-time connected storage drives overview charting aggregate volume utilization, total capacities, and dedicated gaming footprints per mount point.
+  - Added the **Installed Games Storage Explorer** featuring live search, multi-platform filter pills, visual disk consumption meters, and deep links to game details.
+- **Per-Game Installation Directory Management & Cross-Drive Relocation**:
+  - Integrated an "Installation & Storage" card on the per-game details sub-page displaying exact disk footprint, resolved filesystem paths, main executable paths, and a direct "Open Folder" action.
+  - Added game relocation capabilities in the Manage modal allowing users to move installed Steam games between registered library folders with pre-flight storage verification (`preview_move_game`) and atomic directory movement with automatic `appmanifest_<appid>.acf` rewriting (`move_game`).
+  - Added deep linking support via `?game=<appId>` URL queries allowing immediate navigation from Storage Explorer to any game's management interface.
+- **Serverless In-Memory & Backend Redis-Compatible KV Tier**:
+  - Implemented high-performance Redis-compatible key-value storage engine (`src-tauri/src/cache.rs` and `src/lib/redis.ts`) for ultra-fast transient caching of game stats, metadata lookups, and session state.
+  - Exposed Redis command primitives (`redis_get`, `redis_set`, `redis_del`, `redis_keys`, `redis_flush`) via strongly typed Tauri IPC commands.
+- **Epic Games Launcher Legendary CLI Integration**:
+  - Added automatic detection and configurable binary path support for `legendary` CLI launcher.
+  - Seamless fallback execution for Epic Games store titles when the official Epic Games Launcher is absent.
+- **Clean Uninstallation NSIS Hooks**:
+  - Embedded NSIS uninstaller hooks (`src-tauri/windows/hooks.nsh`) for Windows installations ensuring complete removal of WebView2 runtime caches, local app data, and temporary files when uninstalled.
+
+### Changed
+
+- **Sidebar & Status Cleanliness**:
+  - Removed persistent "Steam is closed / running" process notice from the global sidebar.
+  - Relocated live Steam process status monitor exclusively inside the Depressurizer Mode operation card in `/settings`.
+- **Database Schema Upgrade**:
+  - Upgraded offline SQLite cache to schema v4 with dedicated user review score caching.
+
+### Fixed
+
+- **Chromium WebView2 Win32 Window Class Unregistration**:
+  - Resolved `UnregisterClassW failed: 1412 (ERROR_CLASS_ALREADY_EXISTS)` during rapid window teardown and reload in debug mode.
+- **Relative Path Resolution for Installed Games**:
+  - Resolved relative `installDir` manifests from Steam libraries against their respective `libraryPath` parent directory.
+
 ## [1.2.0] - 2026-10-15
 
 ### Added

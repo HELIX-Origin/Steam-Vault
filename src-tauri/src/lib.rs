@@ -15,11 +15,27 @@ mod platforms;
 mod settings;
 mod steam;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use commands::AppState;
 use tauri::Manager;
 
+static IS_QUITTING: AtomicBool = AtomicBool::new(false);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(windows)]
+    {
+        // Suppress spurious Chromium / WebView2 class unregistration warnings and logging noise on Windows
+        // (specifically [ERROR:ui\gfx\win\window_impl.cc:172] Failed to unregister class Chrome_WidgetWin_0. Error = 1412)
+        if std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS").is_err() {
+            std::env::set_var(
+                "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS",
+                "--disable-logging --log-level=3",
+            );
+        }
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::new())
@@ -62,6 +78,10 @@ pub fn run() {
                             }
                         }
                         "quit" => {
+                            IS_QUITTING.store(true, Ordering::SeqCst);
+                            for (_, window) in app.webview_windows() {
+                                let _ = window.destroy();
+                            }
                             app.exit(0);
                         }
                         _ => {}
@@ -97,12 +117,12 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|_window, _event| {
+        .on_window_event(|window, event| {
             #[cfg(desktop)]
-            if let tauri::WindowEvent::CloseRequested { api, .. } = _event {
-                if _window.label() == "main" {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main" && !IS_QUITTING.load(Ordering::SeqCst) {
                     api.prevent_close();
-                    let _ = _window.hide();
+                    let _ = window.hide();
                 }
             }
         })
@@ -164,12 +184,31 @@ pub fn run() {
             commands::import_catalog_archive,
             commands::sync_online_catalog,
             commands::fetch_online_game_entry,
+            commands::clear_metadata_cache,
+            commands::get_cached_artwork,
+            commands::get_cached_artwork_batch,
+            commands::cache_artwork_image,
             commands::launch_game,
             commands::install_game,
             commands::uninstall_game,
             commands::open_game_folder,
             commands::get_es_de_systems,
             commands::scaffold_es_de_directories,
+            commands::get_installed_launchers,
+            commands::install_legendary,
+            commands::open_external_url,
+            commands::open_tools_folder,
+            commands::get_legendary_status,
+            commands::legendary_login,
+            commands::legendary_logout,
+            commands::kv_get,
+            commands::kv_set,
+            commands::kv_delete,
+            commands::kv_has,
+            commands::kv_keys,
+            commands::kv_mget,
+            commands::kv_mset,
+            commands::kv_clear_expired,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

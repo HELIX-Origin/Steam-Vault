@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
   import { STEAM_LANGUAGES, setLocale, syncWithSettingsLanguage, t } from "$lib/i18n";
-  import { collections, error, games, install, settings } from "$lib/stores";
+  import { collections, error, games, install, settings, steamRunning } from "$lib/stores";
   import type { CatalogStats, EmulatorConfig, Settings } from "$lib/types";
   import CollectionsSection from "$lib/components/settings/CollectionsSection.svelte";
   import PlatformsSection from "$lib/components/settings/PlatformsSection.svelte";
@@ -19,6 +19,9 @@
   let syncingLibraryMeta = $state(false);
   let syncLibraryAutoArtwork = $state(true);
   let syncLibraryMsg = $state<string | null>(null);
+  let clearingCache = $state(false);
+  let clearCacheMsg = $state<string | null>(null);
+  let showClearCacheConfirm = $state(false);
   let busy = $state(false);
   let saved = $state(false);
 
@@ -112,6 +115,21 @@
       syncLibraryMsg = errorMessage(e);
     } finally {
       syncingLibraryMeta = false;
+    }
+  }
+
+  async function handleClearCache() {
+    clearingCache = true;
+    clearCacheMsg = null;
+    try {
+      const res = await api.clearMetadataCache(form?.accountId3 ?? undefined, true);
+      clearCacheMsg = `Cache reset: ${res.totalCatalogGames} verified catalogue games indexed, ${res.totalMetadataRecords} metadata records. ${res.message}`;
+      catalogStats = await api.getCatalogStats().catch(() => null);
+      showClearCacheConfirm = false;
+    } catch (e) {
+      clearCacheMsg = errorMessage(e);
+    } finally {
+      clearingCache = false;
     }
   }
 
@@ -303,11 +321,14 @@
 <div class="settings-nav-tabs">
   <button class="tab-btn" class:active={activeTab === "general"} onclick={() => setTab("general")}>
     <span class="tab-icon">⚙️</span>
-    <span>{$t("settings.title")} &amp; Storage</span>
+    <span>{$t("settings.title")}</span>
   </button>
   <button class="tab-btn" class:active={activeTab === "collections"} onclick={() => setTab("collections")}>
     <span class="tab-icon">❐</span>
     <span>{$t("nav.collections")}</span>
+    {#if form?.enableSteamSync === false}
+      <span class="pill pill-dim" style="font-size:0.6rem;margin-left:0.3rem">Local Only</span>
+    {/if}
   </button>
   <button class="tab-btn" class:active={activeTab === "platforms"} onclick={() => setTab("platforms")}>
     <span class="tab-icon">⬡</span>
@@ -316,179 +337,247 @@
   <button class="tab-btn" class:active={activeTab === "organize"} onclick={() => setTab("organize")}>
     <span class="tab-icon">⊞</span>
     <span>{$t("nav.organize")}</span>
+    {#if form?.enableSteamSync === false}
+      <span class="pill pill-dim" style="font-size:0.6rem;margin-left:0.3rem">Depressurizer</span>
+    {/if}
   </button>
 </div>
 
 {#if form}
   {#if activeTab === "general"}
-    <div class="settings-grid">
-      <!-- Steam Folder & Active Account -->
-      <section class="glass-strong card">
-        <div class="row-between" style="align-items:center;margin-bottom:0.75rem">
-          <h2 class="section-title" style="margin:0">{$t("settings.steamFolder")}</h2>
-          <button class="btn mini" onclick={detect}>{$t("settings.autoDetect")}</button>
-        </div>
-        <div class="field">
-          <label for="root">Steam Installation Directory</label>
-          <input id="root" bind:value={form.steamRoot} placeholder="C:\Program Files (x86)\Steam" />
-        </div>
-        <div class="field">
-          <label for="account">{$t("settings.activeAccount")}</label>
-          <select id="account" bind:value={form.accountId3}>
-            <option value={null}>Automatic (first found)</option>
-            {#each $install?.accounts ?? [] as account (account.id3)}
-              <option value={account.id3}>
-                {(account.personaName ?? account.accountName) || "Unknown"} ({account.id3})
-              </option>
-            {/each}
-          </select>
-        </div>
-        <div class="row" style="gap:1rem">
-          <div class="field" style="flex:1">
-            <label for="cc">{$t("settings.storeCountry")}</label>
-            <input id="cc" bind:value={form.countryCode} placeholder="us" />
-          </div>
-          <div class="field" style="flex:1">
-            <label for="lang">{$t("settings.language")}</label>
-            <select
-              id="lang"
-              bind:value={form.language}
-              onchange={(e) => {
-                if (form) {
-                  form.language = e.currentTarget.value;
-                  setLocale(e.currentTarget.value);
-                }
-              }}
+    <div class="settings-columns">
+      <!-- Left Column -->
+      <div class="settings-col">
+        <!-- Operation Mode & Steam Client Sync -->
+        <section class="glass-strong card">
+          <div class="row-between" style="align-items:center;gap:1rem;flex-wrap:wrap">
+            <div style="display:flex;flex-direction:column;gap:0.3rem;flex:1;min-width:220px">
+              <div class="row" style="align-items:center;gap:0.55rem">
+                <h2 class="section-title" style="margin:0">Operation Mode</h2>
+                <span class="pill" class:pill-ok={form.enableSteamSync} class:pill-dim={!form.enableSteamSync}>
+                  {form.enableSteamSync ? "Depressurizer Mode Active" : "Standalone Library Mode"}
+                </span>
+              </div>
+              <p class="muted-xs" style="margin:0;line-height:1.45">
+                {#if form.enableSteamSync}
+                  Depressurizer sync is <strong>enabled</strong>. AutoCat categories, collections, and non-Steam shortcuts synchronize with your local Steam client (<code>shortcuts.vdf</code> and <code>localconfig.vdf</code>).
+                {:else}
+                  Running in <strong>Standalone Mode</strong>. Operates completely independently as a fast library organizer &amp; launcher without modifying your local Steam client configuration files.
+                {/if}
+              </p>
+              {#if form.enableSteamSync}
+                <div class="row" style="align-items:center;gap:0.45rem;margin-top:0.4rem">
+                  <span class:ok-dot={!$steamRunning} class:bad-dot={$steamRunning}></span>
+                  <span class="muted-xs" style="font-weight:500">
+                    {$steamRunning ? $t("status.steamRunning") : $t("status.steamClosed")}
+                  </span>
+                </div>
+              {/if}
+            </div>
+            <button
+              type="button"
+              class="btn mini"
+              class:primary={!form.enableSteamSync}
+              style="min-width:145px;justify-content:center"
+              onclick={() => { if (form) form.enableSteamSync = !form.enableSteamSync; }}
             >
-              {#each STEAM_LANGUAGES as lang (lang.id)}
-                <option value={lang.id}>
-                  {lang.nativeName} ({lang.name})
+              {form.enableSteamSync ? "Disable Depressurizer" : "Enable Depressurizer"}
+            </button>
+          </div>
+        </section>
+
+        <!-- Steam Folder & Active Account -->
+        <section class="glass-strong card">
+          <div class="row-between" style="align-items:center;margin-bottom:0.75rem">
+            <h2 class="section-title" style="margin:0">{$t("settings.steamFolder")}</h2>
+            <button class="btn mini" onclick={detect}>{$t("settings.autoDetect")}</button>
+          </div>
+          <div class="field">
+            <label for="root">Steam Installation Directory</label>
+            <input id="root" bind:value={form.steamRoot} placeholder="C:\Program Files (x86)\Steam" />
+          </div>
+          <div class="field">
+            <label for="account">{$t("settings.activeAccount")}</label>
+            <select id="account" bind:value={form.accountId3}>
+              <option value={null}>Automatic (first found)</option>
+              {#each $install?.accounts ?? [] as account (account.id3)}
+                <option value={account.id3}>
+                  {(account.personaName ?? account.accountName) || "Unknown"} ({account.id3})
                 </option>
               {/each}
             </select>
           </div>
-        </div>
-        {#if $install}
-          <div class="kv" style="margin-top:0.5rem"><span class="muted">{$t("settings.librariesCount")}</span><span>{$install.libraries.length} folders</span></div>
-          <div class="kv"><span class="muted">{$t("settings.accountsCount")}</span><span>{$install.accounts.length} accounts</span></div>
-        {/if}
-      </section>
-
-      <!-- Storage & Drive Overview -->
-      <section class="glass-strong card">
-        <div class="row-between" style="align-items:center;margin-bottom:0.4rem">
-          <h2 class="section-title" style="margin:0">Storage &amp; Drive Overview</h2>
-          <a href="/storage" class="btn mini primary" style="text-decoration:none">Open Storage Manager ↗</a>
-        </div>
-        <p class="muted-sm">
-          Summary of detected Steam storage drives and registered library folders across your device.
-        </p>
-        <div class="kv">
-          <span class="muted">Registered Steam Libraries</span>
-          <span>{$install?.libraries.length ?? 0} folders</span>
-        </div>
-        <div class="kv">
-          <span class="muted">Installed Games Tracked</span>
-          <span>{$games.filter((g) => g.installed).length} games</span>
-        </div>
-        <div class="folder-list" style="margin-top:0.75rem">
-          {#each $install?.libraries ?? [] as lib}
-            <div class="folder-row" style="padding:0.4rem 0.6rem;background:rgba(255,255,255,0.03);border-radius:6px;justify-content:space-between">
-              <span style="font-family:monospace;font-size:0.8rem;color:var(--text);overflow:hidden;text-overflow:ellipsis">{lib.path}</span>
-              <span class="pill" style="font-size:0.65rem">{lib.appIds.length} apps</span>
+          <div class="row" style="gap:1rem">
+            <div class="field" style="flex:1">
+              <label for="cc">{$t("settings.storeCountry")}</label>
+              <input id="cc" bind:value={form.countryCode} placeholder="us" />
             </div>
-          {/each}
-        </div>
-      </section>
-
-      <!-- API Keys -->
-      <section class="glass-strong card">
-        <div class="row-between" style="align-items:center;margin-bottom:0.4rem">
-          <h2 class="section-title" style="margin:0">API &amp; Storefront Keys</h2>
-          <span class="pill" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Keyless Architecture</span>
-        </div>
-        <p class="muted-sm" style="margin-bottom:0.75rem">
-          Steam Vault uses local storefront integrations (Steam, GOG, Epic, Xbox, itch) and the offline Community Game Catalogue. Third-party API keys are strictly optional.
-        </p>
-        <div class="field">
-          <label for="steamkey">Steam Web API Key <span class="muted-xs">(Optional remote sync)</span></label>
-          <input id="steamkey" type="password" bind:value={form.steamApiKey} placeholder="Optional — steamcommunity.com/dev/apikey" />
-        </div>
-        <div class="field">
-          <label for="sgdb">SteamGridDB Key <span class="muted-xs">(Optional fallback)</span></label>
-          <input id="sgdb" type="password" bind:value={form.steamgriddbApiKey} placeholder="SteamGridDB API key" />
-        </div>
-        <div class="row" style="gap:1rem">
-          <div class="field" style="flex:1">
-            <label for="igdbid">IGDB Client ID <span class="muted-xs">(Optional)</span></label>
-            <input id="igdbid" bind:value={form.igdbClientId} placeholder="Twitch client ID" />
+            <div class="field" style="flex:1">
+              <label for="lang">{$t("settings.language")}</label>
+              <select
+                id="lang"
+                bind:value={form.language}
+                onchange={(e) => {
+                  if (form) {
+                    form.language = e.currentTarget.value;
+                    setLocale(e.currentTarget.value);
+                  }
+                }}
+              >
+                {#each STEAM_LANGUAGES as lang (lang.id)}
+                  <option value={lang.id}>
+                    {lang.nativeName} ({lang.name})
+                  </option>
+                {/each}
+              </select>
+            </div>
           </div>
-          <div class="field" style="flex:1">
-            <label for="igdbsec">IGDB Secret <span class="muted-xs">(Optional)</span></label>
-            <input id="igdbsec" type="password" bind:value={form.igdbClientSecret} placeholder="Twitch client secret" />
-          </div>
-        </div>
-      </section>
-
-      <!-- Preferences & Offline Cache -->
-      <section class="glass-strong card">
-        <h2 class="section-title" style="margin-bottom:0.5rem">Preferences &amp; Offline Cache</h2>
-        <label class="row" style="gap:0.5rem;margin-bottom:1rem;cursor:pointer">
-          <input type="checkbox" bind:checked={form.autoBackup} style="width:auto" />
-          <span>Back up Steam files before writing</span>
-        </label>
-        <p class="muted-sm" style="margin-bottom:1rem">
-          Writes go to <code>cloud-storage-namespace-1.json</code> and <code>shortcuts.vdf</code>. Changes require Steam to be closed, and are reversible from the local backup folder.
-        </p>
-        <div class="kv">
-          <div>
-            <strong>Catalog Games Indexed</strong>
-            <p class="muted-xs" style="margin:0">Instant offline game disambiguation.</p>
-          </div>
-          <span>{catalogStats?.totalGames ?? 0} games</span>
-        </div>
-        <div class="kv">
-          <div>
-            <strong>Cached Metadata Records</strong>
-            <p class="muted-xs" style="margin:0">Locally stored metadata records.</p>
-          </div>
-          <span>{catalogStats?.totalMetadataCached ?? 0} records</span>
-        </div>
-        <div class="row" style="margin-top: 1rem; gap: 0.75rem; align-items: center;">
-          <button class="btn mini" onclick={syncOnline} disabled={syncingCatalog}>
-            {syncingCatalog ? $t("common.loading") : $t("settings.catalogSync")}
-          </button>
-          {#if catalogSyncMsg}
-            <span class="muted-sm">{catalogSyncMsg}</span>
+          {#if $install}
+            <div class="kv" style="margin-top:0.5rem"><span class="muted">{$t("settings.librariesCount")}</span><span>{$install.libraries.length} folders</span></div>
+            <div class="kv"><span class="muted">{$t("settings.accountsCount")}</span><span>{$install.accounts.length} accounts</span></div>
           {/if}
-        </div>
+        </section>
 
-        <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08);">
-          <div class="row-between" style="align-items: center; margin-bottom: 0.35rem;">
-            <strong style="font-size: 0.95rem;">{$t("settings.refreshMetadata")}</strong>
-            {#if syncingLibraryMeta}
-              <span class="pill pill-warn">{$t("settings.refreshMetadataRunning")}</span>
-            {/if}
+        <!-- API Keys -->
+        <section class="glass-strong card">
+          <div class="row-between" style="align-items:center;margin-bottom:0.4rem">
+            <h2 class="section-title" style="margin:0">API &amp; Storefront Keys</h2>
+            <span class="pill" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Keyless Architecture</span>
           </div>
-          <p class="muted-xs" style="margin-bottom: 0.75rem;">
-            {$t("settings.refreshMetadataHelp")}
+          <p class="muted-sm" style="margin-bottom:0.75rem">
+            Steam Vault uses local storefront integrations (Steam, GOG, Epic, Xbox, itch) and the offline Community Game Catalogue. Third-party API keys are strictly optional.
           </p>
-          <label class="row" style="gap: 0.5rem; margin-bottom: 0.75rem; cursor: pointer;">
-            <input type="checkbox" bind:checked={syncLibraryAutoArtwork} style="width: auto;" />
-            <span class="muted-sm">{$t("settings.alsoFetchArtwork")}</span>
+          <div class="field">
+            <label for="steamkey">Steam Web API Key <span class="muted-xs">(Optional remote sync)</span></label>
+            <input id="steamkey" type="password" bind:value={form.steamApiKey} placeholder="Optional — steamcommunity.com/dev/apikey" />
+          </div>
+          <div class="field">
+            <label for="sgdb">SteamGridDB Key <span class="muted-xs">(Optional fallback)</span></label>
+            <input id="sgdb" type="password" bind:value={form.steamgriddbApiKey} placeholder="SteamGridDB API key" />
+          </div>
+          <div class="row" style="gap:1rem">
+            <div class="field" style="flex:1">
+              <label for="igdbid">IGDB Client ID <span class="muted-xs">(Optional)</span></label>
+              <input id="igdbid" bind:value={form.igdbClientId} placeholder="Twitch client ID" />
+            </div>
+            <div class="field" style="flex:1">
+              <label for="igdbsec">IGDB Secret <span class="muted-xs">(Optional)</span></label>
+              <input id="igdbsec" type="password" bind:value={form.igdbClientSecret} placeholder="Twitch client secret" />
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Right Column -->
+      <div class="settings-col">
+        <!-- Preferences & Offline Cache -->
+        <section class="glass-strong card">
+          <h2 class="section-title" style="margin-bottom:0.5rem">Preferences &amp; Offline Cache</h2>
+          <label class="row" style="gap:0.5rem;margin-bottom:1rem;cursor:pointer">
+            <input type="checkbox" bind:checked={form.autoBackup} style="width:auto" />
+            <span>Back up Steam files before writing</span>
           </label>
-          <div class="row" style="gap: 0.75rem; align-items: center;">
-            <button class="btn mini primary" onclick={refreshAllMetadata} disabled={syncingLibraryMeta}>
-              {syncingLibraryMeta ? $t("settings.refreshMetadataRunning") : $t("settings.refreshMetadata")}
+          <p class="muted-sm" style="margin-bottom:1rem">
+            Writes go to <code>cloud-storage-namespace-1.json</code> and <code>shortcuts.vdf</code>. Changes require Steam to be closed, and are reversible from the local backup folder.
+          </p>
+          <div class="kv">
+            <div>
+              <strong>Catalog Games Indexed</strong>
+              <p class="muted-xs" style="margin:0">Instant offline game disambiguation.</p>
+            </div>
+            <span>{catalogStats?.totalGames ?? 0} games</span>
+          </div>
+          <div class="kv">
+            <div>
+              <strong>Cached Metadata Records</strong>
+              <p class="muted-xs" style="margin:0">Locally stored metadata records.</p>
+            </div>
+            <span>{catalogStats?.totalMetadataCached ?? 0} records</span>
+          </div>
+          <div class="kv">
+            <div>
+              <strong>Cached Artwork Assets</strong>
+              <p class="muted-xs" style="margin:0">Persistent offline grid & hero artwork covers.</p>
+            </div>
+            <span>{catalogStats?.totalCachedArtworks ?? 0} files</span>
+          </div>
+          <div class="row" style="margin-top: 1rem; gap: 0.75rem; align-items: center;">
+            <button class="btn mini" onclick={syncOnline} disabled={syncingCatalog}>
+              {syncingCatalog ? $t("common.loading") : $t("settings.catalogSync")}
             </button>
-            {#if syncLibraryMsg}
-              <span class="muted-sm">{syncLibraryMsg}</span>
+            {#if catalogSyncMsg}
+              <span class="muted-sm">{catalogSyncMsg}</span>
             {/if}
           </div>
-        </div>
-      </section>
+
+          <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+            <div class="row-between" style="align-items: center; margin-bottom: 0.35rem;">
+              <strong style="font-size: 0.95rem;">{$t("settings.refreshMetadata")}</strong>
+              {#if syncingLibraryMeta}
+                <span class="pill pill-warn">{$t("settings.refreshMetadataRunning")}</span>
+              {/if}
+            </div>
+            <p class="muted-xs" style="margin-bottom: 0.75rem;">
+              {$t("settings.refreshMetadataHelp")}
+            </p>
+            <label class="row" style="gap: 0.5rem; margin-bottom: 0.75rem; cursor: pointer;">
+              <input type="checkbox" bind:checked={syncLibraryAutoArtwork} style="width: auto;" />
+              <span class="muted-sm">{$t("settings.alsoFetchArtwork")}</span>
+            </label>
+            <div class="row" style="gap: 0.75rem; align-items: center;">
+              <button class="btn mini primary" onclick={refreshAllMetadata} disabled={syncingLibraryMeta}>
+                {syncingLibraryMeta ? $t("settings.refreshMetadataRunning") : $t("settings.refreshMetadata")}
+              </button>
+              {#if syncLibraryMsg}
+                <span class="muted-sm">{syncLibraryMsg}</span>
+              {/if}
+            </div>
+          </div>
+
+          <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+            <div class="row-between" style="align-items: center; margin-bottom: 0.35rem;">
+              <strong style="font-size: 0.95rem; color: #ff6b6b;">Clear &amp; Reset Metadata Cache</strong>
+              {#if clearingCache}
+                <span class="pill pill-warn">Purging &amp; Resetting…</span>
+              {/if}
+            </div>
+            <p class="muted-xs" style="margin-bottom: 0.75rem;">
+              Purges stored artwork and metadata caches if stale or corrupted. Resets catalog index back to the verified seed ({catalogStats?.totalGames ?? 729} games) and forces fresh cache synchronization.
+            </p>
+            {#if !showClearCacheConfirm}
+              <div class="row" style="gap: 0.75rem; align-items: center;">
+                <button class="btn mini" style="border-color: rgba(255,107,107,0.4); color: #ff8585;" onclick={() => (showClearCacheConfirm = true)} disabled={clearingCache}>
+                  Purge &amp; Reset All Caches…
+                </button>
+                {#if clearCacheMsg}
+                  <span class="muted-sm">{clearCacheMsg}</span>
+                {/if}
+              </div>
+            {:else}
+              <div style="padding: 0.75rem 1rem; background: rgba(255, 107, 107, 0.1); border: 1px solid rgba(255, 107, 107, 0.3); border-radius: 8px;">
+                <p style="font-size: 0.85rem; margin: 0 0 0.75rem 0; color: #ffc9c9;">
+                  Are you sure? This will delete all downloaded artwork covers and cached metadata, and reset the catalogue index. Clean metadata and artwork will be re-fetched as you browse.
+                </p>
+                <div class="row" style="gap: 0.5rem; align-items: center;">
+                  <button class="btn mini" style="background: #e03131; border-color: #c92a2a; color: white;" onclick={handleClearCache} disabled={clearingCache}>
+                    {clearingCache ? "Purging…" : "Yes, Purge and Reset"}
+                  </button>
+                  <button class="btn mini" onclick={() => (showClearCacheConfirm = false)} disabled={clearingCache}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            {/if}
+          </div>
+        </section>
+      </div>
     </div>
   {:else if activeTab === "collections"}
+    {#if form.enableSteamSync === false}
+      <div class="glass card" style="padding:0.75rem 1rem;margin-bottom:1rem;background:rgba(56,189,248,0.08);border-color:var(--border)">
+        <strong>ℹ️ Standalone Library Mode</strong>: Steam Client Sync is currently disabled in General Settings. Collections managed here are stored directly in your local Steam-Vault library and will not be written to Steam's <code>localconfig.vdf</code>.
+      </div>
+    {/if}
     <CollectionsSection />
   {:else if activeTab === "platforms"}
     <PlatformsSection
@@ -509,6 +598,11 @@
       {setRoot}
     />
   {:else if activeTab === "organize"}
+    {#if form.enableSteamSync === false}
+      <div class="glass card" style="padding:0.75rem 1rem;margin-bottom:1rem;background:rgba(56,189,248,0.08);border-color:var(--border)">
+        <strong>ℹ️ Standalone Library Mode</strong>: Steam Client Sync is currently disabled in General Settings. AutoCat rules and categorization preview plans can be tested, but changes will not be committed to Steam's <code>localconfig.vdf</code>.
+      </div>
+    {/if}
     <OrganizeSection />
   {/if}
 {:else}

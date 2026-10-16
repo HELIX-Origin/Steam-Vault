@@ -8,6 +8,7 @@ import type {
   ArtworkOutcome,
   ArtworkSlotId,
   AutoCatPlan,
+  CacheResetReport,
   CatalogStats,
   CategorizationPlan,
   CategorizeRequest,
@@ -19,6 +20,8 @@ import type {
   GameArtwork,
   IgdbGame,
   ImportResult,
+  LauncherStatus,
+  LegendaryAuthStatus,
   MetadataSyncResult,
   MoveOutcome,
   MovePreview,
@@ -199,6 +202,60 @@ export const api = {
   scaffoldEsDeDirectories: (targetPath: string) =>
     invoke<string[]>("scaffold_es_de_directories", { targetPath }),
   searchCatalog: (term: string) => invoke<AppMeta[]>("search_catalog", { term }),
+
+  // Universal Cache & Artwork Management
+  clearMetadataCache: (accountId3?: string, redownload?: boolean) =>
+    invoke<CacheResetReport>("clear_metadata_cache", {
+      accountId3: accountId3 ?? null,
+      redownload: redownload ?? true,
+    }),
+  getCachedArtwork: (appId: number, slot: string) =>
+    invoke<string | null>("get_cached_artwork", { appId, slot }),
+  getCachedArtworkBatch: (appIds: number[], slot?: string) =>
+    invoke<Record<number, string>>("get_cached_artwork_batch", {
+      appIds,
+      slot: slot ?? null,
+    }),
+  cacheArtworkImage: (appId: number, slot: string, url: string) =>
+    invoke<string | null>("cache_artwork_image", { appId, slot, url }),
+
+  // Launcher Installation & Download Detection
+  getInstalledLaunchers: () => invoke<LauncherStatus[]>("get_installed_launchers"),
+  installLegendary: () => invoke<LauncherStatus>("install_legendary"),
+  openExternalUrl: (url: string) => invoke<boolean>("open_external_url", { url }),
+  openToolsFolder: () => invoke<boolean>("open_tools_folder"),
+  getLegendaryStatus: () => invoke<LegendaryAuthStatus>("get_legendary_status"),
+  legendaryLogin: (code?: string | null, importLauncher?: boolean) =>
+    invoke<LegendaryAuthStatus>("legendary_login", {
+      code: code ?? null,
+      importLauncher: importLauncher ?? false,
+    }),
+  legendaryLogout: () => invoke<LegendaryAuthStatus>("legendary_logout"),
+
+  // In-Memory Fast Cache & Serverless KV Persistence (Redis-compatible)
+  kvGet: (key: string) => invoke<string | null>("kv_get", { key }),
+  kvSet: (key: string, value: string, ttlSecs?: number | null) =>
+    invoke<boolean>("kv_set", { key, value, ttlSecs: ttlSecs ?? null }),
+  kvDelete: (key: string) => invoke<boolean>("kv_delete", { key }),
+  kvHas: (key: string) => invoke<boolean>("kv_has", { key }),
+  kvKeys: (pattern?: string | null) => invoke<string[]>("kv_keys", { pattern: pattern ?? null }),
+  kvMget: (keys: string[]) => invoke<Record<string, string>>("kv_mget", { keys }),
+  kvMset: (pairs: [string, string][], ttlSecs?: number | null) =>
+    invoke<boolean>("kv_mset", { pairs, ttlSecs: ttlSecs ?? null }),
+  kvClearExpired: () => invoke<number>("kv_clear_expired"),
+  async kvGetJson<T>(key: string): Promise<T | null> {
+    const raw = await invoke<string | null>("kv_get", { key });
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as T;
+    } catch {
+      return null;
+    }
+  },
+  async kvSetJson<T>(key: string, value: T, ttlSecs?: number | null): Promise<boolean> {
+    const raw = JSON.stringify(value);
+    return invoke<boolean>("kv_set", { key, value: raw, ttlSecs: ttlSecs ?? null });
+  },
 };
 
 /** Normalize an unknown thrown value into a readable message. */
@@ -207,3 +264,5 @@ export function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
 }
+
+export { redis } from "./redis";

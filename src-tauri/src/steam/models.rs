@@ -133,6 +133,8 @@ pub struct AppMeta {
     pub hero_image: Option<String>,
     #[serde(default, alias = "logo_image")]
     pub logo_image: Option<String>,
+    #[serde(default, alias = "icon_image")]
+    pub icon_image: Option<String>,
     #[serde(default, alias = "user_score")]
     pub user_score: Option<f64>,
     #[serde(default, alias = "fetched_at")]
@@ -143,4 +145,64 @@ pub struct AppMeta {
     pub movies: Vec<String>,
     #[serde(default)]
     pub locales: std::collections::HashMap<String, serde_json::Value>,
+    #[serde(default)]
+    pub providers: std::collections::HashMap<String, serde_json::Value>,
 }
+
+impl AppMeta {
+    /// Enrich missing top-level imagery and metadata fields by falling back
+    /// to provider-specific records (Steam, GOG, PCGamingWiki, IGDB, VNDB).
+    pub fn enrich_from_providers(&mut self) {
+        if let Some(steam) = self.providers.get("steam") {
+            if self.capsule_image.is_none() {
+                self.capsule_image = steam.get("capsuleImage").and_then(|v| v.as_str()).map(String::from);
+            }
+            if self.hero_image.is_none() {
+                self.hero_image = steam.get("heroImage").and_then(|v| v.as_str()).map(String::from);
+            }
+            if self.logo_image.is_none() {
+                self.logo_image = steam.get("logoImage").and_then(|v| v.as_str()).map(String::from);
+            }
+            if self.icon_image.is_none() {
+                self.icon_image = steam.get("iconImage").or_else(|| steam.get("icon")).and_then(|v| v.as_str()).map(String::from);
+            }
+            if self.header_image.is_none() {
+                self.header_image = steam.get("headerImage").and_then(|v| v.as_str()).map(String::from);
+            }
+            if self.short_description.is_none() {
+                self.short_description = steam.get("shortDescription").and_then(|v| v.as_str()).map(String::from);
+            }
+        }
+        if let Some(gog) = self.providers.get("gog") {
+            if self.capsule_image.is_none() {
+                self.capsule_image = gog.get("coverVertical").and_then(|v| v.as_str()).map(String::from);
+            }
+            if self.header_image.is_none() {
+                self.header_image = gog.get("coverHorizontal").and_then(|v| v.as_str()).map(String::from);
+            }
+            if self.hero_image.is_none() {
+                self.hero_image = gog.get("galaxyBackgroundImage").and_then(|v| v.as_str()).map(String::from);
+            }
+            if self.logo_image.is_none() {
+                self.logo_image = gog.get("logo").and_then(|v| v.as_str()).map(String::from);
+            }
+            if self.icon_image.is_none() {
+                self.icon_image = gog.get("icon").and_then(|v| v.as_str()).map(String::from);
+            }
+        }
+        if let Some(pcgw) = self.providers.get("pcgamingwiki") {
+            if self.header_image.is_none() {
+                self.header_image = pcgw.get("coverImage").and_then(|v| v.as_str()).map(String::from);
+            }
+        }
+        if let Some(igdb) = self.providers.get("igdb") {
+            if self.capsule_image.is_none() {
+                self.capsule_image = igdb.get("coverUrl").and_then(|v| v.as_str()).map(String::from);
+            }
+            if self.short_description.is_none() {
+                self.short_description = igdb.get("summary").and_then(|v| v.as_str()).map(String::from);
+            }
+        }
+    }
+}
+

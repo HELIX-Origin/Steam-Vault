@@ -54,11 +54,6 @@
           </a>
         {/each}
       </nav>
-
-      <div class="status glass">
-        <span class:ok-dot={!$steamRunning} class:bad-dot={$steamRunning}></span>
-        <span class="muted-sm">{$steamRunning ? $t("status.steamRunning") : $t("status.steamClosed")}</span>
-      </div>
     </aside>
 
     <main class="content">
@@ -202,15 +197,6 @@
     font-size: 0.95rem;
   }
 
-  .status {
-    margin-top: auto;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 0.6em 0.8em;
-    border-radius: var(--radius-sm);
-    background: var(--panel-subtle);
-  }
 
   .content {
     overflow-y: auto;

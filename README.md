@@ -74,7 +74,14 @@ SvelteKit frontend) that targets **stable, documented data sources** rather than
 
 ## 🚀 Building & running
 
-Prerequisites: **Rust** (stable), **Node.js 18+**, and the [Tauri system dependencies](https://tauri.app/start/prerequisites/).
+### Prerequisites
+
+- **Rust** (stable toolchain)
+- **Node.js 18+**
+- Platform [Tauri system dependencies](https://tauri.app/start/prerequisites/) (WebView2 on Windows, WebKitGTK on Linux)
+- **Windows System Runtimes:**
+  - [Microsoft Visual C++ 2015–2022 Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) — required for native MSVC-compiled dependencies and bundled SQLite operations.
+  - [Microsoft .NET Desktop Runtime 8.0+ (x64)](https://dotnet.microsoft.com/download/dotnet/8.0) — optional; recommended for third-party emulators and external companion utilities that depend on .NET.
 
 ```bash
 npm install

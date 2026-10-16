@@ -4,7 +4,7 @@
   import { api, errorMessage } from "$lib/api";
   import { t, locale, activeLanguage } from "$lib/i18n";
   import { collections, error, games, loading, customNames, settings } from "$lib/stores";
-  import type { AppMeta, ArtworkSlotId, Game, MediaItem, Platform } from "$lib/types";
+  import type { AppMeta, ArtworkSlotId, Game, LibraryEntry, MediaItem, MovePreview, Platform } from "$lib/types";
 
   // Display & layout state
   let viewMode: "grid" | "list" = "grid";
@@ -39,10 +39,15 @@
   let customArtworks: Record<number, string> = {};
   let failedAppIds = new Set<number>();
 
-  // Manage Modal State (Display Name + Artwork Manager)
-  let modalTab: "general" | "artwork" = "general";
+  // Manage Modal State (Display Name + Artwork Manager + Installation Management)
+  let modalTab: "general" | "artwork" | "installation" = "general";
   let modalCustomName = "";
   let modalFeedback: string | null = null;
+  let availableLibraries: LibraryEntry[] = [];
+  let targetMoveLibrary = "";
+  let movePreview: MovePreview | null = null;
+  let movingGame = false;
+  let moveFeedback: string | null = null;
   let selectedSlotId: ArtworkSlotId = "gridPortrait";
   let modalSearchTerm = "";
   let modalProviderFilter: "all" | "catalogue" | "gog" | "wikipedia" | "pcgamingwiki" | "vndb" | "emulation" | "steamgriddb" | "steam" | "igdb" | "metadata" = "all";
@@ -136,6 +141,19 @@
       collections.set(cols);
       targetCollection = cols[0]?.name ?? null;
       loadLocalArtwork();
+
+      // Check query parameter to automatically open a specific game's details
+      if (typeof window !== "undefined") {
+        const urlParams = new URLSearchParams(window.location.search);
+        const gameParam = urlParams.get("game");
+        if (gameParam) {
+          const targetId = Number(gameParam);
+          const found = lib.find((g) => g.appId === targetId);
+          if (found) {
+            openGameDetails(found);
+          }
+        }
+      }
     } catch (e) {
       error.set(errorMessage(e));
     } finally {
@@ -401,9 +419,34 @@
     failedAppIds = new Set(failedAppIds);
   }
 
+  function handleCoverLoad(e: Event, game: Game) {
+    const img = e.currentTarget as HTMLImageElement;
+    const currentSrc = img.src;
+    // Cache successfully loaded remote covers locally so subsequent loads are offline & instant
+    if (currentSrc && currentSrc.startsWith("http") && !customArtworks[game.appId]) {
+      api.cacheArtworkImage(game.appId, "gridPortrait", currentSrc).catch(() => {});
+    }
+  }
+
   async function loadLocalArtwork() {
     try {
-      const report = await api.getArtwork();
+      // 1. Load persistent local disk & sqlite cached artwork for all library games in a single fast batch
+      const libraryGames = $games;
+      if (libraryGames.length > 0) {
+        const appIds = libraryGames.map((g) => g.appId);
+        const cached = await api.getCachedArtworkBatch(appIds, "gridPortrait").catch(() => ({}));
+        if (cached && Object.keys(cached).length > 0) {
+          const numCached: Record<number, string> = {};
+          for (const [k, v] of Object.entries(cached)) {
+            const num = Number(k);
+            if (!isNaN(num)) numCached[num] = v;
+          }
+          customArtworks = { ...customArtworks, ...numCached };
+        }
+      }
+
+      // 2. Query any user-custom grids placed directly in Steam's local grid directory
+      const report = await api.getArtwork().catch(() => []);
       const withCustomGrid = report.filter((g) =>
         g.slots.some((s) => (s.slot === "gridPortrait" || s.slot === "gridLandscape") && s.present)
       );
@@ -511,6 +554,13 @@
         const metas = await api.fetchSteamStoreMetadata([game.appId]);
         if (metas.length > 0) {
           gameMeta = metas[0];
+          mediaItems = buildMediaGallery(game, gameMeta);
+        }
+      }
+      if (!gameMeta && game.name) {
+        const localMatches = await api.searchCatalog(game.name).catch(() => []);
+        if (localMatches && localMatches.length > 0) {
+          gameMeta = localMatches[0];
           mediaItems = buildMediaGallery(game, gameMeta);
         }
       }
@@ -1005,22 +1055,103 @@
     }
   }
 
-  function openManageModal(game: Game, e?: Event) {
+  function pathsEqual(a: string, b: string): boolean {
+    const norm = (s: string) => s.toLowerCase().replace(/[\/\\]+$/, "").replace(/\//g, "\\");
+    return norm(a) === norm(b);
+  }
+
+  function getFullInstallPath(game: Game | null | undefined): string | null {
+    if (!game) return null;
+    if (game.installDir) {
+      if (game.installDir.includes(":") || game.installDir.startsWith("/") || game.installDir.startsWith("\\")) {
+        return game.installDir;
+      }
+      if (game.libraryPath) {
+        const cleanLib = game.libraryPath.replace(/[\/\\]+$/, "");
+        return `${cleanLib}\\steamapps\\common\\${game.installDir}`;
+      }
+      return game.installDir;
+    }
+    if (game.exe) {
+      const lastSlash = Math.max(game.exe.lastIndexOf("/"), game.exe.lastIndexOf("\\"));
+      if (lastSlash > 0) return game.exe.slice(0, lastSlash);
+      return game.exe;
+    }
+    return game.libraryPath || null;
+  }
+
+  async function openManageModal(game: Game, e?: Event, tab: "general" | "artwork" | "installation" = "general") {
     if (e) e.stopPropagation();
     managingGame = game;
     modalCustomName = $customNames[game.appId] ?? game.name;
     modalSearchTerm = $customNames[game.appId] ?? game.name;
     selectedSlotId = "gridPortrait";
-    modalTab = "general";
+    modalTab = tab;
     modalFeedback = null;
+    moveFeedback = null;
+    movePreview = null;
     showManageModal = true;
     loadModalArtwork(game);
+
+    // Fetch storage report to discover registered library folders for relocation
+    try {
+      const rep = await api.getStorageReport();
+      availableLibraries = rep.libraries || [];
+      const currentLib = game.libraryPath || "";
+      const other = availableLibraries.find((l) => !pathsEqual(l.path, currentLib));
+      targetMoveLibrary = other?.path || "";
+      if (targetMoveLibrary && game.installed) {
+        checkMovePreview(game, targetMoveLibrary);
+      }
+    } catch {
+      availableLibraries = [];
+    }
+  }
+
+  async function checkMovePreview(game: Game, targetPath?: string) {
+    const target = targetPath || targetMoveLibrary;
+    if (!target || !game || pathsEqual(target, game.libraryPath || "")) {
+      movePreview = null;
+      return;
+    }
+    try {
+      movePreview = await api.previewMoveGame(game.appId, target);
+    } catch (e) {
+      movePreview = null;
+      moveFeedback = `Preview error: ${errorMessage(e)}`;
+    }
+  }
+
+  async function executeMoveGame(game: Game) {
+    if (!targetMoveLibrary || !game) return;
+    movingGame = true;
+    moveFeedback = "Relocating game installation files…";
+    try {
+      const outcome = await api.moveGame(game.appId, targetMoveLibrary);
+      moveFeedback = `Game relocated successfully (${formatBytes(outcome.bytes)})!`;
+      const lib = await api.loadLibrary();
+      games.set(lib);
+      const updated = lib.find((g) => g.appId === game.appId);
+      if (updated) {
+        selectedGame = updated;
+        managingGame = updated;
+      }
+      setTimeout(() => {
+        if (moveFeedback?.includes("relocated successfully")) moveFeedback = null;
+      }, 4000);
+    } catch (e) {
+      moveFeedback = `Relocation failed: ${errorMessage(e)}`;
+    } finally {
+      movingGame = false;
+    }
   }
 
   function closeManageModal() {
     showManageModal = false;
     managingGame = null;
     modalFeedback = null;
+    moveFeedback = null;
+    movePreview = null;
   }
 
   // Game action triggers
@@ -1058,7 +1189,7 @@
   }
 
   async function handleOpenFolder(game: Game) {
-    const path = game.installDir || game.startDir;
+    const path = getFullInstallPath(game);
     if (!path) {
       actionFeedback = "No install folder known for this game.";
       return;
@@ -1411,6 +1542,64 @@
           {/if}
         </div>
 
+        <!-- Installation Directory & Storage Management Card -->
+        <div class="glass-strong card">
+          <div class="row-between" style="align-items:center">
+            <h3 class="section-title" style="margin:0">Installation &amp; Storage</h3>
+            <span class="pill" class:pill-ok={selectedGame.installed} class:pill-dim={!selectedGame.installed}>
+              {selectedGame.installed ? "Installed" : "Cloud"}
+            </span>
+          </div>
+
+          <div class="info-table" style="margin-top:0.4rem">
+            <div class="info-row">
+              <span class="muted">Disk Footprint:</span>
+              <span style="font-weight:600;color:var(--accent)">{formatSize(selectedGame.sizeOnDisk)}</span>
+            </div>
+            {#if getFullInstallPath(selectedGame)}
+              <div class="info-row full-width">
+                <span class="muted">Install Folder:</span>
+                <span class="code-val" title={getFullInstallPath(selectedGame)}>{getFullInstallPath(selectedGame)}</span>
+              </div>
+            {/if}
+            {#if selectedGame.exe}
+              <div class="info-row full-width">
+                <span class="muted">Executable:</span>
+                <span class="code-val" title={selectedGame.exe}>{selectedGame.exe}</span>
+              </div>
+            {/if}
+            {#if selectedGame.libraryPath}
+              <div class="info-row full-width">
+                <span class="muted">Library Host:</span>
+                <span class="code-val">{selectedGame.libraryPath}</span>
+              </div>
+            {/if}
+          </div>
+
+          <div class="row" style="gap:0.5rem;margin-top:0.6rem;flex-wrap:wrap">
+            {#if getFullInstallPath(selectedGame)}
+              <button
+                type="button"
+                class="btn mini btn-ghost"
+                onclick={() => handleOpenFolder(selectedGame!)}
+                title="Open game directory in file explorer"
+              >
+                📂 Open Folder
+              </button>
+            {/if}
+            {#if selectedGame.installed}
+              <button
+                type="button"
+                class="btn mini btn-primary"
+                onclick={() => openManageModal(selectedGame!, undefined, "installation")}
+                title="Manage installation directory or relocate to another library"
+              >
+                ⇄ Relocate Game…
+              </button>
+            {/if}
+          </div>
+        </div>
+
         <!-- Playtime Tracking Card -->
         <div class="glass-strong card">
           <h3 class="section-title">Playtime Tracking</h3>
@@ -1511,6 +1700,7 @@
                     src={coverSrc}
                     alt={game.name}
                     loading="lazy"
+                    onload={(e) => handleCoverLoad(e, game)}
                     onerror={(e) => handleCoverError(e, game)}
                   />
                 {/if}
@@ -1885,6 +2075,13 @@
         >
           🎨 Artwork Manager
         </button>
+        <button
+          class="modal-nav-btn"
+          class:active={modalTab === "installation"}
+          onclick={() => (modalTab = "installation")}
+        >
+          📁 Installation &amp; Storage
+        </button>
       </div>
 
       <div class="modal-body">
@@ -2167,6 +2364,114 @@
                 </div>
               {/if}
             </div>
+          </div>
+        {:else if modalTab === "installation"}
+          <!-- Installation Directory & Storage Management -->
+          <div class="manage-group">
+            <span class="group-label">Current Installation Location</span>
+            <div class="info-table">
+              <div class="info-row full-width">
+                <span class="muted">Install Folder:</span>
+                <span class="code-val" title={getFullInstallPath(targetGame)}>{getFullInstallPath(targetGame) || "Not installed on local disk"}</span>
+              </div>
+              {#if targetGame.exe}
+                <div class="info-row full-width">
+                  <span class="muted">Executable:</span>
+                  <span class="code-val" title={targetGame.exe}>{targetGame.exe}</span>
+                </div>
+              {/if}
+              <div class="info-row">
+                <span class="muted">Disk Footprint:</span>
+                <span style="font-weight:600;color:var(--accent)">{formatSize(targetGame.sizeOnDisk)}</span>
+              </div>
+              {#if targetGame.libraryPath}
+                <div class="info-row full-width">
+                  <span class="muted">Library Host:</span>
+                  <span class="code-val">{targetGame.libraryPath}</span>
+                </div>
+              {/if}
+            </div>
+            {#if getFullInstallPath(targetGame)}
+              <div class="row" style="margin-top:0.4rem">
+                <button
+                  type="button"
+                  class="btn mini btn-ghost"
+                  onclick={() => handleOpenFolder(targetGame)}
+                >
+                  📂 Open in System File Explorer
+                </button>
+              </div>
+            {/if}
+          </div>
+
+          <!-- Relocate Game Installation Directory -->
+          <div class="manage-group">
+            <span class="group-label">Relocate Installation Directory</span>
+            <p class="muted-sm">
+              Move this game's installation files and manifests to a different registered library folder or storage drive.
+            </p>
+
+            {#if availableLibraries.length > 1}
+              <div class="field" style="margin-top:0.5rem">
+                <label for="dest-lib">Destination Library Folder:</label>
+                <select
+                  id="dest-lib"
+                  bind:value={targetMoveLibrary}
+                  onchange={() => checkMovePreview(targetGame)}
+                  disabled={movingGame}
+                  style="width:100%;padding:0.45rem;border-radius:var(--radius-sm);background:var(--bg-1);color:var(--text);border:1px solid var(--border)"
+                >
+                  {#each availableLibraries as lib (lib.path)}
+                    <option value={lib.path} disabled={pathsEqual(lib.path, targetGame.libraryPath || "")}>
+                      {lib.label ? `${lib.label} — ` : ""}{lib.path}
+                      {lib.diskFree != null ? ` (${formatBytes(lib.diskFree)} free)` : ""}
+                      {pathsEqual(lib.path, targetGame.libraryPath || "") ? " (Current)" : ""}
+                    </option>
+                  {/each}
+                </select>
+              </div>
+
+              {#if movePreview}
+                <div class="glass card" style="margin-top:0.5rem;padding:0.85rem">
+                  <div class="row-between muted-sm">
+                    <span>Move Size: <strong>{formatBytes(movePreview.bytes)}</strong></span>
+                    <span>Target Free: <strong>{movePreview.targetFree != null ? formatBytes(movePreview.targetFree) : "Unknown"}</strong></span>
+                  </div>
+                  <div class="row-between muted-sm" style="margin-top:0.25rem">
+                    <span>Transfer Type: <strong>{movePreview.sameVolume ? "Instant (Same-Volume Rename)" : "Cross-Volume Copy & Verify"}</strong></span>
+                    <span class="pill" class:pill-ok={movePreview.fits} class:pill-danger={!movePreview.fits}>
+                      {movePreview.fits ? "Capacity OK" : "Insufficient Free Space"}
+                    </span>
+                  </div>
+                  {#if movePreview.warnings && movePreview.warnings.length > 0}
+                    <div style="margin-top:0.4rem;color:#fca5a5;font-size:0.75rem">
+                      ⚠️ {movePreview.warnings.join(" ")}
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+
+              {#if moveFeedback}
+                <div class="pill pill-glow" style="margin-top:0.5rem">
+                  {moveFeedback}
+                </div>
+              {/if}
+
+              <div class="row" style="margin-top:0.75rem;gap:0.5rem">
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  disabled={movingGame || !movePreview?.fits || !targetMoveLibrary || pathsEqual(targetMoveLibrary, targetGame.libraryPath || "")}
+                  onclick={() => executeMoveGame(targetGame)}
+                >
+                  {movingGame ? "Moving Game Files…" : "⇄ Relocate Game Now"}
+                </button>
+              </div>
+            {:else}
+              <p class="muted-sm" style="font-style:italic">
+                Only one library folder is currently registered. Connect an additional storage drive or register another library folder in Steam to relocate games.
+              </p>
+            {/if}
           </div>
         {/if}
       </div>

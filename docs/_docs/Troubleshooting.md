@@ -45,6 +45,12 @@ The Tauri build embeds the compiled frontend, so the frontend must exist before 
 Run `npm install && npm run build` first, or use the npm scripts (`npm run tauri:dev` / `:build`)
 which handle ordering for you.
 
+## ⚙️ Missing runtime errors (`VCRUNTIME140.dll` or .NET)
+
+If launching Steam Vault or an external tool triggers a missing DLL error (such as `VCRUNTIME140.dll` or `MSVCP140.dll`):
+- Install the official [Microsoft Visual C++ 2015–2022 Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe).
+- If an emulator or companion tool prompts for .NET, install the [Microsoft .NET Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0).
+
 ## 🧾 Where are my backups?
 
 Backups are timestamped copies of the Steam files that Steam Vault modified, stored in the app data

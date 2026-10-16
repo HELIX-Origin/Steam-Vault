@@ -1,6 +1,6 @@
 [package]
 name = "steam-vault"
-version = "1.2.0"
+version = "1.3.0"
 description = "A cross-platform Steam library organizer and manager"
 authors = ["HELIX Origin"]
 edition = "2021"

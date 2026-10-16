@@ -24,6 +24,10 @@ pub struct Settings {
     pub language: String,
     #[serde(default = "default_true")]
     pub auto_backup: bool,
+    /// Enable Steam Sync & Auto-Categorizer (Depressurizer Mode).
+    /// When disabled, Steam-Vault functions purely in Standalone Universal Library Mode.
+    #[serde(default = "default_true")]
+    pub enable_steam_sync: bool,
     #[serde(default)]
     pub auto_cats: Vec<crate::autocat::AutoCat>,
     /// Non-Steam source detection preferences (enable flags + extra folders).
@@ -50,6 +54,7 @@ impl Default for Settings {
             country_code: "us".into(),
             language: "en".into(),
             auto_backup: true,
+            enable_steam_sync: true,
             auto_cats: Vec::new(),
             platform_sources: Vec::new(),
             emulator_configs: Vec::new(),

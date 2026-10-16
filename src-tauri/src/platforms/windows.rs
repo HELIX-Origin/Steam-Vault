@@ -13,8 +13,9 @@ mod imp {
     use winreg::RegKey;
 
     use crate::platforms::detectors::{
-        env_dir, find_executable, icon_executable, is_blacklisted_root, is_game_candidate,
-        join_exe, normalize_path, platform_for_publisher,
+        env_dir, extract_package_family_name, find_executable, icon_executable,
+        is_blacklisted_root, is_game_candidate, join_exe, normalize_path,
+        platform_for_publisher,
     };
     use crate::platforms::registry;
     use crate::platforms::{Detection, Platform, PlatformGame, ScanConfig};
@@ -533,25 +534,47 @@ mod imp {
             for pkg_name in key.enum_keys().flatten() {
                 if let Ok(pkg_key) = key.open_subkey(&pkg_name) {
                     let display_name: String = pkg_key.get_value("DisplayName").unwrap_or_default();
-                    let pfn: String = pkg_key.get_value("PackageFamilyName").unwrap_or_default();
+                    let pfn: String = pkg_key
+                        .get_value("PackageFamilyName")
+                        .ok()
+                        .or_else(|| extract_package_family_name(&pkg_name))
+                        .unwrap_or_default();
                     let p_root: String = pkg_key.get_value("PackageRootFolder").unwrap_or_default();
 
                     if !display_name.is_empty() && !pfn.is_empty() && !p_root.is_empty() {
                         let norm = normalize_path(&p_root);
                         let p = Path::new(&norm);
                         if p.is_dir() && !display_name.starts_with('@') {
-                            let exe = find_executable(p, 2);
-                            detection.games.push(PlatformGame {
-                                name: display_name,
-                                platform: Platform::Xbox,
-                                platform_id: Some(pfn.clone()),
-                                install_dir: Some(norm),
-                                exe,
-                                installed: true,
-                                launch_uri: Some(format!("shell:AppsFolder\\{pfn}!App")),
-                                source: Some("Xbox / Microsoft Store".into()),
-                                ..Default::default()
-                            });
+                            let is_game = if let Ok(app_key) =
+                                pkg_key.open_subkey("App\\Capabilities\\URLAssociations")
+                            {
+                                app_key.enum_values().flatten().any(|(name, _)| {
+                                    let lower = name.to_lowercase();
+                                    lower.contains("xbox")
+                                        || lower.contains("solitaire")
+                                        || lower.contains("mahjong")
+                                        || lower.contains("casual")
+                                        || lower.contains("game")
+                                })
+                            } else {
+                                false
+                            };
+                            let has_mgc = p.join("MicrosoftGame.config").is_file()
+                                || p.join("Content\\MicrosoftGame.config").is_file();
+                            if is_game || has_mgc {
+                                let exe = find_executable(p, 2);
+                                detection.games.push(PlatformGame {
+                                    name: display_name,
+                                    platform: Platform::Xbox,
+                                    platform_id: Some(pfn.clone()),
+                                    install_dir: Some(norm),
+                                    exe,
+                                    installed: true,
+                                    launch_uri: Some(format!("shell:AppsFolder\\{pfn}!App")),
+                                    source: Some("Xbox / Microsoft Store".into()),
+                                    ..Default::default()
+                                });
+                            }
                         }
                     }
                 }
