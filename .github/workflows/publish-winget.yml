@@ -13,11 +13,11 @@ on:
         required: false
         type: string
         default: ''
-      installers_regex:
-        description: 'Regex filter matching Windows installer asset in GitHub Release'
+      installer_pattern:
+        description: 'Glob pattern matching Windows installer asset in GitHub Release'
         required: false
         type: string
-        default: 'x64-setup\.exe$'
+        default: '*x64-setup.exe'
       dry_run:
         description: 'Dry run: generate manifests, download installer, verify hash & schema without submitting PR'
         required: false
@@ -71,18 +71,18 @@ jobs:
           Write-Host "Checking GitHub release $tag..."
           gh release view $tag
 
-          $regex = "${{ github.event.inputs.installers_regex }}"
-          if (-not $regex) {
-            $regex = "x64-setup\.exe$"
+          $pattern = "${{ github.event.inputs.installer_pattern }}"
+          if (-not $pattern) {
+            $pattern = "*x64-setup.exe"
           }
 
           # Download Windows NSIS installer asset
           New-Item -ItemType Directory -Force -Path "temp_installer" | Out-Null
-          gh release download $tag -D "temp_installer" -p "*$regex*"
+          gh release download $tag -D "temp_installer" -p "$pattern"
 
           $installerFile = Get-ChildItem -Path "temp_installer" -File | Select-Object -First 1
           if (-not $installerFile) {
-            Write-Error "No installer asset matching pattern '$regex' found in release $tag!"
+            Write-Error "No installer asset matching pattern '$pattern' found in release $tag!"
             exit 1
           }
 

@@ -5,6 +5,20 @@ All notable changes to Steam Vault are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2026-10-16
+
+### Changed
+
+- **Project Script Standards & Command Hierarchy Compliance**:
+  - Aligned package automation commands in `package.json` to strictly follow the organizational `main:sub:option` hierarchy (`winget:manifest:generate`, `winget:manifest:verify`, `winget:manifest:install`).
+  - Upgraded WinGet Package Manager manifest generator (`scripts/generate-winget-manifest.mjs`) to Microsoft Schema **1.12.0** (`ManifestVersion: 1.12.0`).
+  - Added native manifest verification and silent installation testing CLI options to `scripts/generate-winget-manifest.mjs` (`--verify`, `--install`).
+
+### Fixed
+
+- **Repository Hygiene & IDE Untracking**:
+  - Removed local `.vscode/` IDE directory from git tracking and added comprehensive editor ignore rules (`.vscode/`, `.idea/`, etc.) to `.gitignore`.
+
 ## [1.3.2] - 2026-10-16
 
 ### Fixed
