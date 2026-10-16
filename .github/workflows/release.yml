@@ -53,7 +53,18 @@ jobs:
               }
             }
             if (!body) {
-              body = `# Steam Vault ${tag}\n\nCross-platform Steam library organizer and manager built with Tauri v2.`;
+              const changelogPath = path.join(process.env.GITHUB_WORKSPACE, 'CHANGELOG.md');
+              if (fs.existsSync(changelogPath)) {
+                const raw = fs.readFileSync(changelogPath, 'utf8');
+                const vNum = tag.replace(/^v/, '');
+                const m = raw.match(new RegExp(`## \\[${vNum}\\][\\s\\S]*?(?=\\n## \\[|$)`));
+                if (m) {
+                  body = `# Steam Vault ${tag}\n\n**Release date:** ${new Date().toISOString().slice(0, 10)}\n**Version Type:** Semantic Versioning\n\n${m[0]}`;
+                }
+              }
+            }
+            if (!body) {
+              body = `# Steam Vault ${tag}\n\n**Release date:** ${new Date().toISOString().slice(0, 10)}\n**Version Type:** Semantic Versioning\n\nCross-platform Steam library organizer and manager built with Tauri v2.`;
             }
 
             let release;
