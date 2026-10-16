@@ -14,6 +14,8 @@
     "tauri:dev": "node scripts/dev.mjs",
     "tauri:dev:raw": "tauri dev",
     "tauri:build": "node scripts/build.mjs",
+    "tauri:build:release": "node scripts/build.mjs release",
+    "tauri:build:debug": "node scripts/build.mjs debug",
     "tauri:build:raw": "tauri build",
     "log": "node scripts/run.mjs",
     "test": "node scripts/test.mjs",
@@ -21,7 +23,10 @@
     "test:frontend": "node scripts/test.mjs frontend",
     "test:i18n": "node scripts/test.mjs i18n",
     "test:all": "node scripts/test.mjs all",
-    "verify": "node scripts/test.mjs check rust frontend build i18n"
+    "verify": "node scripts/test.mjs check rust frontend build i18n",
+    "sign": "node scripts/sign.mjs",
+    "sign:local": "node scripts/sign.mjs",
+    "winget:manifest": "node scripts/generate-winget-manifest.mjs"
   },
   "author": "HELIX Origin",
   "license": "BSD-3-Clause",

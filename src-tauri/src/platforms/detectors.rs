@@ -12,14 +12,14 @@ use flate2::read::GzDecoder;
 use super::{EmulatorConfig, Platform, PlatformGame, PlatformScan, PlatformStatus, ScanConfig};
 
 /// The outcome of one detector run.
-struct Detection {
-    games: Vec<PlatformGame>,
-    roots: Vec<String>,
-    note: Option<String>,
+pub(crate) struct Detection {
+    pub(crate) games: Vec<PlatformGame>,
+    pub(crate) roots: Vec<String>,
+    pub(crate) note: Option<String>,
 }
 
 impl Detection {
-    fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Detection {
             games: Vec::new(),
             roots: Vec::new(),
@@ -58,36 +58,34 @@ pub fn scan_all(config: &ScanConfig) -> PlatformScan {
         Vec::new()
     };
 
-    if config.is_enabled(Platform::Gog) {
-        merge(&mut by_platform, Platform::Gog, detect_gog());
+    // OS-specific platform launchers (Windows, macOS, Linux)
+    #[cfg(target_os = "windows")]
+    {
+        for (platform, detection) in
+            crate::platforms::windows::detect_platform_launchers(config, &mounted_drives)
+        {
+            merge(&mut by_platform, platform, detection);
+        }
     }
-    if config.is_enabled(Platform::Epic) {
-        merge(&mut by_platform, Platform::Epic, detect_epic());
+    #[cfg(target_os = "macos")]
+    {
+        for (platform, detection) in
+            crate::platforms::macos::detect_platform_launchers(config, &mounted_drives)
+        {
+            merge(&mut by_platform, platform, detection);
+        }
     }
+    #[cfg(target_os = "linux")]
+    {
+        for (platform, detection) in
+            crate::platforms::linux::detect_platform_launchers(config, &mounted_drives)
+        {
+            merge(&mut by_platform, platform, detection);
+        }
+    }
+
     if config.is_enabled(Platform::Itch) {
         merge(&mut by_platform, Platform::Itch, detect_itch());
-    }
-    if config.is_enabled(Platform::Ubisoft) {
-        merge(&mut by_platform, Platform::Ubisoft, detect_ubisoft());
-    }
-    if config.is_enabled(Platform::Ea) {
-        merge(&mut by_platform, Platform::Ea, detect_ea());
-    }
-    if config.is_enabled(Platform::BattleNet) {
-        merge(&mut by_platform, Platform::BattleNet, detect_battlenet());
-    }
-    if config.is_enabled(Platform::Amazon) {
-        merge(&mut by_platform, Platform::Amazon, detect_amazon());
-    }
-    if config.is_enabled(Platform::Rockstar) {
-        merge(&mut by_platform, Platform::Rockstar, detect_rockstar());
-    }
-    if config.is_enabled(Platform::Xbox) {
-        merge(
-            &mut by_platform,
-            Platform::Xbox,
-            detect_xbox(&mounted_drives),
-        );
     }
     if config.is_enabled(Platform::Emulator) {
         let extra_roots = config.roots_for(Platform::Emulator);
@@ -491,203 +489,20 @@ fn emulator_library_dirs() -> Vec<String> {
 /// Returns actual game install directories where games or ROMs reside. Launcher
 /// internal configuration/cache folders are explicitly excluded.
 pub fn library_folders(platform: Platform) -> Vec<String> {
+    #[cfg(target_os = "windows")]
+    let mut out = crate::platforms::windows::default_library_folders(platform);
+
+    #[cfg(target_os = "macos")]
+    let mut out = crate::platforms::macos::default_library_folders(platform);
+
+    #[cfg(target_os = "linux")]
+    let mut out = crate::platforms::linux::default_library_folders(platform);
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     let mut out: Vec<String> = Vec::new();
 
-    match platform {
-        Platform::Gog => {
-            #[cfg(windows)]
-            {
-                use crate::platforms::registry;
-                for install in registry::gog_installs() {
-                    if let Some(path) = install.path {
-                        if let Some(parent) = Path::new(&path).parent() {
-                            out.push(normalize_path(&parent.display().to_string()));
-                        }
-                    }
-                }
-            }
-        }
-        Platform::Epic => {
-            if let Some(program_data) = env_dir("ProgramData") {
-                let dir = program_data
-                    .join("Epic")
-                    .join("EpicGamesLauncher")
-                    .join("Data")
-                    .join("Manifests");
-                for game in epic_manifests(&dir) {
-                    if let Some(install) = game.install_dir {
-                        if let Some(parent) = Path::new(&install).parent() {
-                            out.push(normalize_path(&parent.display().to_string()));
-                        }
-                    }
-                }
-            }
-        }
-        Platform::Itch => {
-            if let Some(appdata) = env_dir("APPDATA") {
-                out.push(appdata.join("itch").join("apps").display().to_string());
-                let db_path = appdata.join("itch").join("db").join("butler.db");
-                if let Ok(conn) = rusqlite::Connection::open_with_flags(
-                    &db_path,
-                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-                ) {
-                    if let Ok(mut stmt) = conn.prepare("SELECT path FROM install_locations") {
-                        if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
-                            for path in rows.flatten() {
-                                out.push(path);
-                            }
-                        }
-                    }
-                }
-            }
-            if let Some(config) = dirs::config_dir() {
-                out.push(config.join("itch").join("apps").display().to_string());
-                let db_path = config.join("itch").join("db").join("butler.db");
-                if let Ok(conn) = rusqlite::Connection::open_with_flags(
-                    &db_path,
-                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-                ) {
-                    if let Ok(mut stmt) = conn.prepare("SELECT path FROM install_locations") {
-                        if let Ok(rows) = stmt.query_map([], |row| row.get::<_, String>(0)) {
-                            for path in rows.flatten() {
-                                out.push(path);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Platform::Ea => {
-            out.extend(ea_library_dirs());
-            #[cfg(windows)]
-            {
-                use crate::platforms::registry;
-                for install in registry::ea_installs() {
-                    let norm = normalize_path(&install.install_dir);
-                    if let Some(parent) = Path::new(&norm).parent() {
-                        out.push(normalize_path(&parent.display().to_string()));
-                    }
-                }
-                for uninst in registry::uninstall_entries() {
-                    let is_ea = uninst.publisher.as_deref().map(|p| {
-                        let low = p.to_lowercase();
-                        low.contains("electronic arts") || low == "ea" || low == "bioware"
-                    }).unwrap_or(false)
-                    || uninst.uninstall_string.as_deref().map(|u| u.to_lowercase().contains("eainstaller")).unwrap_or(false);
-                    if is_ea {
-                        if let Some(loc) = uninst.install_location {
-                            let norm = normalize_path(&loc);
-                            if let Some(parent) = Path::new(&norm).parent() {
-                                out.push(normalize_path(&parent.display().to_string()));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Platform::Emulator => {
-            // Emulated directories must be configured manually by the user.
-        }
-        Platform::Amazon => {
-            if let Some(local) = env_dir("LOCALAPPDATA") {
-                out.push(
-                    local
-                        .join("Amazon Games")
-                        .join("Library")
-                        .display()
-                        .to_string(),
-                );
-            }
-        }
-        Platform::Xbox => {
-            if let Some(local) = env_dir("LOCALAPPDATA") {
-                out.push(
-                    local
-                        .join("Microsoft")
-                        .join("XboxGames")
-                        .display()
-                        .to_string(),
-                );
-            }
-        }
-        Platform::Ubisoft => {
-            #[cfg(windows)]
-            {
-                use crate::platforms::registry;
-                if let Some(launcher_dir) = registry::ubisoft_launcher_dir() {
-                    let games_dir = Path::new(&launcher_dir).join("games");
-                    out.push(normalize_path(&games_dir.display().to_string()));
-                }
-                for install in registry::ubisoft_installs() {
-                    let norm = normalize_path(&install.install_dir);
-                    if let Some(parent) = Path::new(&norm).parent() {
-                        out.push(normalize_path(&parent.display().to_string()));
-                    }
-                }
-                for uninst in registry::uninstall_entries() {
-                    let is_ubi = uninst.publisher.as_deref().map(|p| p.to_lowercase().contains("ubisoft")).unwrap_or(false)
-                        || uninst.uninstall_string.as_deref().map(|u| u.to_lowercase().contains("uplay://")).unwrap_or(false);
-                    if is_ubi {
-                        if let Some(loc) = uninst.install_location {
-                            let norm = normalize_path(&loc);
-                            if let Some(parent) = Path::new(&norm).parent() {
-                                out.push(normalize_path(&parent.display().to_string()));
-                            }
-                        }
-                    }
-                }
-            }
-            if let Some(pf) = env_dir("ProgramFiles(x86)") {
-                out.push(
-                    pf.join("Ubisoft")
-                        .join("Ubisoft Game Launcher")
-                        .join("games")
-                        .display()
-                        .to_string(),
-                );
-            }
-            if let Some(pf) = env_dir("ProgramFiles") {
-                out.push(
-                    pf.join("Ubisoft")
-                        .join("Ubisoft Game Launcher")
-                        .join("games")
-                        .display()
-                        .to_string(),
-                );
-            }
-        }
-        Platform::BattleNet => {
-            if let Some(appdata) = env_dir("APPDATA") {
-                let cfg = appdata.join("Battle.net").join("Battle.net.config");
-                if let Ok(text) = std::fs::read_to_string(cfg) {
-                    if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
-                        if let Some(path) = val
-                            .pointer("/Client/Install/DefaultInstallPath")
-                            .and_then(|v| v.as_str())
-                        {
-                            if !path.is_empty() {
-                                out.push(path.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-            if let Some(pf) = env_dir("ProgramFiles(x86)") {
-                out.push(pf.join("Battle.net").display().to_string());
-            }
-            if let Some(pf) = env_dir("ProgramFiles") {
-                out.push(pf.join("Battle.net").display().to_string());
-            }
-        }
-        Platform::Rockstar => {
-            if let Some(pf) = env_dir("ProgramFiles") {
-                out.push(pf.join("Rockstar Games").display().to_string());
-            }
-            if let Some(pf) = env_dir("ProgramFiles(x86)") {
-                out.push(pf.join("Rockstar Games").display().to_string());
-            }
-        }
-        _ => {}
+    if platform == Platform::Emulator {
+        out.extend(emulator_library_dirs());
     }
 
     let mounted = drive_roots();
@@ -999,13 +814,13 @@ fn merge(by: &mut BTreeMap<Platform, Detection>, platform: Platform, mut detecti
 }
 
 /// Resolve an environment variable to an existing directory.
-fn env_dir(var: &str) -> Option<PathBuf> {
+pub(crate) fn env_dir(var: &str) -> Option<PathBuf> {
     std::env::var_os(var)
         .map(PathBuf::from)
         .filter(|path| path.is_dir())
 }
 
-fn join_exe(dir: &str, relative: &str) -> String {
+pub(crate) fn join_exe(dir: &str, relative: &str) -> String {
     let candidate = Path::new(relative);
     if candidate.is_absolute() {
         relative.to_string()
@@ -1056,7 +871,7 @@ fn is_executable_blacklisted(path: &Path) -> bool {
 /// - Immediate subdirectory (`bin/`, `bin_ship/`): +20
 /// - Disqualifies non-game utilities (crash handlers, notification helpers, setups).
 /// - Fallback to indie engine entrypoints (`.bat`, `.cmd`, `.love`, `.jar`, `.py`, `.html`).
-fn find_executable(dir: &Path, depth: usize) -> Option<String> {
+pub(crate) fn find_executable(dir: &Path, depth: usize) -> Option<String> {
     let mut candidates: Vec<(i32, String)> = Vec::new();
     let folder_stem = dir
         .file_name()
@@ -1835,11 +1650,11 @@ fn scan_itch_dir(dir: &Path, detection: &mut Detection) {
 
 fn detect_ubisoft() -> Detection {
     let mut detection = Detection::empty();
-    let mut seen_dirs = std::collections::BTreeSet::new();
 
     #[cfg(windows)]
     {
         use crate::platforms::registry;
+        let mut seen_dirs = std::collections::BTreeSet::new();
 
         // 1. Registry installs: HKLM\SOFTWARE\Ubisoft\Launcher\Installs\<id>
         let ubi_installs = registry::ubisoft_installs();
@@ -1983,11 +1798,11 @@ fn detect_ubisoft() -> Detection {
 
 fn detect_ea() -> Detection {
     let mut detection = Detection::empty();
-    let mut seen_dirs = std::collections::BTreeSet::new();
 
     #[cfg(windows)]
     {
         use crate::platforms::registry;
+        let mut seen_dirs = std::collections::BTreeSet::new();
 
         // 1. Registry installs: BioWare, Electronic Arts, EA Games
         let ea_installs = registry::ea_installs();
@@ -2184,6 +1999,7 @@ fn detect_battlenet() -> Detection {
 // ---------------------------------------------------------------------------
 
 fn detect_rockstar() -> Detection {
+    #[allow(unused_mut)]
     let mut detection = Detection::empty();
     #[cfg(windows)]
     {
@@ -3222,7 +3038,7 @@ fn detect_registry_based() -> Vec<(Platform, Detection)> {
 }
 
 /// Map an uninstall `Publisher` to a platform, or `None` if unrecognised.
-fn platform_for_publisher(publisher: &str) -> Option<Platform> {
+pub(crate) fn platform_for_publisher(publisher: &str) -> Option<Platform> {
     let p = publisher.to_lowercase();
     if p.contains("gog") {
         Some(Platform::Gog)
@@ -3260,7 +3076,7 @@ fn platform_for_publisher(publisher: &str) -> Option<Platform> {
 }
 
 /// Turn a `DisplayIcon` value (`"C:\game\game.exe",0`) into an executable path.
-fn icon_executable(icon: &str) -> Option<String> {
+pub(crate) fn icon_executable(icon: &str) -> Option<String> {
     let first = icon.split(',').next().unwrap_or(icon).trim();
     let path = first.trim_matches('"');
     if path.to_lowercase().ends_with(".exe") {

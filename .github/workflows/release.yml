@@ -128,11 +128,11 @@ jobs:
       matrix:
         include:
           - platform: 'windows-latest'
-            args: ''
+            args: '--config src-tauri/tauri.windows.conf.json'
           - platform: 'macos-latest'
-            args: '--target universal-apple-darwin'
+            args: '--target universal-apple-darwin --config src-tauri/tauri.macos.conf.json'
           - platform: 'ubuntu-22.04'
-            args: ''
+            args: '--config src-tauri/tauri.linux.conf.json'
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -186,3 +186,21 @@ jobs:
           releaseId: ${{ needs.create-release.outputs.release_id }}
           tagName: ${{ needs.create-release.outputs.tag_name }}
           args: ${{ matrix.args }}
+
+  publish-winget:
+    name: Publish to WinGet Repository
+    needs: [create-release, build-and-upload]
+    runs-on: windows-latest
+    if: startsWith(needs.create-release.outputs.tag_name, 'v')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Submit package to WinGet
+        uses: vedantmgoyal9/winget-releaser@v2
+        continue-on-error: true
+        with:
+          identifier: HELIXOrigin.SteamVault
+          version: ${{ needs.create-release.outputs.tag_name }}
+          token: ${{ secrets.WINGET_TOKEN || secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+

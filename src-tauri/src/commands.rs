@@ -861,7 +861,7 @@ pub async fn sync_library_metadata(
 #[tauri::command]
 pub async fn refresh_game_metadata(
     app_id: u32,
-    force: Option<bool>,
+    _force: Option<bool>,
     account_id3: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<Option<AppMeta>> {

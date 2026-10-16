@@ -11,6 +11,9 @@
 //! shortcuts by their source storefront.
 
 pub mod detectors;
+pub mod linux;
+pub mod macos;
+pub mod windows;
 
 #[cfg(windows)]
 pub mod registry;
@@ -23,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::AppResult;
 
 pub use detectors::{library_folders, scan_all};
+pub(crate) use detectors::Detection;
 
 /// Per-platform detection preferences (persisted in `settings.json`).
 ///

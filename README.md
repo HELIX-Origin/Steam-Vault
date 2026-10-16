@@ -112,6 +112,31 @@ Under the hood it is `node scripts/test.mjs [suite …]`; add `--list` to see th
 for a different timeout in seconds, and `-- <args>` to forward extra arguments to the `cargo`
 steps (for example `npm run test:rust -- some_test_name`).
 
+### 📦 Installation via WinGet (Windows)
+
+Steam Vault is registered on the official Windows Package Manager (WinGet) repository:
+
+```powershell
+winget install HELIXOrigin.SteamVault
+```
+
+To upgrade an existing installation:
+
+```powershell
+winget upgrade HELIXOrigin.SteamVault
+```
+
+### ✍️ Code signing
+
+Both local development builds and release packages support opt-in code signing:
+
+```bash
+npm run sign             # Signs discovered platform artifacts (.exe/.msi, .app/.dmg, .deb/.AppImage)
+npm run sign:local       # Alias for local signing
+npm run sign -- --dry-run
+```
+
+
 ## 🎨 UI direction
 
 The application UI is a **modern dark interface with a glassmorphism style** — frosted
