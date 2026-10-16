@@ -2916,6 +2916,20 @@ pub fn legendary_logout() -> AppResult<crate::platforms::LegendaryAuthStatus> {
     crate::platforms::legendary_logout()
 }
 
+/// Save custom Legendary CLI path/folder preference and return updated status.
+#[tauri::command]
+pub fn set_legendary_path(
+    path: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<crate::platforms::LegendaryAuthStatus> {
+    let clean = path.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    let mut current_settings = state.settings.lock().expect("settings lock poisoned").clone();
+    current_settings.legendary_path = clean;
+    settings::save(&current_settings)?;
+    *state.settings.lock().expect("settings lock poisoned") = current_settings;
+    Ok(crate::platforms::get_legendary_auth_status())
+}
+
 // ---------------------------------------------------------------------------
 // Serverless In-Memory KV & Cache Tier (Redis-compatible)
 // ---------------------------------------------------------------------------

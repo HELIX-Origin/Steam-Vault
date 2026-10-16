@@ -26,8 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Serverless In-Memory & Backend Redis-Compatible KV Tier**:
   - Implemented high-performance Redis-compatible key-value storage engine (`src-tauri/src/cache.rs` and `src/lib/redis.ts`) for ultra-fast transient caching of game stats, metadata lookups, and session state.
   - Exposed Redis command primitives (`redis_get`, `redis_set`, `redis_del`, `redis_keys`, `redis_flush`) via strongly typed Tauri IPC commands.
-- **Epic Games Launcher Legendary CLI Integration**:
-  - Added automatic detection and configurable binary path support for `legendary` CLI launcher.
+- **Epic Games Launcher & Legendary CLI Integration**:
+  - Added configurable binary/folder path support (`legendary_path`) allowing users to designate custom standalone installations on non-PATH locations.
+  - Implemented multi-platform auto-detection scanning installation directories, standard tools folders, and mounted drives (e.g. `E:\Games\Epic Games\Legendary`).
+  - Added direct "Download Legendary ↗" button linking to official GitHub releases alongside the 1-click built-in downloader.
   - Seamless fallback execution for Epic Games store titles when the official Epic Games Launcher is absent.
 - **Clean Uninstallation NSIS Hooks**:
   - Embedded NSIS uninstaller hooks (`src-tauri/windows/hooks.nsh`) for Windows installations ensuring complete removal of WebView2 runtime caches, local app data, and temporary files when uninstalled.
@@ -42,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Epic Games Account Portal OAuth `client_not_found` Error**:
+  - Resolved `{"errorCode":"errors.com.epicgames.accountportal.client_not_found"}` by replacing outdated/deprecated client tokens with the active Legendary portal helper (`https://legendary.gl/epiclogin`) and valid client ID (`34a02cf8f4414e29b15921876da36f9a`).
+  - Added resilient credential extraction handling pure authorization codes, JSON payloads, redirect URLs, and session ID (`--sid`) cookies.
 - **Chromium WebView2 Win32 Window Class Unregistration**:
   - Resolved `UnregisterClassW failed: 1412 (ERROR_CLASS_ALREADY_EXISTS)` during rapid window teardown and reload in debug mode.
 - **Relative Path Resolution for Installed Games**:

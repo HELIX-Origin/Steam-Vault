@@ -231,6 +231,8 @@ export const api = {
       importLauncher: importLauncher ?? false,
     }),
   legendaryLogout: () => invoke<LegendaryAuthStatus>("legendary_logout"),
+  setLegendaryPath: (path: string | null) =>
+    invoke<LegendaryAuthStatus>("set_legendary_path", { path: path ?? null }),
 
   // In-Memory Fast Cache & Serverless KV Persistence (Redis-compatible)
   kvGet: (key: string) => invoke<string | null>("kv_get", { key }),

@@ -201,6 +201,7 @@ pub fn run() {
             commands::get_legendary_status,
             commands::legendary_login,
             commands::legendary_logout,
+            commands::set_legendary_path,
             commands::kv_get,
             commands::kv_set,
             commands::kv_delete,

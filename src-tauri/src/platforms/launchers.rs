@@ -70,31 +70,136 @@ pub fn managed_tools_dir() -> PathBuf {
     }
 }
 
-/// Target path for the built-in Legendary CLI binary.
+/// Helper to resolve a potential file or directory into a valid legendary executable path.
+pub fn resolve_legendary_executable(path: &Path) -> Option<PathBuf> {
+    if path.is_file() {
+        return Some(path.to_path_buf());
+    }
+    if path.is_dir() {
+        for name in [
+            "legendary.exe",
+            "legendary_windows_x64.exe",
+            "legendary_windows.exe",
+            "legendary",
+            "legendary_macos",
+            "legendary_linux_arm64",
+        ] {
+            let candidate = path.join(name);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+/// Target path for the Legendary CLI binary (respecting user settings, auto-detection, and built-in tools).
 pub fn legendary_binary_path() -> PathBuf {
+    // 1. User-configured custom path from settings
+    if let Some(ref custom) = crate::settings::load().legendary_path {
+        let p = PathBuf::from(custom.trim());
+        if let Some(resolved) = resolve_legendary_executable(&p) {
+            return resolved;
+        }
+    }
+
     #[cfg(target_os = "windows")]
     {
-        // Check installation location first if present
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Some(install_dir) = exe_path.parent() {
-                let install_bin = install_dir.join("tools\\legendary.exe");
-                if install_bin.is_file() {
-                    return install_bin;
+        // 2. Scan mounted drives for standard installation directories (e.g. E:\Games\Epic Games\Legendary)
+        let drives = drive_roots();
+        for root in &drives {
+            for sub in [
+                "Games\\Epic Games\\Legendary",
+                "Epic Games\\Legendary",
+                "Games\\Legendary",
+                "Legendary",
+                "tools",
+                "bin",
+                "Program Files\\Legendary",
+                "Program Files (x86)\\Legendary",
+            ] {
+                let dir = root.join(sub);
+                if let Some(resolved) = resolve_legendary_executable(&dir) {
+                    return resolved;
                 }
             }
         }
-        // Check AppData tools folder
-        if let Some(local_app_data) = dirs::data_local_dir() {
-            let app_data_bin = local_app_data.join("Steam-Vault\\tools\\legendary.exe");
-            if app_data_bin.is_file() {
-                return app_data_bin;
+
+        // 3. User profile & local AppData
+        if let Some(home) = dirs::home_dir() {
+            for sub in [".local\\bin", ".config\\legendary"] {
+                if let Some(resolved) = resolve_legendary_executable(&home.join(sub)) {
+                    return resolved;
+                }
             }
         }
+        if let Some(local_app_data) = dirs::data_local_dir() {
+            for sub in [
+                "Steam-Vault\\tools",
+                "Programs\\legendary",
+                "Programs\\Python\\Scripts",
+            ] {
+                if let Some(resolved) = resolve_legendary_executable(&local_app_data.join(sub)) {
+                    return resolved;
+                }
+            }
+        }
+
+        // 4. Executable relative tools directory
+        if let Ok(exe_path) = std::env::current_exe() {
+            if let Some(install_dir) = exe_path.parent() {
+                if let Some(resolved) = resolve_legendary_executable(&install_dir.join("tools")) {
+                    return resolved;
+                }
+            }
+        }
+
         managed_tools_dir().join("legendary.exe")
     }
-    #[cfg(not(target_os = "windows"))]
+
+    #[cfg(target_os = "macos")]
     {
+        for p in [
+            "/usr/local/bin/legendary",
+            "/opt/homebrew/bin/legendary",
+        ] {
+            let path = PathBuf::from(p);
+            if path.is_file() {
+                return path;
+            }
+        }
+        if let Some(home) = dirs::home_dir() {
+            let candidate = home.join("Library/Application Support/Steam-Vault/tools/legendary");
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
         managed_tools_dir().join("legendary")
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        for p in [
+            "/usr/bin/legendary",
+            "/usr/local/bin/legendary",
+        ] {
+            let path = PathBuf::from(p);
+            if path.is_file() {
+                return path;
+            }
+        }
+        if let Some(home) = dirs::home_dir() {
+            let candidate = home.join(".local/bin/legendary");
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+        managed_tools_dir().join("legendary")
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        PathBuf::from("./tools/legendary")
     }
 }
 
@@ -102,7 +207,7 @@ pub fn legendary_binary_path() -> PathBuf {
 pub async fn install_legendary_cli() -> AppResult<LauncherStatus> {
     let bin_dir = managed_tools_dir();
     let _ = std::fs::create_dir_all(&bin_dir);
-    let target_path = legendary_binary_path();
+    let target_path = bin_dir.join(if cfg!(target_os = "windows") { "legendary.exe" } else { "legendary" });
 
     let download_url = if cfg!(target_os = "windows") {
         "https://github.com/legendary-gl/legendary/releases/latest/download/legendary.exe"
@@ -122,7 +227,7 @@ pub async fn install_legendary_cli() -> AppResult<LauncherStatus> {
     let client = crate::metadata::http_client();
     let res = client
         .get(download_url)
-        .header("User-Agent", "Steam-Vault/1.2.0")
+        .header("User-Agent", "Steam-Vault/1.3.0")
         .send()
         .await
         .map_err(|e| AppError::msg(format!("Failed to download Legendary CLI: {e}")))?;
@@ -157,6 +262,11 @@ pub async fn install_legendary_cli() -> AppResult<LauncherStatus> {
         .args(["eos-overlay", "install", "-y"])
         .output();
 
+    // Automatically register target path in settings
+    let mut current_settings = crate::settings::load();
+    current_settings.legendary_path = Some(target_path.display().to_string());
+    let _ = crate::settings::save(&current_settings);
+
     Ok(LauncherStatus {
         id: "epic".to_string(),
         name: launcher_name("epic").to_string(),
@@ -164,8 +274,8 @@ pub async fn install_legendary_cli() -> AppResult<LauncherStatus> {
         executable_path: Some(target_path.display().to_string()),
         alternative_method: Some("Legendary CLI & EOS Service (Built-in)".to_string()),
         download_url: launcher_download_url("epic").to_string(),
-        alternative_url: Some("https://github.com/legendary-gl/legendary".to_string()),
-        alternative_label: Some("Legendary CLI & EOS Service".to_string()),
+        alternative_url: Some(LEGENDARY_DOWNLOAD_URL.to_string()),
+        alternative_label: Some("Download Legendary CLI ↗".to_string()),
     })
 }
 
@@ -178,14 +288,24 @@ pub struct LegendaryAuthStatus {
     pub account_name: Option<String>,
     pub account_id: Option<String>,
     pub auth_url: String,
+    pub direct_auth_url: String,
+    pub executable_path: Option<String>,
 }
 
-pub const EPIC_AUTH_URL: &str =
-    "https://www.epicgames.com/id/login?redirectUrl=https%3A%2F%2Fwww.epicgames.com%2Fid%2Fapi%2Fredirect%3FclientId%3D34a2c53738e1452097026042d6528137%26responseType%3Dcode";
+pub const EPIC_AUTH_URL: &str = "https://legendary.gl/epiclogin";
+pub const EPIC_DIRECT_AUTH_URL: &str =
+    "https://www.epicgames.com/id/login?redirectUrl=https%3A%2F%2Fwww.epicgames.com%2Fid%2Fapi%2Fredirect%3FclientId%3D34a02cf8f4414e29b15921876da36f9a%26responseType%3Dcode";
+pub const LEGENDARY_DOWNLOAD_URL: &str = "https://github.com/legendary-gl/legendary/releases";
 
 pub fn get_legendary_auth_status() -> LegendaryAuthStatus {
     let bin = legendary_binary_path();
     let is_installed = bin.is_file();
+    let executable_path = if is_installed {
+        Some(bin.display().to_string())
+    } else {
+        None
+    };
+
     if !is_installed {
         return LegendaryAuthStatus {
             is_installed: false,
@@ -193,6 +313,8 @@ pub fn get_legendary_auth_status() -> LegendaryAuthStatus {
             account_name: None,
             account_id: None,
             auth_url: EPIC_AUTH_URL.to_string(),
+            direct_auth_url: EPIC_DIRECT_AUTH_URL.to_string(),
+            executable_path: None,
         };
     }
 
@@ -241,6 +363,8 @@ pub fn get_legendary_auth_status() -> LegendaryAuthStatus {
             account_name,
             account_id,
             auth_url: EPIC_AUTH_URL.to_string(),
+            direct_auth_url: EPIC_DIRECT_AUTH_URL.to_string(),
+            executable_path,
         }
     } else {
         LegendaryAuthStatus {
@@ -249,6 +373,8 @@ pub fn get_legendary_auth_status() -> LegendaryAuthStatus {
             account_name: None,
             account_id: None,
             auth_url: EPIC_AUTH_URL.to_string(),
+            direct_auth_url: EPIC_DIRECT_AUTH_URL.to_string(),
+            executable_path,
         }
     }
 }
@@ -256,7 +382,9 @@ pub fn get_legendary_auth_status() -> LegendaryAuthStatus {
 pub fn legendary_authenticate(code: Option<String>, import_from_launcher: bool) -> AppResult<LegendaryAuthStatus> {
     let bin = legendary_binary_path();
     if !bin.is_file() {
-        return Err(AppError::msg("Legendary CLI is not installed. Please click '⚡ Install Legendary CLI' first."));
+        return Err(AppError::msg(
+            "Legendary CLI is not detected or installed. Please configure your Legendary folder or click '⚡ Install Legendary CLI Automatically'."
+        ));
     }
 
     if import_from_launcher {
@@ -272,39 +400,72 @@ pub fn legendary_authenticate(code: Option<String>, import_from_launcher: bool) 
                 "Failed to import Epic Games credentials: {stderr} {stdout}"
             )));
         }
-    } else if let Some(auth_code) = code {
-        let clean_code = auth_code.trim();
-        let extracted_code = if clean_code.contains("authorizationCode") {
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(clean_code) {
-                v.get("authorizationCode")
-                    .and_then(|c| c.as_str())
-                    .unwrap_or(clean_code)
-                    .to_string()
-            } else {
-                clean_code.to_string()
-            }
-        } else {
-            clean_code.to_string()
-        };
-
-        if extracted_code.is_empty() {
+    } else if let Some(raw_input) = code {
+        let trimmed = raw_input.trim();
+        if trimmed.is_empty() {
             return Err(AppError::msg("Authorization code is empty."));
         }
 
-        let output = std::process::Command::new(&bin)
-            .args(["auth", "--code", &extracted_code])
-            .output()
-            .map_err(|e| AppError::msg(format!("Failed to run legendary auth --code: {e}")))?;
+        // Detect if input is a SID or contains an authorization code
+        let mut auth_code = None;
+        let mut session_id = None;
+
+        if trimmed.contains('{') {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(trimmed) {
+                if let Some(c) = v.get("authorizationCode").and_then(|x| x.as_str()) {
+                    auth_code = Some(c.to_string());
+                } else if let Some(c) = v.get("code").and_then(|x| x.as_str()) {
+                    auth_code = Some(c.to_string());
+                } else if let Some(sid) = v.get("sid").and_then(|x| x.as_str()) {
+                    session_id = Some(sid.to_string());
+                }
+            }
+        }
+
+        if auth_code.is_none() && session_id.is_none() {
+            if trimmed.contains("authorizationCode=") {
+                if let Some(part) = trimmed.split("authorizationCode=").nth(1) {
+                    auth_code = Some(part.split('&').next().unwrap_or(part).to_string());
+                }
+            } else if trimmed.contains("code=") {
+                if let Some(part) = trimmed.split("code=").nth(1) {
+                    auth_code = Some(part.split('&').next().unwrap_or(part).to_string());
+                }
+            } else if trimmed.starts_with("sid:") || trimmed.starts_with("SID:") {
+                session_id = Some(trimmed[4..].trim().to_string());
+            } else {
+                // Raw code or token
+                auth_code = Some(trimmed.trim_matches('"').to_string());
+            }
+        }
+
+        let output = if let Some(sid) = session_id {
+            std::process::Command::new(&bin)
+                .args(["auth", "--sid", &sid])
+                .output()
+                .map_err(|e| AppError::msg(format!("Failed to run legendary auth --sid: {e}")))?
+        } else if let Some(extracted) = auth_code {
+            std::process::Command::new(&bin)
+                .args(["auth", "--code", &extracted])
+                .output()
+                .map_err(|e| AppError::msg(format!("Failed to run legendary auth --code: {e}")))?
+        } else {
+            return Err(AppError::msg("Could not extract a valid authorization code or SID."));
+        };
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let stdout = String::from_utf8_lossy(&output.stdout);
-            return Err(AppError::msg(format!(
-                "Authentication failed: {stderr} {stdout}"
-            )));
+            let combined = format!("{stderr} {stdout}");
+            if combined.contains("client_not_found") {
+                return Err(AppError::msg(
+                    "Epic Games returned 'client_not_found'. Please open https://legendary.gl/epiclogin or log into epicgames.com in your browser to accept any pending terms/EULA."
+                ));
+            }
+            return Err(AppError::msg(format!("Authentication failed: {combined}")));
         }
     } else {
-        return Err(AppError::msg("Authorization code is required. Please paste the code from your browser."));
+        return Err(AppError::msg("Authorization code or SID is required."));
     }
 
     Ok(get_legendary_auth_status())

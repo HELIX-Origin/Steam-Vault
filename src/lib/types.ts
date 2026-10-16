@@ -206,6 +206,7 @@ export interface Settings {
   autoCats: AutoCat[];
   platformSources: PlatformSource[];
   emulatorConfigs?: EmulatorConfig[];
+  legendaryPath?: string | null;
 }
 
 /** User-configured emulator mapping (mirrors the Rust `EmulatorConfig`). */
@@ -491,5 +492,7 @@ export interface LegendaryAuthStatus {
   accountName?: string | null;
   accountId?: string | null;
   authUrl: string;
+  directAuthUrl?: string;
+  executablePath?: string | null;
 }
 

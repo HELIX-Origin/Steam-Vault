@@ -68,6 +68,8 @@
   let legendaryMsg = $state<string | null>(null);
 
   let legendaryAuth = $state<LegendaryAuthStatus | null>(null);
+  let legendaryPathInput = $state("");
+  let savingPath = $state(false);
   let authCodeInput = $state("");
   let loggingIn = $state(false);
   let authError = $state<string | null>(null);
@@ -91,8 +93,62 @@
   async function refreshLegendaryAuth() {
     try {
       legendaryAuth = await api.getLegendaryStatus();
+      if (legendaryAuth?.executablePath && !legendaryPathInput) {
+        legendaryPathInput = legendaryAuth.executablePath;
+      }
     } catch (e) {
       console.warn("Could not query Legendary auth status:", e);
+    }
+  }
+
+  async function handleSaveLegendaryPath() {
+    savingPath = true;
+    legendaryMsg = null;
+    authError = null;
+    try {
+      legendaryAuth = await api.setLegendaryPath(legendaryPathInput.trim() || null);
+      await loadLaunchers();
+      if (legendaryAuth?.isInstalled) {
+        const epicSource = sources.find((s) => s.id === "epic");
+        if (epicSource) {
+          epicSource.enabled = true;
+          sources = [...sources];
+        }
+        legendaryMsg = `Legendary CLI path saved: ${legendaryAuth.executablePath ?? "Configured"}`;
+      } else {
+        legendaryMsg = "Path saved. Binary not found at that location.";
+      }
+      setTimeout(() => (legendaryMsg = null), 5000);
+    } catch (e) {
+      legendaryMsg = errorMessage(e);
+    } finally {
+      savingPath = false;
+    }
+  }
+
+  async function handleAutoDetectLegendary() {
+    savingPath = true;
+    legendaryMsg = null;
+    authError = null;
+    try {
+      legendaryAuth = await api.setLegendaryPath(null);
+      await loadLaunchers();
+      if (legendaryAuth?.executablePath) {
+        legendaryPathInput = legendaryAuth.executablePath;
+        const epicSource = sources.find((s) => s.id === "epic");
+        if (epicSource) {
+          epicSource.enabled = true;
+          sources = [...sources];
+        }
+        legendaryMsg = `Auto-detected Legendary CLI: ${legendaryAuth.executablePath}`;
+      } else {
+        legendaryMsg = "No Legendary CLI binary detected on system drives.";
+      }
+      setTimeout(() => (legendaryMsg = null), 5000);
+    } catch (e) {
+      legendaryMsg = errorMessage(e);
+    } finally {
+      savingPath = false;
     }
   }
 
@@ -294,7 +350,7 @@
             </div>
           </label>
 
-          {#if !isInstalled && launcher}
+          {#if !isInstalled && launcher && launcher.id !== "epic"}
             <div class="integration-actions-row">
               {#if launcher.downloadUrl}
                 <button
@@ -305,19 +361,81 @@
                   Download Launcher ↗
                 </button>
               {/if}
-              {#if launcher.id === "epic"}
+            </div>
+          {:else if launcher?.id === "epic"}
+            <div class="legendary-panel">
+              <!-- Epic Launchers & Legendary Download Bar -->
+              <div class="integration-actions-row" style="margin-bottom:0.5rem;flex-wrap:wrap">
+                {#if launcher.downloadUrl && !isInstalled}
+                  <button
+                    class="btn mini btn-ghost launcher-action-btn"
+                    onclick={() => handleOpenUrl(launcher.downloadUrl)}
+                    title="Download official Epic Games Launcher via web browser"
+                  >
+                    Download Launcher ↗
+                  </button>
+                {/if}
+                <button
+                  class="btn mini btn-ghost launcher-action-btn"
+                  onclick={() => handleOpenUrl("https://github.com/legendary-gl/legendary/releases")}
+                  title="Download standalone Legendary CLI executable from GitHub Releases"
+                >
+                  Download Legendary ↗
+                </button>
                 <button
                   class="btn mini primary launcher-action-btn"
                   onclick={handleInstallLegendary}
                   disabled={installingLegendary}
-                  title="Download and install Legendary CLI and Epic Online Services into user tools directory"
+                  title="Download and install Legendary CLI directly into tools folder"
                 >
-                  {installingLegendary ? "Installing Legendary…" : "⚡ Install Legendary CLI (Built-in)"}
+                  {installingLegendary ? "Installing…" : "⚡ Install Legendary (Built-in)"}
                 </button>
-              {/if}
-            </div>
-          {:else if isInstalled && launcher?.id === "epic"}
-            <div class="legendary-panel">
+              </div>
+
+              <!-- Legendary Executable Path Configuration -->
+              <div class="legendary-login-box" style="margin-bottom:0.5rem">
+                <div class="row-between" style="align-items:center;font-size:0.75rem">
+                  <span class="muted-xs">Legendary Executable or Directory:</span>
+                  {#if legendaryAuth?.executablePath}
+                    <span class="pill pill-ok" style="font-size:0.62rem" title={legendaryAuth.executablePath}>
+                      ✓ {legendaryAuth.executablePath}
+                    </span>
+                  {:else}
+                    <span class="pill pill-dim" style="font-size:0.62rem">Not Detected</span>
+                  {/if}
+                </div>
+                <div class="legendary-code-input-row">
+                  <input
+                    type="text"
+                    placeholder="e.g. E:\Games\Epic Games\Legendary"
+                    bind:value={legendaryPathInput}
+                    disabled={savingPath}
+                    onkeydown={(e) => {
+                      if (e.key === "Enter") handleSaveLegendaryPath();
+                    }}
+                  />
+                  <button
+                    class="btn mini btn-accent"
+                    style="font-size:0.72rem;padding:0.2rem 0.55rem"
+                    onclick={handleSaveLegendaryPath}
+                    disabled={savingPath}
+                    title="Save custom Legendary path"
+                  >
+                    {savingPath ? "Saving…" : "Save Path"}
+                  </button>
+                  <button
+                    class="btn mini btn-ghost"
+                    style="font-size:0.72rem;padding:0.2rem 0.55rem"
+                    onclick={handleAutoDetectLegendary}
+                    disabled={savingPath}
+                    title="Scan system and mounted drives for Legendary CLI"
+                  >
+                    ↻ Auto-Detect
+                  </button>
+                </div>
+              </div>
+
+              <!-- Legendary Account & Authentication -->
               {#if legendaryAuth?.isLoggedIn}
                 <div class="legendary-account-row">
                   <div class="legendary-account-info">
@@ -350,7 +468,7 @@
                     </button>
                   </div>
                 </div>
-              {:else}
+              {:else if legendaryAuth?.isInstalled}
                 <div class="legendary-login-box">
                   <span class="muted-xs" style="font-size:0.72rem;line-height:1.3">
                     Connect Epic Games to discover and launch games without the Epic Games Launcher:
@@ -359,11 +477,21 @@
                     <button
                       class="btn mini primary"
                       style="font-size:0.72rem;padding:0.2rem 0.5rem"
-                      onclick={() => handleOpenUrl(legendaryAuth?.authUrl ?? "https://www.epicgames.com/id/login")}
+                      onclick={() => handleOpenUrl(legendaryAuth?.authUrl ?? "https://legendary.gl/epiclogin")}
                       title="Open Epic Games authorization page in browser"
                     >
                       1. Log In via Epic Games ↗
                     </button>
+                    {#if legendaryAuth?.directAuthUrl}
+                      <button
+                        class="btn mini btn-ghost"
+                        style="font-size:0.72rem;padding:0.2rem 0.5rem"
+                        onclick={() => handleOpenUrl(legendaryAuth?.directAuthUrl!)}
+                        title="Direct Epic Games login portal with valid client token"
+                      >
+                        Direct Portal ↗
+                      </button>
+                    {/if}
                     <button
                       class="btn mini btn-ghost"
                       style="font-size:0.72rem;padding:0.2rem 0.5rem"
@@ -377,7 +505,7 @@
                   <div class="legendary-code-input-row">
                     <input
                       type="text"
-                      placeholder="2. Paste code or JSON response here"
+                      placeholder="2. Paste code, SID, or JSON response here"
                       bind:value={authCodeInput}
                       disabled={loggingIn}
                       onkeydown={(e) => {

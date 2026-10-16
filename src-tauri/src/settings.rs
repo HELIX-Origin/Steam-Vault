@@ -36,6 +36,9 @@ pub struct Settings {
     /// Explicitly configured emulators and their ROM directories.
     #[serde(default)]
     pub emulator_configs: Vec<crate::platforms::EmulatorConfig>,
+    /// Optional user-configured path to Legendary CLI binary or directory.
+    #[serde(default)]
+    pub legendary_path: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -58,6 +61,7 @@ impl Default for Settings {
             auto_cats: Vec::new(),
             platform_sources: Vec::new(),
             emulator_configs: Vec::new(),
+            legendary_path: None,
         }
     }
 }
