@@ -2,12 +2,12 @@
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
   import { t } from "$lib/i18n";
-  import { error } from "$lib/stores";
+  import { error, games, storageReport } from "$lib/stores";
   import type { DiskInfo, Game, GamePlacement, Platform, StorageReport } from "$lib/types";
   import "$styles/storage.scss";
 
-  let report = $state<StorageReport | null>(null);
-  let libraryGames = $state<Game[]>([]);
+  let report = $derived($storageReport);
+  let libraryGames = $derived($games);
   let busy = $state(false);
 
   // Filters & Search
@@ -33,7 +33,6 @@
     { id: "itch", label: "itch.io", icon: "⌗", color: "#ef4444" },
     { id: "amazon", label: "Amazon Games", icon: "📦", color: "#eab308" },
     { id: "rockstar", label: "Rockstar Games", icon: "★", color: "#fbbf24" },
-    { id: "emulator", label: "Emulation / Retro", icon: "🕹", color: "#ec4899" },
     { id: "other", label: "Other / Standalone", icon: "⚙", color: "#94a3b8" }
   ];
 
@@ -41,15 +40,17 @@
     await refresh();
   });
 
-  async function refresh() {
-    busy = true;
+  async function refresh(isManual = false) {
+    if (!$storageReport || isManual) {
+      busy = true;
+    }
     try {
       const [storageRep, lib] = await Promise.all([
         api.getStorageReport(),
         api.loadLibrary().catch(() => [])
       ]);
-      report = storageRep;
-      libraryGames = lib;
+      storageReport.set(storageRep);
+      games.set(lib);
       error.set(null);
     } catch (e) {
       error.set(errorMessage(e));
@@ -217,7 +218,7 @@
     <p class="muted">Storage utilization, drive footprints, and installed games across all supported platforms.</p>
   </div>
   <div class="row" style="gap:0.5rem">
-    <button class="btn btn-ghost" onclick={refresh} disabled={busy}>
+    <button class="btn btn-ghost" onclick={() => refresh(true)} disabled={busy}>
       <span class:spin={busy}>🔄</span>
       <span>{busy ? $t("common.refreshing") : $t("common.refresh")}</span>
     </button>

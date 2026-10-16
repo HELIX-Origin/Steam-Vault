@@ -82,20 +82,6 @@ pub fn default_library_folders(platform: Platform) -> Vec<String> {
         Platform::BattleNet => {
             out.push("/Applications/Battle.net".into());
         }
-        Platform::Emulator => {
-            if let Some(h) = &home {
-                out.push(normalize_path(
-                    &h.join("Library/Application Support/OpenEmu/Game Library")
-                        .display()
-                        .to_string(),
-                ));
-                out.push(normalize_path(
-                    &h.join("Library/Application Support/RetroArch")
-                        .display()
-                        .to_string(),
-                ));
-            }
-        }
         Platform::Ubisoft
         | Platform::Ea
         | Platform::Rockstar

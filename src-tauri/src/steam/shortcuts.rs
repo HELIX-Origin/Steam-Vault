@@ -64,6 +64,7 @@ pub fn load_shortcuts(root: &Path, id3: &str) -> AppResult<Vec<Game>> {
         let exe = clean_path(get_str_any(entry, &["Exe", "exe"]));
         let start_dir = clean_path(get_str_any(entry, &["StartDir", "startdir"]));
         let icon = entry.get_str("icon").map(str::to_string);
+        let launch_options = clean_path(get_str_any(entry, &["LaunchOptions", "launchoptions"]));
         let hidden = entry.get_i32("IsHidden").unwrap_or(0) != 0;
         let last_played = entry.get_i32("LastPlayTime").map(|value| value as i64);
 
@@ -75,6 +76,24 @@ pub fn load_shortcuts(root: &Path, id3: &str) -> AppResult<Vec<Game>> {
                         collections.push(tag_str.to_string());
                     }
                 }
+            }
+        }
+
+        let platform = platform_map
+            .get(&app_id)
+            .copied()
+            .unwrap_or(Platform::Other);
+
+        let mut launch_uri = None;
+        if let Some(ref opts) = launch_options {
+            if platform == Platform::Epic || opts.starts_with("launch ") {
+                if let Some(app_name) = opts.strip_prefix("launch ") {
+                    launch_uri = Some(format!("legendary://{}", app_name.trim()));
+                }
+            } else if opts.starts_with("shell:AppsFolder") {
+                launch_uri = Some(opts.clone());
+            } else if opts.contains("://") {
+                launch_uri = Some(opts.clone());
             }
         }
 
@@ -90,10 +109,8 @@ pub fn load_shortcuts(root: &Path, id3: &str) -> AppResult<Vec<Game>> {
             exe,
             start_dir,
             icon,
-            platform: platform_map
-                .get(&app_id)
-                .copied()
-                .unwrap_or(Platform::Other),
+            launch_uri,
+            platform,
             ..Default::default()
         });
     }

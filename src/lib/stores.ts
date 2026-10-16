@@ -9,16 +9,19 @@ import type {
   ProviderInfo,
   Settings,
   SteamInstall,
+  StorageReport,
 } from "./types";
 
 export const settings = writable<Settings | null>(null);
 export const providers = writable<ProviderInfo[]>([]);
 export const install = writable<SteamInstall | null>(null);
 export const games = writable<Game[]>([]);
+export const selectedGameId = writable<number | null>(null);
 export const collections = writable<Collection[]>([]);
 export const steamRunning = writable<boolean>(false);
 export const ownedLibrary = writable<OwnedLibrary | null>(null);
 export const platformScan = writable<PlatformScan | null>(null);
+export const storageReport = writable<StorageReport | null>(null);
 export const loading = writable<boolean>(false);
 function createCustomNamesStore() {
   let initial: Record<number, string> = {};

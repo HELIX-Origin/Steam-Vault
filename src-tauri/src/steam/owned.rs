@@ -32,12 +32,18 @@ pub struct OwnedLibrary {
     pub games: Vec<OwnedGameRecord>,
 }
 
-/// `…/steam-vault/owned-games.json` under the OS config directory.
+/// `…/universal-game-launcher/owned-games.json` under the OS config directory.
 pub fn path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("steam-vault")
-        .join("owned-games.json")
+    let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    let new_path = base.join("universal-game-launcher").join("owned-games.json");
+    if new_path.exists() {
+        return new_path;
+    }
+    let legacy_path = base.join("steam-vault").join("owned-games.json");
+    if legacy_path.exists() {
+        return legacy_path;
+    }
+    new_path
 }
 
 /// Load the cached owned library, or an empty one when absent.

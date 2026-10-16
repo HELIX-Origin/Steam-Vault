@@ -2,7 +2,7 @@ import type { TranslationDictionary } from "../types";
 
 export const en: TranslationDictionary = {
   nav: {
-    brandTitle: "Steam Vault",
+    brandTitle: "Universal Game Launcher",
     brandSubtitle: "Library organizer",
     dashboard: "Dashboard",
     library: "Library",
@@ -175,11 +175,9 @@ export const en: TranslationDictionary = {
     removeArtwork: "Remove Artwork",
     apiKeyNotice: "Requires SteamGridDB API key configured in Settings for automated retrieval.",
     allProviders: "All Providers",
-    communityCatalogue: "Community Catalogue",
     pcgamingwiki: "PCGamingWiki",
     wikipedia: "Wikipedia",
     vndb: "VNDB",
-    emulation: "Emulation / Retro",
     steamGridDb: "SteamGridDB",
     steamStore: "Steam Store",
     igdb: "IGDB",
@@ -209,8 +207,6 @@ export const en: TranslationDictionary = {
     refreshMetadataHelp: "Enrich missing metadata, tags, and artwork across all games using multiple providers.",
     refreshMetadataRunning: "Refreshing metadata across library…",
     refreshMetadataSuccess: "Successfully refreshed library metadata.",
-    alsoFetchArtwork: "Also fetch and apply missing artwork slots",
-    catalogSync: "Sync Online Catalog",
-    catalogSyncHelp: "Sync offline disambiguation index from the community catalogue."
+    alsoFetchArtwork: "Also fetch and apply missing artwork slots"
   }
 };

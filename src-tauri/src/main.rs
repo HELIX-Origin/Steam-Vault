@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    steam_vault_lib::run()
+    universal_game_launcher_lib::run()
 }

@@ -1,15 +1,14 @@
 ---
 layout: docs
 title: Artwork Management
-summary: Applying grid, hero, logo, and icon art to any game, including non-Steam shortcuts
+summary: Applying grid, hero, logo, and icon art across all games and manually added local titles
 parent: Documentation Home
 nav_order: 13
 ---
 
 # Artwork Management
 
-The **Artwork** view lets you replace the artwork Steam shows for any game in your library — Steam
-games and non-Steam shortcuts alike. You can pull art from **SteamGridDB** or apply your own image
+The **Artwork** view lets you replace the artwork displayed for any game in your library — across all your official storefront games and manually added local titles. You can pull art from **SteamGridDB** or apply your own image
 file, and you can clear art you no longer want.
 
 ## 🖼️ The five slots
@@ -37,34 +36,32 @@ userdata/<account-id>/config/grid/
 ```
 
 This is the same location Steam's own **Customize** screen writes to. Because it is keyed by app id,
-the same system covers **non-Steam shortcuts**, whose synthetic app ids have no store page of their
+the same system covers **manually added local games**, whose synthetic app ids have no store page of their
 own.
 
 ## 🌐 Applying art from Multiple Providers
 
 1. Open **Artwork** (or click **Manage → Artwork** from any game details page).
 2. Choose the visual slot you want to configure: **Portrait**, **Landscape**, **Hero Banner**, **Logo**, or **Icon**.
-3. Use the **Keyword Search** bar to search by game title (e.g. "Chrono Trigger", "Doom", "Super Mario 64").
+3. Use the **Keyword Search** bar to search by game title (e.g. "Chrono Trigger", "Doom", "Hollow Knight").
 4. Filter by artwork provider using the provider dropdown:
-   - **Community Catalogue** (curated vertical & horizontal covers, heroes, logos, icons)
    - **GOG Store & Galaxy** (official high-res vertical box covers and background banners)
    - **PCGamingWiki** (box art & infobox covers)
    - **Wikipedia** (high-res box art covers from encyclopedic pages)
-   - **Libretro Emulation** (console box arts, gameplay snaps, and title screens across 24+ platforms)
    - **VNDB** (visual novel covers & Japanese title art)
    - **SteamGridDB** (community grids, heroes, logos, icons)
    - **Steam Store** (official store capsules & banners)
    - **IGDB** (cover art)
 5. Filter by animated/static artwork or toggle **Safe Search** (NSFW filtering).
-6. Click any card to apply it instantly to your Steam library. Dead or unreachable CDN links are filtered out automatically so you never see broken image cards.
+6. Click any card to apply it instantly to your game. Dead or unreachable CDN links are filtered out automatically so you never see broken image cards.
 
 SteamGridDB and IGDB optionally use API keys configured in [Settings & API Keys](Settings-and-API-Keys.md). All other providers work 100% keyless out of the box.
 
 ## ⚡ Automatic Artwork Fetching
 
-Steam Vault automatically ensures games don't have blank gray posters in your Steam library:
+Universal Game Launcher automatically ensures games don't have blank posters in your library:
 
-- **Automatic on Import:** When scanning and importing non-Steam games, ROMs, or platform titles from GOG/Epic/itch, Steam Vault automatically attempts to download missing artwork (portrait grid, hero banner, logo, and icon) via SteamGridDB if an API key is configured. If no key is set or no match is found, it falls back to extracting cover art from Steam Store, VNDB, or itch metadata caches.
+- **Automatic on Import:** When discovering games from storefront launchers or importing manually added local titles, Universal Game Launcher automatically attempts to download missing artwork (portrait grid, hero banner, logo, and icon) via SteamGridDB if an API key is configured. If no key is set or no match is found, it falls back to extracting cover art from Steam Store, VNDB, or itch metadata caches.
 - **Auto-fetch Missing Art Button:** In the **Artwork** view header, click **Auto-fetch missing art** to run a background pass across your entire library and populate all games that currently lack grid art.
 
 ## 📁 Applying art from a file
@@ -91,13 +88,12 @@ the timestamped backup store first, so you can always restore it by hand.
 
 ## 💡 Tips
 
-- Portrait grids and heroes give the biggest visual improvement for non-Steam entries.
+- Portrait grids and heroes give the biggest visual improvement for manually added local games.
 - A **logo** should be a transparent PNG, or it will show a coloured box behind it.
-- If Steam does not immediately show new art, switch to another library tab and back, or restart
-  Steam.
+- If the application does not immediately show new art, refresh the view or restart the app.
 
 ## ➡️ Next steps
 
-- [Non-Steam Games](Non-Steam-Games.md)
+- [Manually Added Local Games](Non-Steam-Games.md)
 - [Metadata Providers](Metadata-Providers.md)
 - [Storage Management](Storage-Management.md)

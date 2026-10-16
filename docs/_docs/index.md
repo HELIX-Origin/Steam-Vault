@@ -1,72 +1,53 @@
 ---
 layout: docs
 title: Documentation Home
-summary: Overview and introduction to Steam Vault
+summary: Overview and introduction to Universal Game Launcher
 permalink: /docs/
 nav_order: 1
 ---
 
-# What is Steam Vault?
+# What is Universal Game Launcher?
 
-**Steam Vault** is a lightweight, cross-platform desktop application for organizing your real
-Steam library. It is a clean-room revival of **Depressurizer**: instead of maintaining a separate
-list of games, it reads the data Steam already stores on your machine, lets you reorganize it, and
-writes your changes back into Steam itself.
+**Universal Game Launcher** is a fast, lightweight, and privacy-first desktop application that unifies your entire multi-platform PC gaming library. It brings together games across **Steam**, **Epic Games Store**, **GOG Galaxy**, **Ubisoft Connect**, **EA App**, **Xbox / Microsoft Store**, **Battle.net**, **itch.io**, and **Amazon Games**, alongside full support for **manually adding local games and standalone executables**.
 
-It is built as a **Tauri v2** application — a Rust backend with a SvelteKit frontend — and it
-prefers **stable, documented data sources** over screen-scraping, so ordinary Steam updates are
-far less likely to break it.
+Inspired by the clean organization philosophies of **Depressurizer**, Universal Game Launcher lets you build custom collections, auto-categorize by genre, developer, and tags, manage multi-drive storage, and track free game giveaways and store discounts.
 
-- 🗂️ **Real collections** — read and write the collections Steam shows in your library.
-- 🧩 **Manual organizing** — multi-select games and add or remove them from collections at once.
-- 🧠 **AutoCats** — create categories automatically from genre, developer, publisher, tags, flags,
-  release year, and user score.
-- 🎛️ **Advanced filters** — an Allowed / Required / Excluded rule builder over your whole library.
-- 👾 **Non-Steam games** — import and manage non-Steam shortcuts, with artwork from SteamGridDB.
-- 🖼️ **Artwork management** — replace the grid, hero, logo, and icon art for any game, from
-  SteamGridDB or your own image files.
-- 🎮 **External platforms** — detect games installed by GOG, Epic Games, itch.io, and others, and
-  import them as non-Steam shortcuts.
-- 💽 **Storage management** — see how your games are spread across libraries and drives, register
-  new libraries, and move games or whole libraries between them safely.
-- 🌐 **Whole owned library** — sync your entire Steam library (not just installed games) through the
-  Steam Web API so everything you own can be organized.
-- 🧱 **Collection creation from any sorting option** — build one collection per value of a chosen key
-  (genre, developer, platform, installed state, playtime, name, …) after a preview.
-- 🔌 **Metadata providers** — Steam Store, Steam Web API, SteamGridDB, IGDB, PCGamingWiki, and
-  Wikipedia. Only Steam Web API, SteamGridDB, and IGDB need keys. **RAWG is not supported.**
-- 🛡️ **Safe writes** — timestamped backups before every write, and changes are refused while Steam
-  is running.
+It is built on **Tauri v2** (Rust backend with a SvelteKit frontend) and relies on **official launcher protocols and local client records** rather than screen-scraping or credential storage.
 
-> **Active development.** Steam Vault has shipped **M1 (Foundation)**, **M2 (Whole-Library
-> Organizing)**, **M3 (Filtering & Storage)** — a filter builder in Organize, non-Steam source
-> settings, and full **Storage** management — and **M4 (Artwork)**, a custom-artwork manager for
-> Steam games and non-Steam shortcuts. The data layer, metadata providers, AutoCats engine, external
-> platform import, owned-library sync, custom title bar, and app shell all exist; the polished
-> interface pass and packaged installers are still ahead. See [Getting Started](Getting-Started.md)
-> to build it from source.
+## 🚀 Key Highlights
 
-## 🧭 Getting around
+- 🎮 **All Popular Game Launchers** — Discover and launch games across Steam, Epic Games, GOG Galaxy, Xbox, EA, Ubisoft, Battle.net, itch.io, and Amazon Games.
+- 📁 **Manually Added Local Games** — Easily import and organize standalone DRM-free executables, custom launch arguments, and indie releases.
+- 🔒 **Native Launcher Delegation** — Launches, updates, and uninstalls delegate directly to official clients, preserving overlays, cloud saves, friend lists, playtime, and achievements.
+- 🗂️ **Custom & Smart Collections** — Create custom categories and evaluate native dynamic filter rules with live previews.
+- 🧠 **AutoCats** — Generate categories automatically from genre, developer, publisher, and tags.
+- 🎛️ **Advanced Filters** — An Allowed (OR) / Required (AND) / Excluded (NOT) rule builder over your entire collection.
+- 🖼️ **Artwork Management** — Inspect and set custom portrait grids, heroes, logos, and icons using SteamGridDB and local image files.
+- 🎁 **Free Games & Store Deals** — Track 100% free game giveaways and major store promotions with zero payment processing in-app.
+- 💽 **Storage Management** — Inspect drive capacity and game footprints across library folders, with safe cross-drive moves.
+- ⚡ **Generic SQLite Persistence** — Zero-dependency embedded database (`database.sqlite`) in WAL mode with transactional backups.
+- 🌍 **28+ Languages** — Hand-rolled reactive i18n localization engine supporting all major languages with Arabic RTL support.
+
+## 🧭 Getting Around
 
 - **[Getting Started](Getting-Started.md)** — prerequisites, build, and first launch.
-- **[Organizing Your Library](Organizing-Your-Library.md)** — the Library view and selections.
+- **[Organizing Your Library](Organizing-Your-Library.md)** — the Library view, filters, and selections.
+- **[Supported Launchers & Platforms](External-Platforms.md)** — multi-launcher detection and client delegation.
+- **[Manually Added Local Games](Non-Steam-Games.md)** — standalone executables, custom artwork, and tagging.
 - **[Collections](Collections.md)** — creating, editing, and safely writing collections.
-- **[Storage Management](Storage-Management.md)** — libraries, drives, and moving games.
-- **[AutoCategorization](AutoCategorization.md)** — the AutoCats engine.
-- **[Metadata Providers](Metadata-Providers.md)** — every provider and what it contributes.
-- **[Non-Steam Games](Non-Steam-Games.md)** — shortcuts and artwork.
+- **[AutoCategorization](AutoCategorization.md)** — the AutoCats categorization engine.
 - **[Artwork Management](Artwork-Management.md)** — custom art for any game.
-- **[External Platforms](External-Platforms.md)** — importing games from other launchers.
+- **[Storage Management](Storage-Management.md)** — libraries, drives, and moving games.
+- **[Metadata Providers](Metadata-Providers.md)** — provider capabilities and keyless architecture.
 - **[Settings & API Keys](Settings-and-API-Keys.md)** — configuration reference.
 - **[Troubleshooting](Troubleshooting.md)** — common issues and fixes.
 - **[FAQ](FAQ.md)** — quick answers.
 
-## 💡 Quick facts
+## 💡 Quick Facts
 
-- Stack: **Rust / Tauri v2** backend + **SvelteKit static SPA** (Svelte 5, strict TypeScript).
-- Data sources: Steam's own local files (`libraryfolders.vdf`, `appmanifest_*.acf`,
-  `localconfig.vdf`, `shortcuts.vdf`, and the collection cloud-storage namespace).
-- Privacy: everything is processed locally. No telemetry, no accounts, no servers.
+- Stack: **Rust / Tauri v2** backend + **SvelteKit static SPA** (Svelte 5 Runes, strict TypeScript).
+- Architecture: **Local & Keyless** — reads official client manifests on disk; external API keys are optional.
+- Privacy: **100% on-device**. No telemetry, no user accounts, and no credential collection.
 
 ## 🔗 Links
 
@@ -79,9 +60,9 @@ far less likely to break it.
 
 ### 📚 Documentation Index
 - **Core**: [Home]({{ '/' | relative_url }}) · [Getting Started](Getting-Started.md) · [Organizing Your Library](Organizing-Your-Library.md)
-- **Features**: [Collections](Collections.md) · [AutoCategorization](AutoCategorization.md) · [Non-Steam Games](Non-Steam-Games.md) · [Artwork Management](Artwork-Management.md) · [External Platforms](External-Platforms.md) · [Storage Management](Storage-Management.md)
+- **Features**: [Supported Launchers](External-Platforms.md) · [Manually Added Local Games](Non-Steam-Games.md) · [Collections](Collections.md) · [AutoCategorization](AutoCategorization.md) · [Artwork Management](Artwork-Management.md) · [Storage Management](Storage-Management.md)
 - **Reference**: [Metadata Providers](Metadata-Providers.md) · [Settings & API Keys](Settings-and-API-Keys.md) · [Troubleshooting](Troubleshooting.md) · [FAQ](FAQ.md)
 
 ---
 
-*[Steam Vault](https://github.com/HELIX-Origin/Steam-Vault) — a cross-platform Steam library organizer.*
+*[Universal Game Launcher](https://github.com/HELIX-Origin/Steam-Vault) — a fast, lightweight universal game launcher and library organizer.*

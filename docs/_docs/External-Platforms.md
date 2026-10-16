@@ -1,93 +1,58 @@
 ---
 layout: docs
-title: External Platforms
-summary: Detecting and importing games from GOG, Epic, itch.io, and more
+title: Supported Launchers & Platforms
+summary: Detecting and aggregating games across Steam, Epic, GOG, Xbox, EA, Ubisoft, and local libraries
 parent: Documentation Home
 nav_order: 8
 ---
 
-# External Platforms
+# Supported Launchers & Platforms
 
-Most players own games outside Steam. Steam Vault can find those games on your machine and import
-them into Steam as non-Steam shortcuts, so they appear in your library and can be organized into
-collections alongside everything else.
+Universal Game Launcher connects with all popular PC gaming storefronts and launcher clients installed on your system. Rather than managing fragmented, isolated libraries across different launcher interfaces, Universal Game Launcher automatically aggregates all your installed titles into a single, cohesive hub.
 
-## 🔍 What "detection" means
+## 🔍 Local, Authoritative Detection
 
-Steam Vault reads **local, authoritative sources** — launcher manifests, registry keys, and library
-folders that the launchers themselves write. It never scrapes a storefront, never signs in on your
-behalf, and never launches another launcher.
+Universal Game Launcher inspects **local, authoritative client records** — official launcher manifests, system registry entries, SQLite databases, and package descriptors written by the official stores:
 
-Which sources are consulted is configurable. Under **Settings → Non-Steam sources** you enable or
-disable each launcher, add **extra locations** to search, and choose whether to scan other mounted
-drives. Disabled sources are skipped entirely.
+- **Zero Credential Handling**: The app never prompts for passwords, executes web scraping, or accesses user tokens.
+- **Offline Reliability**: Installed games are discovered locally on disk without requiring active network connectivity.
+- **Configurable Platform Sources**: In **Settings → Platforms**, you can enable or disable specific storefronts, add custom search folders, and configure multi-drive scanning.
 
-Like Steam's `libraryfolders.vdf`, each launcher records its installed games in its own config, so
-the location Steam Vault asks for is usually that **config / app path** — loading it is enough to
-find games. You can also add plain **game install folders**, which are the fallback when a
-launcher's config is missing or wrong, and the only option for local games that have no launcher.
-**Find folders** autofills the config and library locations it can see.
+## 🎮 Supported Storefronts & Services
 
-## 🎮 Supported platforms
+| Platform | Detection Mechanism | Launch Delegation Protocol |
+| :--- | :--- | :--- |
+| **Steam** | Local `libraryfolders.vdf` and `appmanifest_*.acf` descriptors | `steam://run/{app_id}` |
+| **GOG Galaxy** | Local SQLite Galaxy database (`galaxy-2.0.db`) & Windows Registry | `goggalaxy://openGameView/{game_id}` |
+| **Epic Games** | Official manifests (`.item` files in `Manifests/`) | `com.epicgames.launcher://apps/{app_name}?action=launch` |
+| **Xbox / Microsoft Store** | `XboxGames` library volumes, `MicrosoftGame.config`, and `appxmanifest.xml` | Native AppModel execution protocol |
+| **EA App** | Local EA installer registry entries and directory structures | Native client launch protocol |
+| **Ubisoft Connect** | Local Ubisoft registry and launcher configurations | `uplay://launch/{game_id}/0` |
+| **Battle.net** | Blizzard installation product databases and system registry | Battle.net client protocol |
+| **itch.io** | The itch desktop app library (`%APPDATA%\itch\apps`) | `itch://games/{game_id}` |
+| **Amazon Games** | Amazon Games library SQLite manifests and install folders | Amazon Games client protocol |
+| **Manually Added Local Games** | User-specified executable paths and custom working directories | Native process execution |
 
-Each platform is read from the config or library that its launcher writes:
+## 🚀 Native Launcher Delegation
 
-| Platform | How it is detected |
-| :--- | :--- |
-| **GOG** | GOG Galaxy registry keys (`SOFTWARE\GOG.com\Games`) |
-| **Epic Games** | Epic Games Launcher manifests, plus legendary / Heroic on Linux and macOS |
-| **itch.io** | The itch app library (`%APPDATA%\itch\apps`) |
-| **Amazon Games** | The Amazon Games library folder |
-| **Xbox / Microsoft Store** | `XboxGames` library folders, `MicrosoftGame.config`, and `appxmanifest.xml` |
-| **Ubisoft Connect** | Windows Uninstall registry (publisher match) |
-| **EA** | Windows Uninstall registry (publisher match) |
-| **Battle.net** | Windows Uninstall registry (publisher match) |
-| **Rockstar** | Windows Uninstall registry (publisher match) |
-| **Emulators & ROMs** | Detects installed emulators (Dolphin, PCSX2, DuckStation, Project64, PPSSPP, RPCS3, Citra, Cemu, Ryujinx, mGBA, Snes9x, RetroArch) and scans their ROM folders |
-| **Other studios** | Windows Uninstall registry (publisher heuristic) |
+When launching, updating, or managing games from different stores, Universal Game Launcher strictly delegates actions to the official client:
+- **Preserved Overlays & Cloud Sync:** Official client overlays, cloud save synchronization, playtime tracking, friend lists, and achievement unlocks function identically to launching from the official store.
+- **Safe State Transitions:** If an update is required, the official launcher handles the secure package download without third-party intervention.
 
-## 🕹️ Emulators, ROMs & Console Platforms
+## 🗂️ Scanning & Managing Games
 
-Steam Vault discovers your installed emulators, inspects configuration files for ROM library paths, and determines the exact **console platform** for each title based on ROM extensions and emulator instances:
+1. Open the **Platforms** view and click **Scan for games**.
+2. Each platform card displays the number of games discovered, the install path consulted, and status indicators.
+3. Select any discovered titles to add them to your unified library view.
+4. Filter by platform instantly using the sidebar filters in the **Library** view.
 
-- **Nintendo GameCube / Wii:** Dolphin Emulator (`.iso`, `.gcm`, `.wbfs`, `.ciso`, `.rvz`)
-- **Nintendo 64:** Project64, Mupen64Plus (`.z64`, `.n64`, `.v64`)
-- **Sony PlayStation 1 & 2:** PCSX2, DuckStation (`.iso`, `.bin`, `.chd`, `.cue`, `.mdf`, `.img`)
-- **Sony PlayStation 3 & Portable:** RPCS3, PPSSPP (`.iso`, `.cso`, `.eboot`, `EBOOT.PBP`)
-- **Nintendo 3DS, Wii U & Switch:** Citra, Cemu, Ryujinx (`.3ds`, `.cia`, `.rpx`, `.wud`, `.wux`, `.nsp`, `.xci`)
-- **Retro Handhelds & Consoles:** mGBA, Snes9x, RetroArch (`.gba`, `.gbc`, `.gb`, `.sfc`, `.smc`, `.nes`, `.md`, `.gen`)
+## 🛡️ Write Safety & Backups
 
-When imported, ROM shortcuts are configured with the emulator executable and appropriate command-line flags (e.g., `-b -e "<rom>"` for Dolphin) so they boot directly into full gameplay from Steam's Big Picture mode or desktop client.
-
-Furthermore, Steam Vault automatically tags imported ROM shortcuts with their specific console name in binary `shortcuts.vdf` (`tags: { "0": "GameCube" }`). This allows the native Steam client to group emulated games under their console category, and allows Steam Vault to import them directly into collections.
-
-## 🗂️ Importing games
-
-1. Open the **Platforms** view and press **Scan for games**.
-2. Each platform card reports how many games were found, which source was consulted, and displays console platform badges for ROMs.
-3. Select the games you want and press **Import selected**.
-
-Imported games are written to Steam's `shortcuts.vdf` as **non-Steam shortcuts**, exactly as if you
-had added them through Steam. Steam Vault:
-
-- derives each shortcut's appid the same way Steam does (`crc32(exe + name)` with the high bit set),
-  so re-importing the same game is a no-op;
-- writes storefront launch URIs (Epic `com.epicgames.launcher://apps/…`, itch `itch://games/…`, Xbox
-  AppX package protocols) into the shortcut's launch options;
-- records which platform and console hardware each shortcut came from;
-- tags the shortcut with its console platform so Steam natively groups it;
-- refuses to write while Steam is running, and backs up `shortcuts.vdf` first.
-
-## 🧭 After importing
-
-Imported shortcuts appear in the **Library** with a pill naming their platform. From there you can:
-
-- re-tag a shortcut's source storefront individually via its platform dropdown, or in bulk by selecting multiple shortcuts in the toolbar;
-- place them into collections by hand; or
-- use **Organize → Platform** to create one collection per storefront in a single step.
+All custom tags, platform attributions, and collections are saved in the generic SQLite database (`database.sqlite`) with automatic transactional backups before any configuration changes.
 
 ## ➡️ Next steps
 
-- [Non-Steam Games](Non-Steam-Games.md)
+- [Manually Added Local Games](Non-Steam-Games.md)
+- [Artwork Management](Artwork-Management.md)
+- [Collections](Collections.md)
 - [Organizing Your Library](Organizing-Your-Library.md)
-

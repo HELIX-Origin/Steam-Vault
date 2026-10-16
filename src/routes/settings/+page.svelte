@@ -3,19 +3,15 @@
   import { api, errorMessage } from "$lib/api";
   import { STEAM_LANGUAGES, setLocale, syncWithSettingsLanguage, t } from "$lib/i18n";
   import { collections, error, games, install, settings, steamRunning } from "$lib/stores";
-  import type { CatalogStats, EmulatorConfig, Settings } from "$lib/types";
-  import CollectionsSection from "$lib/components/settings/CollectionsSection.svelte";
+  import type { CacheStats, PluginInfo, Settings } from "$lib/types";
   import PlatformsSection from "$lib/components/settings/PlatformsSection.svelte";
-  import OrganizeSection from "$lib/components/settings/OrganizeSection.svelte";
   import "$styles/settings.scss";
 
-  type SettingsTab = "general" | "collections" | "platforms" | "organize";
+  type SettingsTab = "general" | "platforms" | "plugins";
   let activeTab = $state<SettingsTab>("general");
 
   let form = $state<Settings | null>(null);
-  let catalogStats = $state<CatalogStats | null>(null);
-  let syncingCatalog = $state(false);
-  let catalogSyncMsg = $state<string | null>(null);
+  let cacheStats = $state<CacheStats | null>(null);
   let syncingLibraryMeta = $state(false);
   let syncLibraryAutoArtwork = $state(true);
   let syncLibraryMsg = $state<string | null>(null);
@@ -25,82 +21,59 @@
   let busy = $state(false);
   let saved = $state(false);
 
-  let emulatorConfigs = $state<EmulatorConfig[]>([]);
-  let scaffoldPath = $state("");
-  let scaffolding = $state(false);
-  let scaffoldMsg = $state<string | null>(null);
+  // Community & Drop-In Plugins State
+  let installedPlugins = $state<PluginInfo[]>([]);
+  let loadingPlugins = $state(false);
+  let pluginUrlInput = $state("");
+  let installingPlugin = $state(false);
+  let pluginActionMsg = $state<string | null>(null);
+  let pluginFilterType = $state<string>("all");
 
-  const popularEmulators = [
-    { name: "EmulationStation (ES-DE)", exe: "ES-DE.exe" },
-    { name: "RetroArch", exe: "retroarch.exe" },
-    { name: "Dolphin (GameCube/Wii)", exe: "Dolphin.exe" },
-    { name: "PCSX2 (PlayStation 2)", exe: "pcsx2-qtx64.exe" },
-    { name: "DuckStation (PlayStation)", exe: "duckstation-qt-x64-ReleaseLTCG.exe" },
-    { name: "PPSSPP (PSP)", exe: "PPSSPPWindows64.exe" },
-    { name: "Citra (3DS)", exe: "citra-qt.exe" },
-    { name: "Cemu (Wii U)", exe: "Cemu.exe" },
-    { name: "Ryujinx (Switch)", exe: "Ryujinx.exe" },
-    { name: "mGBA (Game Boy Advance)", exe: "mGBA.exe" },
-    { name: "Custom", exe: "" }
-  ];
-
-  function addEmulatorConfig() {
-    emulatorConfigs = [
-      ...emulatorConfigs,
-      {
-        id: crypto.randomUUID(),
-        name: "EmulationStation (ES-DE)",
-        executablePath: "",
-        romDirectories: [""],
-        defaultArgs: ""
-      }
-    ];
-  }
-
-  function removeEmulatorConfig(index: number) {
-    emulatorConfigs = emulatorConfigs.filter((_, i) => i !== index);
-  }
-
-  function addEmulatorRomDir(emu: EmulatorConfig) {
-    emu.romDirectories = [...emu.romDirectories, ""];
-    emulatorConfigs = [...emulatorConfigs];
-  }
-
-  function removeEmulatorRomDir(emu: EmulatorConfig, dirIndex: number) {
-    emu.romDirectories = emu.romDirectories.filter((_, i) => i !== dirIndex);
-    emulatorConfigs = [...emulatorConfigs];
-  }
-
-  function setEmulatorRomDir(emu: EmulatorConfig, dirIndex: number, val: string) {
-    emu.romDirectories = emu.romDirectories.map((r, i) => (i === dirIndex ? val : r));
-    emulatorConfigs = [...emulatorConfigs];
-  }
-
-  async function scaffoldEsDe() {
-    if (!scaffoldPath.trim()) return;
-    scaffolding = true;
-    scaffoldMsg = null;
+  async function loadPlugins() {
+    loadingPlugins = true;
     try {
-      const dirs = await api.scaffoldEsDeDirectories(scaffoldPath.trim());
-      scaffoldMsg = `Successfully scaffolded ${dirs.length} standard ES-DE system directories in ${scaffoldPath}!`;
+      installedPlugins = await api.getInstalledPlugins();
     } catch (e) {
-      scaffoldMsg = errorMessage(e);
+      console.error("Failed to load plugins:", e);
     } finally {
-      scaffolding = false;
+      loadingPlugins = false;
     }
   }
 
-  async function syncOnline() {
-    syncingCatalog = true;
-    catalogSyncMsg = null;
+  async function handleTogglePlugin(plugin: PluginInfo) {
     try {
-      const count = await api.syncOnlineCatalog();
-      catalogStats = await api.getCatalogStats();
-      catalogSyncMsg = `Synced ${count} games from official community catalog.`;
+      await api.togglePlugin(plugin.id, !plugin.enabled);
+      plugin.enabled = !plugin.enabled;
+      installedPlugins = [...installedPlugins];
+      pluginActionMsg = `${plugin.name} is now ${plugin.enabled ? "enabled" : "disabled"}.`;
+      setTimeout(() => (pluginActionMsg = null), 3000);
     } catch (e) {
-      catalogSyncMsg = errorMessage(e);
+      pluginActionMsg = `Error: ${errorMessage(e)}`;
+    }
+  }
+
+  async function handleInstallFromUrl() {
+    if (!pluginUrlInput.trim()) return;
+    installingPlugin = true;
+    pluginActionMsg = "Fetching plugin manifest from GitHub/URL…";
+    try {
+      const installed = await api.installPluginFromUrl(pluginUrlInput.trim());
+      pluginActionMsg = `Successfully installed "${installed.name}" v${installed.version}!`;
+      pluginUrlInput = "";
+      await loadPlugins();
+      setTimeout(() => (pluginActionMsg = null), 4000);
+    } catch (e) {
+      pluginActionMsg = `Installation failed: ${errorMessage(e)}`;
     } finally {
-      syncingCatalog = false;
+      installingPlugin = false;
+    }
+  }
+
+  async function handleOpenPluginsFolder() {
+    try {
+      await api.openPluginsFolder();
+    } catch (e) {
+      pluginActionMsg = `Could not open folder: ${errorMessage(e)}`;
     }
   }
 
@@ -110,7 +83,7 @@
     try {
       const res = await api.syncLibraryMetadata(form?.accountId3 ?? undefined, true, syncLibraryAutoArtwork);
       syncLibraryMsg = `Updated ${res.fetched} games (${res.cached} cached, ${res.unavailable} unresolved).`;
-      catalogStats = await api.getCatalogStats().catch(() => null);
+      cacheStats = await api.getCacheStats().catch(() => null);
     } catch (e) {
       syncLibraryMsg = errorMessage(e);
     } finally {
@@ -123,8 +96,8 @@
     clearCacheMsg = null;
     try {
       const res = await api.clearMetadataCache(form?.accountId3 ?? undefined, true);
-      clearCacheMsg = `Cache reset: ${res.totalCatalogGames} verified catalogue games indexed, ${res.totalMetadataRecords} metadata records. ${res.message}`;
-      catalogStats = await api.getCatalogStats().catch(() => null);
+      clearCacheMsg = `Cache reset: ${res.totalMetadataRecords} metadata records re-indexed. ${res.message}`;
+      cacheStats = await api.getCacheStats().catch(() => null);
       showClearCacheConfirm = false;
     } catch (e) {
       clearCacheMsg = errorMessage(e);
@@ -144,7 +117,6 @@
     { id: "amazon", label: "Amazon Games" },
     { id: "rockstar", label: "Rockstar" },
     { id: "xbox", label: "Xbox / Microsoft Store" },
-    { id: "emulator", label: "Emulators & ROMs" },
     { id: "other", label: "Other studios" }
   ];
 
@@ -217,16 +189,17 @@
     try {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get("tab") as SettingsTab | null;
-      if (tabParam && ["general", "collections", "platforms", "organize"].includes(tabParam)) {
+      if (tabParam && ["general", "platforms", "plugins"].includes(tabParam)) {
         activeTab = tabParam;
       }
+      loadPlugins();
 
       const [loaded, detected, stats] = await Promise.all([
         api.getSettings(),
         api.detectSteam(),
-        api.getCatalogStats().catch(() => null)
+        api.getCacheStats().catch(() => null)
       ]);
-      catalogStats = stats;
+      cacheStats = stats;
       settings.set(loaded);
       form = { ...loaded };
       if (loaded.language) {
@@ -235,13 +208,6 @@
       install.set(detected);
       if (!form.steamRoot && detected) form.steamRoot = detected.root;
       if (!form.accountId3 && detected?.accounts[0]) form.accountId3 = detected.accounts[0].id3;
-      emulatorConfigs = (loaded.emulatorConfigs ?? []).map((e) => ({
-        id: e.id || crypto.randomUUID(),
-        name: e.name || "EmulationStation (ES-DE)",
-        executablePath: e.executablePath || "",
-        romDirectories: [...(e.romDirectories ?? [""])],
-        defaultArgs: e.defaultArgs ?? ""
-      }));
       buildSources();
     } catch (e) {
       error.set(errorMessage(e));
@@ -269,27 +235,11 @@
       enabled: source.enabled,
       roots: source.roots.map((value) => value.trim()).filter(Boolean)
     }));
-    form.emulatorConfigs = emulatorConfigs
-      .filter((e) => e.name.trim() || e.executablePath.trim() || e.romDirectories.some((r) => r.trim()))
-      .map((e) => ({
-        id: e.id,
-        name: e.name.trim(),
-        executablePath: e.executablePath.trim(),
-        romDirectories: e.romDirectories.map((r) => r.trim()).filter(Boolean),
-        defaultArgs: e.defaultArgs?.trim() || null
-      }));
     busy = true;
     try {
       const updated = await api.saveSettings(form);
       settings.set(updated);
       form = { ...updated };
-      emulatorConfigs = (updated.emulatorConfigs ?? []).map((e) => ({
-        id: e.id || crypto.randomUUID(),
-        name: e.name || "EmulationStation (ES-DE)",
-        executablePath: e.executablePath || "",
-        romDirectories: [...(e.romDirectories ?? [""])],
-        defaultArgs: e.defaultArgs ?? ""
-      }));
       if (updated.language) {
         setLocale(updated.language);
       }
@@ -323,23 +273,13 @@
     <span class="tab-icon">⚙️</span>
     <span>{$t("settings.title")}</span>
   </button>
-  <button class="tab-btn" class:active={activeTab === "collections"} onclick={() => setTab("collections")}>
-    <span class="tab-icon">❐</span>
-    <span>{$t("nav.collections")}</span>
-    {#if form?.enableSteamSync === false}
-      <span class="pill pill-dim" style="font-size:0.6rem;margin-left:0.3rem">Local Only</span>
-    {/if}
-  </button>
   <button class="tab-btn" class:active={activeTab === "platforms"} onclick={() => setTab("platforms")}>
     <span class="tab-icon">⬡</span>
     <span>{$t("nav.platforms")}</span>
   </button>
-  <button class="tab-btn" class:active={activeTab === "organize"} onclick={() => setTab("organize")}>
-    <span class="tab-icon">⊞</span>
-    <span>{$t("nav.organize")}</span>
-    {#if form?.enableSteamSync === false}
-      <span class="pill pill-dim" style="font-size:0.6rem;margin-left:0.3rem">Depressurizer</span>
-    {/if}
+  <button class="tab-btn" class:active={activeTab === "plugins"} onclick={() => { setTab("plugins"); loadPlugins(); }}>
+    <span class="tab-icon">🧩</span>
+    <span>Plugins</span>
   </button>
 </div>
 
@@ -348,43 +288,6 @@
     <div class="settings-columns">
       <!-- Left Column -->
       <div class="settings-col">
-        <!-- Operation Mode & Steam Client Sync -->
-        <section class="glass-strong card">
-          <div class="row-between" style="align-items:center;gap:1rem;flex-wrap:wrap">
-            <div style="display:flex;flex-direction:column;gap:0.3rem;flex:1;min-width:220px">
-              <div class="row" style="align-items:center;gap:0.55rem">
-                <h2 class="section-title" style="margin:0">Operation Mode</h2>
-                <span class="pill" class:pill-ok={form.enableSteamSync} class:pill-dim={!form.enableSteamSync}>
-                  {form.enableSteamSync ? "Depressurizer Mode Active" : "Standalone Library Mode"}
-                </span>
-              </div>
-              <p class="muted-xs" style="margin:0;line-height:1.45">
-                {#if form.enableSteamSync}
-                  Depressurizer sync is <strong>enabled</strong>. AutoCat categories, collections, and non-Steam shortcuts synchronize with your local Steam client (<code>shortcuts.vdf</code> and <code>localconfig.vdf</code>).
-                {:else}
-                  Running in <strong>Standalone Mode</strong>. Operates completely independently as a fast library organizer &amp; launcher without modifying your local Steam client configuration files.
-                {/if}
-              </p>
-              {#if form.enableSteamSync}
-                <div class="row" style="align-items:center;gap:0.45rem;margin-top:0.4rem">
-                  <span class:ok-dot={!$steamRunning} class:bad-dot={$steamRunning}></span>
-                  <span class="muted-xs" style="font-weight:500">
-                    {$steamRunning ? $t("status.steamRunning") : $t("status.steamClosed")}
-                  </span>
-                </div>
-              {/if}
-            </div>
-            <button
-              type="button"
-              class="btn mini"
-              class:primary={!form.enableSteamSync}
-              style="min-width:145px;justify-content:center"
-              onclick={() => { if (form) form.enableSteamSync = !form.enableSteamSync; }}
-            >
-              {form.enableSteamSync ? "Disable Depressurizer" : "Enable Depressurizer"}
-            </button>
-          </div>
-        </section>
 
         <!-- Steam Folder & Active Account -->
         <section class="glass-strong card">
@@ -407,30 +310,9 @@
               {/each}
             </select>
           </div>
-          <div class="row" style="gap:1rem">
-            <div class="field" style="flex:1">
-              <label for="cc">{$t("settings.storeCountry")}</label>
-              <input id="cc" bind:value={form.countryCode} placeholder="us" />
-            </div>
-            <div class="field" style="flex:1">
-              <label for="lang">{$t("settings.language")}</label>
-              <select
-                id="lang"
-                bind:value={form.language}
-                onchange={(e) => {
-                  if (form) {
-                    form.language = e.currentTarget.value;
-                    setLocale(e.currentTarget.value);
-                  }
-                }}
-              >
-                {#each STEAM_LANGUAGES as lang (lang.id)}
-                  <option value={lang.id}>
-                    {lang.nativeName} ({lang.name})
-                  </option>
-                {/each}
-              </select>
-            </div>
+          <div class="field" style="margin-top:0.5rem">
+            <label for="cc">Store Country Code</label>
+            <input id="cc" bind:value={form.countryCode} placeholder="us" />
           </div>
           {#if $install}
             <div class="kv" style="margin-top:0.5rem"><span class="muted">{$t("settings.librariesCount")}</span><span>{$install.libraries.length} folders</span></div>
@@ -445,7 +327,7 @@
             <span class="pill" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Keyless Architecture</span>
           </div>
           <p class="muted-sm" style="margin-bottom:0.75rem">
-            Steam Vault uses local storefront integrations (Steam, GOG, Epic, Xbox, itch) and the offline Community Game Catalogue. Third-party API keys are strictly optional.
+            Universal Game Launcher uses direct native storefront integrations (Steam, GOG, Epic, Xbox, itch) and offline engine discovery. Third-party API keys are strictly optional.
           </p>
           <div class="field">
             <label for="steamkey">Steam Web API Key <span class="muted-xs">(Optional remote sync)</span></label>
@@ -472,42 +354,30 @@
       <div class="settings-col">
         <!-- Preferences & Offline Cache -->
         <section class="glass-strong card">
-          <h2 class="section-title" style="margin-bottom:0.5rem">Preferences &amp; Offline Cache</h2>
-          <label class="row" style="gap:0.5rem;margin-bottom:1rem;cursor:pointer">
-            <input type="checkbox" bind:checked={form.autoBackup} style="width:auto" />
-            <span>Back up Steam files before writing</span>
-          </label>
+          <h2 class="section-title" style="margin-bottom:0.5rem">Local Storage &amp; Cache Architecture</h2>
           <p class="muted-sm" style="margin-bottom:1rem">
-            Writes go to <code>cloud-storage-namespace-1.json</code> and <code>shortcuts.vdf</code>. Changes require Steam to be closed, and are reversible from the local backup folder.
+            Universal Game Launcher operates completely non-invasively. Native launcher files (Steam, Epic, GOG) are never modified. All collections, tags, custom art, and launcher preferences are safely persisted in your local fast-tier SQLite database and in-memory Redis KV cache.
           </p>
           <div class="kv">
             <div>
-              <strong>Catalog Games Indexed</strong>
-              <p class="muted-xs" style="margin:0">Instant offline game disambiguation.</p>
+              <strong>In-Memory Redis KV Entries</strong>
+              <p class="muted-xs" style="margin:0">Sub-millisecond fast-path cache keys.</p>
             </div>
-            <span>{catalogStats?.totalGames ?? 0} games</span>
+            <span>{cacheStats?.totalKvEntries ?? 0} keys</span>
           </div>
           <div class="kv">
             <div>
               <strong>Cached Metadata Records</strong>
-              <p class="muted-xs" style="margin:0">Locally stored metadata records.</p>
+              <p class="muted-xs" style="margin:0">Locally stored SQLite metadata records.</p>
             </div>
-            <span>{catalogStats?.totalMetadataCached ?? 0} records</span>
+            <span>{cacheStats?.totalMetadataCached ?? 0} records</span>
           </div>
           <div class="kv">
             <div>
               <strong>Cached Artwork Assets</strong>
-              <p class="muted-xs" style="margin:0">Persistent offline grid & hero artwork covers.</p>
+              <p class="muted-xs" style="margin:0">Persistent offline grid &amp; hero artwork covers.</p>
             </div>
-            <span>{catalogStats?.totalCachedArtworks ?? 0} files</span>
-          </div>
-          <div class="row" style="margin-top: 1rem; gap: 0.75rem; align-items: center;">
-            <button class="btn mini" onclick={syncOnline} disabled={syncingCatalog}>
-              {syncingCatalog ? $t("common.loading") : $t("settings.catalogSync")}
-            </button>
-            {#if catalogSyncMsg}
-              <span class="muted-sm">{catalogSyncMsg}</span>
-            {/if}
+            <span>{cacheStats?.totalCachedArtworks ?? 0} files</span>
           </div>
 
           <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08);">
@@ -542,7 +412,7 @@
               {/if}
             </div>
             <p class="muted-xs" style="margin-bottom: 0.75rem;">
-              Purges stored artwork and metadata caches if stale or corrupted. Resets catalog index back to the verified seed ({catalogStats?.totalGames ?? 729} games) and forces fresh cache synchronization.
+              Purges in-memory Redis KV entries, stored artwork, and cached metadata records if stale or corrupted. Clean metadata and artwork will be re-fetched as you browse.
             </p>
             {#if !showClearCacheConfirm}
               <div class="row" style="gap: 0.75rem; align-items: center;">
@@ -556,7 +426,7 @@
             {:else}
               <div style="padding: 0.75rem 1rem; background: rgba(255, 107, 107, 0.1); border: 1px solid rgba(255, 107, 107, 0.3); border-radius: 8px;">
                 <p style="font-size: 0.85rem; margin: 0 0 0.75rem 0; color: #ffc9c9;">
-                  Are you sure? This will delete all downloaded artwork covers and cached metadata, and reset the catalogue index. Clean metadata and artwork will be re-fetched as you browse.
+                  Are you sure? This will delete all downloaded artwork covers, cached metadata, and in-memory KV records. Clean metadata and artwork will be re-fetched as you browse.
                 </p>
                 <div class="row" style="gap: 0.5rem; align-items: center;">
                   <button class="btn mini" style="background: #e03131; border-color: #c92a2a; color: white;" onclick={handleClearCache} disabled={clearingCache}>
@@ -572,39 +442,129 @@
         </section>
       </div>
     </div>
-  {:else if activeTab === "collections"}
-    {#if form.enableSteamSync === false}
-      <div class="glass card" style="padding:0.75rem 1rem;margin-bottom:1rem;background:rgba(56,189,248,0.08);border-color:var(--border)">
-        <strong>ℹ️ Standalone Library Mode</strong>: Steam Client Sync is currently disabled in General Settings. Collections managed here are stored directly in your local Steam-Vault library and will not be written to Steam's <code>localconfig.vdf</code>.
-      </div>
-    {/if}
-    <CollectionsSection />
   {:else if activeTab === "platforms"}
     <PlatformsSection
       bind:sources
-      bind:emulatorConfigs
-      {popularEmulators}
-      bind:scaffoldPath
-      bind:scaffolding
-      bind:scaffoldMsg
       bind:freeGameNotifications={form.enableFreeGameNotifications}
-      {scaffoldEsDe}
-      {addEmulatorConfig}
-      {removeEmulatorConfig}
-      {addEmulatorRomDir}
-      {removeEmulatorRomDir}
-      {setEmulatorRomDir}
       {addRoot}
       {removeRoot}
       {setRoot}
     />
-  {:else if activeTab === "organize"}
-    {#if form.enableSteamSync === false}
-      <div class="glass card" style="padding:0.75rem 1rem;margin-bottom:1rem;background:rgba(56,189,248,0.08);border-color:var(--border)">
-        <strong>ℹ️ Standalone Library Mode</strong>: Steam Client Sync is currently disabled in General Settings. AutoCat rules and categorization preview plans can be tested, but changes will not be committed to Steam's <code>localconfig.vdf</code>.
+  {:else if activeTab === "plugins"}
+    <div class="plugins-panel">
+      <!-- Header row with Open Plugins Folder & Refresh buttons -->
+      <div class="row-between" style="align-items: center; margin-bottom: 1.25rem;">
+        <div>
+          <h2 style="margin: 0; font-size: 1.2rem;">Drop-In Plugins &amp; Extensions</h2>
+          <p class="muted-sm" style="margin: 0.25rem 0 0 0;">
+            Universal Game Launcher loads plugins dynamically from drop-in manifests (<code>index.json</code>).
+          </p>
+        </div>
+        <div class="row" style="gap: 0.5rem;">
+          <button class="btn mini" onclick={handleOpenPluginsFolder} title="Open local plugins folder on disk">
+            📁 Open Plugins Folder
+          </button>
+          <button class="btn mini btn-ghost" onclick={loadPlugins} disabled={loadingPlugins} title="Refresh plugins list">
+            🔄 Refresh
+          </button>
+        </div>
       </div>
-    {/if}
-    <OrganizeSection />
+
+      {#if pluginActionMsg}
+        <div class="pill pill-accent" style="display: block; margin-bottom: 1rem; text-align: center;">
+          {pluginActionMsg}
+        </div>
+      {/if}
+
+      <!-- Install Plugin from URL Card -->
+      <section class="glass-strong card" style="margin-bottom: 1.5rem;">
+        <h3 class="section-title" style="margin-top: 0;">Install Community Plugin via GitHub / URL</h3>
+        <p class="muted-xs" style="margin-bottom: 0.75rem;">
+          Enter a URL pointing to a GitHub repository's entry point or direct <code>index.json</code> manifest file.
+        </p>
+        <div class="row" style="gap: 0.5rem; align-items: center;">
+          <input
+            type="text"
+            placeholder="https://github.com/author/my-launcher-plugin/raw/main/index.json"
+            bind:value={pluginUrlInput}
+            style="flex: 1;"
+          />
+          <button
+            class="btn btn-primary"
+            onclick={handleInstallFromUrl}
+            disabled={installingPlugin || !pluginUrlInput.trim()}
+          >
+            {installingPlugin ? "Installing…" : "Install Plugin"}
+          </button>
+        </div>
+      </section>
+
+      <!-- Plugins Filter Bar -->
+      <div class="row-between" style="align-items: center; margin-bottom: 1rem;">
+        <div class="row" style="gap: 0.35rem;">
+          {#each ["all", "platform", "metadata", "media", "utility"] as pType}
+            <button
+              class="btn mini"
+              class:btn-primary={pluginFilterType === pType}
+              class:btn-ghost={pluginFilterType !== pType}
+              onclick={() => (pluginFilterType = pType)}
+              style="text-transform: capitalize;"
+            >
+              {pType}
+            </button>
+          {/each}
+        </div>
+        <span class="muted-xs">{installedPlugins.length} total plugins installed</span>
+      </div>
+
+      <!-- Plugins Grid -->
+      <div class="plugins-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;">
+        {#each installedPlugins.filter(p => pluginFilterType === "all" || p.pluginType === pluginFilterType) as plugin (plugin.id)}
+          <div class="glass-strong card plugin-card" class:disabled={!plugin.enabled} style="display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+              <div class="row-between" style="align-items: flex-start; margin-bottom: 0.5rem;">
+                <div>
+                  <div class="row" style="align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+                    <strong class="plugin-name">{plugin.name}</strong>
+                    <span class="pill pill-dim" style="font-size: 0.7rem;">v{plugin.version}</span>
+                    {#if plugin.builtin}
+                      <span class="pill pill-accent2" style="font-size: 0.65rem;">Built-in</span>
+                    {:else}
+                      <span class="pill pill-ok" style="font-size: 0.65rem;">Community</span>
+                    {/if}
+                  </div>
+                  <span class="muted-xs" style="display: block; margin-top: 0.2rem;">By {plugin.author}</span>
+                </div>
+                <button
+                  class="btn mini"
+                  class:btn-primary={plugin.enabled}
+                  class:btn-ghost={!plugin.enabled}
+                  onclick={() => handleTogglePlugin(plugin)}
+                  title={plugin.enabled ? "Disable plugin" : "Enable plugin"}
+                >
+                  {plugin.enabled ? "Enabled" : "Disabled"}
+                </button>
+              </div>
+
+              <p class="muted-sm" style="margin: 0.5rem 0; font-size: 0.8rem; line-height: 1.4;">{plugin.description}</p>
+            </div>
+
+            <div class="row-between plugin-card-footer" style="margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid rgba(255, 255, 255, 0.06); align-items: center;">
+              <span class="pill pill-dim" style="font-size: 0.68rem; text-transform: uppercase;">
+                {plugin.pluginType}
+              </span>
+              {#if plugin.homepage}
+                <a href={plugin.homepage} target="_blank" rel="noreferrer" class="muted-xs" style="color: var(--accent);">
+                  Repository ↗
+                </a>
+              {:else}
+                <span class="muted-xs">Self-Contained</span>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
+    </div>
   {/if}
 {:else}
   <p class="muted">Loading settings…</p>

@@ -14,15 +14,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::{AppError, AppResult};
 use crate::platforms::detectors::drive_roots;
-use crate::platforms::EmulatorConfig;
 
-/// User-accessible directory for managed helper binaries and tools.
 /// User-accessible directory for managed helper binaries and tools.
 ///
 /// On Windows: supports storing either in the application's install location (`<install_dir>/tools`)
-/// if writable/present, or falling back cleanly to user AppData (`<local_app_data>/Steam-Vault/tools`).
-/// On macOS: stores in `~/Library/Application Support/Steam-Vault/tools`.
-/// On Linux: stores in XDG Data Home (`~/.local/share/steam-vault/tools`).
+/// if writable/present, or falling back cleanly to user AppData (`<local_app_data>/universal-game-launcher/tools`).
+/// On macOS: stores in `~/Library/Application Support/universal-game-launcher/tools`.
+/// On Linux: stores in XDG Data Home (`~/.local/share/universal-game-launcher/tools`).
 pub fn managed_tools_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
@@ -45,24 +43,45 @@ pub fn managed_tools_dir() -> PathBuf {
             }
         }
 
-        // 2. User AppData directory
-        dirs::data_local_dir()
-            .unwrap_or_else(|| dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")))
-            .join("Steam-Vault")
-            .join("tools")
+        // 2. User AppData directory (check universal-game-launcher, fallback to Steam-Vault if present)
+        let base = dirs::data_local_dir()
+            .unwrap_or_else(|| dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")));
+        let new_tools = base.join("universal-game-launcher").join("tools");
+        if new_tools.is_dir() {
+            return new_tools;
+        }
+        let legacy_tools = base.join("Steam-Vault").join("tools");
+        if legacy_tools.is_dir() {
+            return legacy_tools;
+        }
+        new_tools
     }
     #[cfg(target_os = "macos")]
     {
-        dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join("Library/Application Support/Steam-Vault/tools")
+        let base = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+        let new_tools = base.join("Library/Application Support/universal-game-launcher/tools");
+        if new_tools.is_dir() {
+            return new_tools;
+        }
+        let legacy_tools = base.join("Library/Application Support/Steam-Vault/tools");
+        if legacy_tools.is_dir() {
+            return legacy_tools;
+        }
+        new_tools
     }
     #[cfg(target_os = "linux")]
     {
-        dirs::data_local_dir()
-            .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".local/share"))
-            .join("steam-vault")
-            .join("tools")
+        let base = dirs::data_local_dir()
+            .unwrap_or_else(|| dirs::home_dir().unwrap_or_else(|| PathBuf::from(".")).join(".local/share"));
+        let new_tools = base.join("universal-game-launcher").join("tools");
+        if new_tools.is_dir() {
+            return new_tools;
+        }
+        let legacy_tools = base.join("steam-vault").join("tools");
+        if legacy_tools.is_dir() {
+            return legacy_tools;
+        }
+        new_tools
     }
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
@@ -640,7 +659,6 @@ pub fn launcher_download_url(platform_id: &str) -> &'static str {
                 "https://www.xbox.com/play"
             }
         }
-        "emulator" => "https://es-de.org/",
         _ => "",
     }
 }
@@ -668,17 +686,16 @@ pub fn launcher_name(platform_id: &str) -> &'static str {
         "amazon" => "Amazon Games",
         "rockstar" => "Rockstar Games Launcher",
         "xbox" => "Xbox App",
-        "emulator" => "Emulators & ROMs",
         "other" => "Other Studios",
         _ => "Custom Launcher",
     }
 }
 
 /// Detect the installed status of all supported non-Steam launchers across the OS.
-pub fn detect_all_launchers(emulator_configs: &[EmulatorConfig]) -> Vec<LauncherStatus> {
+pub fn detect_all_launchers() -> Vec<LauncherStatus> {
     let supported_platforms = [
         "gog", "epic", "itch", "ubisoft", "ea", "battlenet", "amazon", "rockstar", "xbox",
-        "emulator", "other",
+        "other",
     ];
 
     let mounted_drives = drive_roots();
@@ -688,11 +705,6 @@ pub fn detect_all_launchers(emulator_configs: &[EmulatorConfig]) -> Vec<Launcher
         .map(|id| {
             let (installed, exe_path, alt_method) = match id {
                 "other" => (true, None, Some("Direct Standalone Executable".to_string())),
-                "emulator" => {
-                    let (inst, exe) = detect_emulator_installed(emulator_configs, &mounted_drives);
-                    let alt = if inst { Some("Configured / Detected Emulator".to_string()) } else { None };
-                    (inst, exe, alt)
-                }
                 _ => detect_platform_launcher_installed(id, &mounted_drives),
             };
 
@@ -1265,92 +1277,6 @@ fn detect_platform_launcher_installed(_id: &str, _mounted_drives: &[PathBuf]) ->
     (false, None, None)
 }
 
-// ---------------------------------------------------------------------------
-// Emulator Detection Logic (Universal with OS adaptations)
-// ---------------------------------------------------------------------------
-
-fn detect_emulator_installed(
-    emulator_configs: &[EmulatorConfig],
-    _mounted_drives: &[PathBuf],
-) -> (bool, Option<String>) {
-    // 1. Check if user configured any valid emulator executable
-    for config in emulator_configs {
-        let exe = config.executable_path.trim();
-        if !exe.is_empty() && Path::new(exe).is_file() {
-            return (true, Some(exe.to_string()));
-        }
-    }
-
-    // 2. Scan standard directories & mounted drives for popular emulators
-    #[cfg(target_os = "windows")]
-    {
-        let popular_exes = [
-            "ES-DE.exe",
-            "retroarch.exe",
-            "Dolphin.exe",
-            "pcsx2-qtx64.exe",
-            "pcsx2.exe",
-            "duckstation-qt-x64-ReleaseLTCG.exe",
-            "PPSSPPWindows64.exe",
-            "citra-qt.exe",
-            "Cemu.exe",
-            "Ryujinx.exe",
-            "mGBA.exe",
-        ];
-
-        for root in _mounted_drives {
-            for sub in [
-                "Program Files\\EmulationStation-DE",
-                "Program Files\\RetroArch",
-                "Program Files (x86)\\RetroArch",
-                "Program Files\\Dolphin",
-                "Program Files\\PCSX2",
-                "Emulators",
-                "Games\\Emulators",
-            ] {
-                let dir = root.join(sub);
-                if dir.is_dir() {
-                    for exe in popular_exes {
-                        let candidate = dir.join(exe);
-                        if candidate.is_file() {
-                            return (true, Some(candidate.display().to_string()));
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        for app in [
-            "/Applications/ES-DE.app",
-            "/Applications/RetroArch.app",
-            "/Applications/OpenEmu.app",
-            "/Applications/Dolphin.app",
-            "/Applications/PCSX2.app",
-        ] {
-            if Path::new(app).is_dir() {
-                return (true, Some(app.to_string()));
-            }
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        for bin in ["es-de", "retroarch", "dolphin-emu", "pcsx2", "duckstation"] {
-            for prefix in ["/usr/bin", "/usr/local/bin"] {
-                let p = Path::new(prefix).join(bin);
-                if p.is_file() {
-                    return (true, Some(p.display().to_string()));
-                }
-            }
-        }
-    }
-
-    (false, None)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1368,7 +1294,7 @@ mod tests {
 
     #[test]
     fn test_detect_all_launchers_contains_all_platforms() {
-        let statuses = detect_all_launchers(&[]);
+        let statuses = detect_all_launchers();
         assert!(statuses.iter().any(|s| s.id == "gog"));
         assert!(statuses.iter().any(|s| s.id == "epic"));
         assert!(statuses.iter().any(|s| s.id == "itch"));
@@ -1378,7 +1304,6 @@ mod tests {
         assert!(statuses.iter().any(|s| s.id == "amazon"));
         assert!(statuses.iter().any(|s| s.id == "rockstar"));
         assert!(statuses.iter().any(|s| s.id == "xbox"));
-        assert!(statuses.iter().any(|s| s.id == "emulator"));
         assert!(statuses.iter().any(|s| s.id == "other"));
     }
 }

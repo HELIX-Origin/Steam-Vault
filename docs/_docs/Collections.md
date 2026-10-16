@@ -60,4 +60,4 @@ UI is on the roadmap.
 ## ➡️ Next steps
 
 - [AutoCategorization](AutoCategorization.md) — build collections in bulk.
-- [Non-Steam Games](Non-Steam-Games.md) — organizing entries that are not in the Steam store.
+- [Manually Added Local Games](Non-Steam-Games.md) — organizing standalone games and custom executables.

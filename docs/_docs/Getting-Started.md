@@ -18,7 +18,7 @@ This page walks you through building **Steam Vault** and running it for the firs
   (on Windows this is the WebView2 runtime, which ships with Windows 10/11)
 - **Windows System Runtimes:**
   - [Microsoft Visual C++ 2015–2022 Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) — ensures standard C runtime DLLs (`vcruntime140.dll`, `msvcp140.dll`) are present for native bundled SQLite and MSVC dependencies.
-  - [Microsoft .NET Desktop Runtime 8.0+ (x64)](https://dotnet.microsoft.com/download/dotnet/8.0) — optional; required if configuring third-party emulators, ROM tools, or launchers that rely on .NET.
+  - [Microsoft .NET Desktop Runtime 8.0+ (x64)](https://dotnet.microsoft.com/download/dotnet/8.0) — optional; required if configuring third-party companion tools or external utilities that rely on .NET.
 
 ## 🛠️ 2. Build and run
 

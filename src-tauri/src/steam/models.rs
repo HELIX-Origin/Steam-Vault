@@ -79,6 +79,12 @@ pub struct Game {
     pub uninstall_uri: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capsule_image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hero_image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub logo_image: Option<String>,
 }
 
 /// A Steam collection (a.k.a. category), modern or legacy-derived.

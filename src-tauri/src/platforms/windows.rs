@@ -122,7 +122,7 @@ mod imp {
                     out.push(normalize_path(&appdata.join("itch\\apps").display().to_string()));
                 }
             }
-            Platform::Emulator | Platform::Steam | Platform::Other => {}
+            Platform::Steam | Platform::Other => {}
         }
         out
     }

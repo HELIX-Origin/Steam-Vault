@@ -1,8 +1,8 @@
 ---
 layout: default
-title: Steam Vault
-eyebrow: Steam Library Organizer
-summary: A clean-room, cross-platform revival of Depressurizer, built with Tauri v2. Organize, categorize, filter, and auto-manage your real Steam library.
+title: Universal Game Launcher
+eyebrow: Universal Game Launcher & Hub
+summary: A fast, lightweight, privacy-first universal game launcher and library organizer across Steam, Epic, GOG, Xbox, EA, Ubisoft, and local games.
 nav_order: 1
 header_actions:
   - title: Read the docs
@@ -11,31 +11,36 @@ header_actions:
   - title: Source on GitHub ↗
     url: https://github.com/HELIX-Origin/Steam-Vault
     class: button--secondary
-image: assets/images/steam_banner.jpg
+image: assets/images/universal-game-launcher.svg
 ---
 
-<div markdown="0" class="site-banner-container" style="margin-bottom: 2.2rem; border-radius: 14px; overflow: hidden; border: 1px solid rgba(135, 195, 250, 0.25); box-shadow: 0 16px 48px rgba(0,0,0,0.5); line-height: 0; font-size: 0;"><img src="{{ '/assets/images/steam_banner.jpg' | relative_url }}" alt="Steam Vault Banner" style="width: 100%; height: auto; display: block; margin: 0; padding: 0; border: none;" loading="lazy" decoding="async"></div>
+<div markdown="0" class="site-banner-container" style="margin-bottom: 2.2rem; border-radius: 14px; overflow: hidden; border: 1px solid rgba(135, 195, 250, 0.25); box-shadow: 0 16px 48px rgba(0,0,0,0.5); line-height: 0; font-size: 0;"><img src="{{ '/assets/images/universal-game-launcher.svg' | relative_url }}" alt="Universal Game Launcher Banner" style="width: 100%; height: auto; display: block; margin: 0; padding: 0; border: none;" loading="lazy" decoding="async"></div>
 
 <section id="about" class="doc-section">
 <div class="section-heading">
 <span class="section-number">01</span>
 <div>
 <p class="eyebrow">Overview</p>
-<h2>What is Steam Vault?</h2>
+<h2>What is Universal Game Launcher?</h2>
 </div>
 </div>
 <p>
-Steam Vault reads your <strong>local Steam data</strong> and lets you organize your real Steam
-library directly. It is a spiritual successor to Depressurizer: import your installed games,
-detect titles installed by other launchers, sync your whole owned Steam library, build and edit
-collections (categories), filter with an Allowed / Required / Excluded builder, and auto-categorize
-by genre, developer, publisher, platform, tags, and feature flags.
+Universal Game Launcher brings all your PC games together into a single, unified cockpit.
+It automatically discovers games across all installed official clients — including <strong>Steam</strong>,
+<strong>Epic Games Store</strong>, <strong>GOG Galaxy</strong>, <strong>Ubisoft Connect</strong>,
+<strong>EA App</strong>, <strong>Xbox / Microsoft Store</strong>, <strong>Battle.net</strong>,
+<strong>itch.io</strong>, and <strong>Amazon Games</strong> — with full support for manually adding
+standalone local executables and indie titles.
 </p>
 <p>
-Unlike its predecessor, Steam Vault is a modern, cross-platform <strong>Tauri v2</strong>
-application (a Rust backend with a SvelteKit frontend) that targets <strong>stable, documented
-data sources</strong> rather than fragile HTML scraping, so everyday Steam updates are far less
-likely to break it.
+It serves as a clean-room, modernized revival of the library organization philosophies of Depressurizer:
+build and edit custom collections, filter with an advanced Allowed / Required / Excluded builder,
+auto-categorize by genre, developer, publisher, platform, and tags, and manage local storage across drives.
+</p>
+<p>
+Built with <strong>Tauri v2</strong> (Rust backend and SvelteKit frontend), Universal Game Launcher
+relies strictly on <strong>official client protocols and documented local data sources</strong> rather than
+scraping or credential harvesting, delivering instant performance, zero-friction privacy, and full offline usability.
 </p>
 </section>
 
@@ -51,12 +56,17 @@ likely to break it.
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🚀</span>
 <h3>Library Grid Launcher</h3>
-<p>Browse your library with vertical capsule covers, platform badges, install pills, and instant one-click launch controls.</p>
+<p>Browse your multi-platform library with vertical capsule covers, platform badges, install pills, and instant one-click launch controls.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🔒</span>
+<h3>Native Launcher Delegation</h3>
+<p>Launches, updates, and uninstalls delegate directly to official clients, preserving overlays, cloud saves, friend lists, and achievements without storing credentials.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">📑</span>
 <h3>Per-Game Details &amp; Management</h3>
-<p>Extensive details sub-pages featuring a 10-image media gallery with fullscreen lightbox, meta links, playtime tracking, and management modal.</p>
+<p>Extensive details sub-pages featuring a 10-image media gallery with fullscreen lightbox, meta links, playtime tracking, and management tools.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🎛️</span>
@@ -64,64 +74,59 @@ likely to break it.
 <p>Toggle sort options, platform counts, install state, and collections instantly from a dedicated right sidebar.</p>
 </div>
 <div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🎁</span>
+<h3>Free Games, Deals &amp; Patch Notes</h3>
+<p>Track verified 100% free giveaways, store specials across Steam/Epic/GOG, and official changelogs for installed games.</p>
+</div>
+<div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🗂️</span>
-<h3>Real Collections</h3>
-<p>Read and write your actual Steam collections, with favourites and hidden state honoured.</p>
+<h3>Custom Collections</h3>
+<p>Read and write categorized collections with favorites and hidden states, plus native smart collections.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🧩</span>
 <h3>Multi-Scope Organize Lists</h3>
-<p>Select multiple organization scopes simultaneously with Depressurizer-style custom rules to categorise your entire library.</p>
+<p>Select multiple organization scopes simultaneously with custom rule builders to categorise your entire library.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🧠</span>
 <h3>AutoCats</h3>
-<p>Generate categories automatically from genre, developer, publisher, tags, and flags.</p>
+<p>Generate categories automatically from genre, developer, publisher, tags, and storefront flags.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">💾</span>
 <h3>Storage Statistics</h3>
-<p>Dedicated drive capacity and usage gauges with Steam Library Folder management.</p>
+<p>Dedicated drive capacity and usage gauges with Steam Library Folder management and safe cross-drive moves.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🎮</span>
-<h3>External Platforms</h3>
-<p>Detect owned and installed games across GOG, Epic Games, itch.io, Xbox, and others, with shortcut launch integration.</p>
+<h3>All Major Storefronts</h3>
+<p>Automatic detection across Steam, GOG Galaxy, Epic Games, itch.io, Xbox, EA App, Ubisoft, and Battle.net.</p>
 </div>
 <div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🕹️</span>
-<h3>Emulators &amp; ROMs</h3>
-<p>Automatically discover ROMs across 11 popular emulators with pre-configured CLI launch arguments.</p>
+<span class="feature-card__icon" aria-hidden="true">📁</span>
+<h3>Manually Added Local Games</h3>
+<p>Easily import and manage standalone executables, DRM-free games, and indie projects with custom artwork and tags.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🎨</span>
 <h3>Artwork Manager</h3>
-<p>Inspect, fetch, and set portrait grid, hero, logo, and icon artwork via SteamGridDB.</p>
+<p>Inspect, fetch, and set portrait grid, hero, logo, and icon artwork via SteamGridDB and local file imports.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🌍</span>
-<h3>30 Languages</h3>
-<p>Hand-rolled reactive i18n supporting every official Steam language with Arabic RTL layout.</p>
+<h3>Multi-Language Support</h3>
+<p>Hand-rolled reactive i18n supporting 28+ languages with Arabic RTL layout and zero runtime overhead.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">⚡</span>
-<h3>SQLite Cache</h3>
-<p>High-performance embedded metadata cache with WAL mode and zero-touch migration.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🗄️</span>
-<h3>Community Catalogue</h3>
-<p>Precompiled offline database of curated multi-platform games with online sync and archive portability.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🏷️</span>
-<h3>Console Tagging</h3>
-<p>Determines console platforms for ROMs, renders UI badges, and writes binary shortcut tags for Steam grouping.</p>
+<h3>Generic SQLite Persistence</h3>
+<p>High-performance embedded SQLite database (<code>database.sqlite</code>) in WAL mode decoupled from application branding.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🛡️</span>
 <h3>Safe writes</h3>
-<p>Timestamped backups before every write, and changes are refused while Steam is running.</p>
+<p>Timestamped backups before every write, and changes are refused while platform launchers are running.</p>
 </div>
 </div>
 </section>
@@ -135,29 +140,31 @@ likely to break it.
 </div>
 </div>
 <p>
-Steam Vault combines multiple metadata sources. Only <strong>Steam Web API</strong>,
-<strong>SteamGridDB</strong>, and <strong>IGDB</strong> require an API key; the rest are keyless.
+Universal Game Launcher combines multiple metadata sources. Only <strong>Steam Web API</strong>,
+<strong>SteamGridDB</strong>, and <strong>IGDB</strong> require optional API keys; all primary storefront integrations are keyless.
 </p>
 <table>
 <thead>
-<tr><th>Provider</th><th>Key</th><th>Provides</th></tr>
+<tr><th>Provider</th><th>Key Required</th><th>Provides</th></tr>
 </thead>
 <tbody>
-<tr><td>Community Catalogue</td><td>No</td><td>Curated offline seed with multi-platform OS and console metadata</td></tr>
 <tr><td>Steam Store</td><td>No</td><td>Genres, developers, publishers, release dates, flags</td></tr>
-<tr><td>Steam Store Search</td><td>No</td><td>Keyless title-to-appid matching for shortcuts &amp; indies</td></tr>
-<tr><td>Steam Web API</td><td>Yes</td><td>Owned games, playtime, player summaries</td></tr>
-<tr><td>SteamGridDB</td><td>Yes</td><td>Grids, heroes, logos, icons</td></tr>
-<tr><td>IGDB (Twitch)</td><td>Yes</td><td>Summary, genres, companies, cover</td></tr>
+<tr><td>Steam Store Search</td><td>No</td><td>Keyless title matching for standalone &amp; indie titles</td></tr>
+<tr><td>GOG Store &amp; Galaxy DB</td><td>No</td><td>Official covers, heroes, and metadata via local SQLite galaxy DB</td></tr>
+<tr><td>Epic Games Manifests</td><td>No</td><td>Title, install locations, app IDs, official launch parameters</td></tr>
+<tr><td>Xbox AppModel</td><td>No</td><td>Registry and package manifest discovery with zero scraping</td></tr>
+<tr><td>Steam Web API</td><td>Yes (Optional)</td><td>Owned games, playtime, player summaries</td></tr>
+<tr><td>SteamGridDB</td><td>Yes (Optional)</td><td>Grids, heroes, logos, icons (especially for manually added local games)</td></tr>
+<tr><td>IGDB (Twitch)</td><td>Yes (Optional)</td><td>Summary, genres, companies, cover</td></tr>
 <tr><td>VNDB</td><td>No</td><td>Visual novel metadata, developers, release dates, tags</td></tr>
 <tr><td>PCGamingWiki</td><td>No</td><td>Engine, developers, publishers, release dates</td></tr>
 <tr><td>Local Sniffer</td><td>No</td><td>itch manifests, Ren'Py, RPG Maker, PE VersionInfo headers</td></tr>
-<tr><td>Wikipedia</td><td>No</td><td>Infobox parser: developers, publishers, genres, release year, console platforms, and summaries</td></tr>
+<tr><td>Wikipedia</td><td>No</td><td>Infobox parser: developers, publishers, genres, release year, summaries</td></tr>
 </tbody>
 </table>
 <p>
 See <a href="{{ '/docs/Metadata-Providers/' | relative_url }}">Metadata Providers</a> for the full
-reference. RAWG is intentionally not supported.
+reference.
 </p>
 </section>
 
@@ -200,11 +207,11 @@ Explore the complete guides and references on this site. The
 <span class="section-number">05</span>
 <div>
 <p class="eyebrow">Install</p>
-<h2>Get Steam Vault</h2>
+<h2>Get Universal Game Launcher</h2>
 </div>
 </div>
 <p>
-Steam Vault v1.0.0 is officially released! Build it from source today with Rust and Node.js.
+Universal Game Launcher is distributed on the official Windows Package Manager (WinGet) and can be built from source today with Rust and Node.js.
 See <a href="{{ '/docs/Getting-Started/' | relative_url }}">Getting Started</a> for the walkthrough.
 </p>
 <div class="header-actions">

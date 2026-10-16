@@ -189,21 +189,3 @@ jobs:
           tagName: ${{ needs.create-release.outputs.tag_name }}
           args: ${{ matrix.args }}
 
-  publish-winget:
-    name: Publish to WinGet Repository
-    needs: [create-release, build-and-upload]
-    runs-on: windows-latest
-    if: startsWith(needs.create-release.outputs.tag_name, 'v')
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Submit package to WinGet
-        uses: vedantmgoyal9/winget-releaser@v2
-        continue-on-error: true
-        with:
-          identifier: HELIXOrigin.SteamVault
-          version: ${{ needs.create-release.outputs.version_clean }}
-          release-tag: ${{ needs.create-release.outputs.tag_name }}
-          token: ${{ secrets.WINGET_TOKEN || secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
-

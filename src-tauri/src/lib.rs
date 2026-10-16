@@ -4,14 +4,13 @@
 // ahead of the milestones that call them (the UI wires them up incrementally).
 #![allow(dead_code)]
 
-mod autocat;
 mod backup;
 mod cache;
 mod commands;
 mod error;
-mod filter;
 mod metadata;
 mod platforms;
+mod plugins;
 mod settings;
 mod steam;
 
@@ -148,43 +147,26 @@ pub fn run() {
             commands::wikipedia_summary,
             commands::wikipedia_game_lookup,
             commands::vndb_lookup,
+            commands::gog_lookup,
+            commands::epic_lookup,
+            commands::indiedb_lookup,
+            commands::itch_lookup,
             commands::steam_store_search,
-            commands::compute_autocats,
+            commands::get_installed_plugins,
+            commands::toggle_plugin,
+            commands::open_plugins_folder,
+            commands::install_plugin_from_url,
+            commands::scan_all_platforms,
             commands::detect_platforms,
             commands::find_platform_folders,
             commands::import_platform_games,
             commands::set_game_platform,
             commands::get_owned_library,
             commands::refresh_owned_games,
-            commands::compute_categorization,
-            commands::apply_categorization,
             commands::get_storage_report,
-            commands::preview_move_library,
-            commands::move_library,
-            commands::preview_move_game,
-            commands::move_game,
-            commands::add_library_folder,
-            commands::remove_library_folder,
-            commands::get_artwork,
-            commands::read_artwork,
-            commands::apply_artwork_from_url,
-            commands::apply_artwork_from_file,
-            commands::remove_artwork,
-            commands::steamgriddb_for_game,
-            commands::auto_fetch_artwork_for_games,
-            commands::get_filter_presets,
-            commands::save_filter_preset,
-            commands::delete_filter_preset,
-            commands::evaluate_filter,
-            commands::save_smart_collection,
-            commands::refresh_smart_collection,
-            commands::get_catalog_stats,
-            commands::search_catalog,
-            commands::export_catalog_archive,
-            commands::import_catalog_archive,
-            commands::sync_online_catalog,
-            commands::fetch_online_game_entry,
+            commands::get_cache_stats,
             commands::clear_metadata_cache,
+            commands::get_cached_game_metadata,
             commands::get_cached_artwork,
             commands::get_cached_artwork_batch,
             commands::cache_artwork_image,
@@ -192,8 +174,6 @@ pub fn run() {
             commands::install_game,
             commands::uninstall_game,
             commands::open_game_folder,
-            commands::get_es_de_systems,
-            commands::scaffold_es_de_directories,
             commands::get_installed_launchers,
             commands::install_legendary,
             commands::open_external_url,

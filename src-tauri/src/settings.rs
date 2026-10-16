@@ -24,18 +24,12 @@ pub struct Settings {
     pub language: String,
     #[serde(default = "default_true")]
     pub auto_backup: bool,
-    /// Enable Steam Sync & Auto-Categorizer (Depressurizer Mode).
-    /// When disabled, Steam-Vault functions purely in Standalone Universal Library Mode.
-    #[serde(default = "default_true")]
-    pub enable_steam_sync: bool,
+    /// Enabled plugin states (plugin_id -> bool).
     #[serde(default)]
-    pub auto_cats: Vec<crate::autocat::AutoCat>,
+    pub enabled_plugins: std::collections::HashMap<String, bool>,
     /// Non-Steam source detection preferences (enable flags + extra folders).
     #[serde(default)]
     pub platform_sources: Vec<crate::platforms::PlatformSource>,
-    /// Explicitly configured emulators and their ROM directories.
-    #[serde(default)]
-    pub emulator_configs: Vec<crate::platforms::EmulatorConfig>,
     /// Optional user-configured path to Legendary CLI binary or directory.
     #[serde(default)]
     pub legendary_path: Option<String>,
@@ -60,22 +54,26 @@ impl Default for Settings {
             country_code: "us".into(),
             language: "en".into(),
             auto_backup: true,
-            enable_steam_sync: true,
-            auto_cats: Vec::new(),
+            enabled_plugins: std::collections::HashMap::new(),
             platform_sources: Vec::new(),
-            emulator_configs: Vec::new(),
             legendary_path: None,
             enable_free_game_notifications: false,
         }
     }
 }
 
-/// `…/steam-vault/settings.json` under the OS config directory.
+/// `…/universal-game-launcher/settings.json` under the OS config directory.
 pub fn settings_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("steam-vault")
-        .join("settings.json")
+    let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    let new_path = base.join("universal-game-launcher").join("settings.json");
+    if new_path.exists() {
+        return new_path;
+    }
+    let legacy_path = base.join("steam-vault").join("settings.json");
+    if legacy_path.exists() {
+        return legacy_path;
+    }
+    new_path
 }
 
 /// Load settings, falling back to defaults when the file is absent or invalid.

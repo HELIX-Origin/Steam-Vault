@@ -1,7 +1,7 @@
 {
-  "name": "steam-vault",
+  "name": "universal-game-launcher",
   "version": "1.3.3",
-  "description": "A fast, privacy-focused cross-platform Steam library organizer and manager",
+  "description": "A fast, privacy-focused cross-platform universal game library organizer and launcher",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
@@ -21,15 +21,10 @@
     "test": "node scripts/test.mjs",
     "test:rust": "node scripts/test.mjs rust",
     "test:frontend": "node scripts/test.mjs frontend",
-    "test:i18n": "node scripts/test.mjs i18n",
     "test:all": "node scripts/test.mjs all",
-    "verify": "node scripts/test.mjs check rust frontend build i18n",
+    "verify": "node scripts/test.mjs check rust frontend build",
     "sign": "node scripts/sign.mjs",
-    "sign:local": "node scripts/sign.mjs",
-    "winget:manifest": "node scripts/generate-winget-manifest.mjs",
-    "winget:manifest:generate": "node scripts/generate-winget-manifest.mjs",
-    "winget:manifest:verify": "node scripts/generate-winget-manifest.mjs --verify",
-    "winget:manifest:install": "node scripts/generate-winget-manifest.mjs --install"
+    "sign:local": "node scripts/sign.mjs"
   },
   "author": "HELIX Origin",
   "license": "BSD-3-Clause",

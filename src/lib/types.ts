@@ -14,7 +14,6 @@ export type Platform =
   | "amazon"
   | "xbox"
   | "rockstar"
-  | "emulator"
   | "other";
 
 export interface SteamSearchResult {
@@ -66,6 +65,9 @@ export interface Game {
   installUri?: string | null;
   uninstallUri?: string | null;
   platformId?: string | null;
+  capsuleImage?: string | null;
+  heroImage?: string | null;
+  logoImage?: string | null;
 }
 
 export interface Collection {
@@ -192,6 +194,23 @@ export interface AutoCat {
   exclude: string[];
 }
 
+export type PluginType = "platform" | "metadata" | "media" | "utility";
+
+export interface PluginInfo {
+  id: string;
+  name: string;
+  version: string;
+  author?: string | null;
+  description?: string | null;
+  pluginType: PluginType;
+  enabled: boolean;
+  builtin: boolean;
+  icon?: string | null;
+  homepage?: string | null;
+  features: string[];
+  path: string;
+}
+
 export interface Settings {
   steamRoot: string | null;
   accountId3: string | null;
@@ -202,29 +221,10 @@ export interface Settings {
   countryCode: string;
   language: string;
   autoBackup: boolean;
-  enableSteamSync?: boolean;
-  autoCats: AutoCat[];
+  enabledPlugins?: Record<string, boolean>;
   platformSources: PlatformSource[];
-  emulatorConfigs?: EmulatorConfig[];
   legendaryPath?: string | null;
   enableFreeGameNotifications?: boolean;
-}
-
-/** User-configured emulator mapping (mirrors the Rust `EmulatorConfig`). */
-export interface EmulatorConfig {
-  id: string;
-  name: string;
-  executablePath: string;
-  romDirectories: string[];
-  defaultArgs?: string | null;
-}
-
-/** Standard ES-DE system definition (mirrors the Rust `EsDeSystemInfo`). */
-export interface EsDeSystemInfo {
-  folderName: string;
-  systemName: string;
-  consolePlatform: string;
-  extensions: string[];
 }
 
 /** Per-platform detection preference (mirrors the Rust `PlatformSource`). */
@@ -462,16 +462,15 @@ export interface ArtworkOutcome {
   backup: string | null;
 }
 
-// --- Local game catalog database --------------------------------------------
+// --- Persistent cache statistics --------------------------------------------
 
-export interface CatalogStats {
-  totalGames: number;
+export interface CacheStats {
   totalMetadataCached: number;
-  totalCachedArtworks?: number;
+  totalCachedArtworks: number;
+  totalKvEntries: number;
 }
 
 export interface CacheResetReport {
-  totalCatalogGames: number;
   totalMetadataRecords: number;
   message: string;
 }

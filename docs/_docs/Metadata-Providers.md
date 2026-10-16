@@ -1,61 +1,64 @@
 ---
 layout: docs
 title: Metadata Providers
-summary: Every metadata source, what it provides, and whether it needs a key
+summary: Extensive metadata provider plugins, capabilities, and user configuration
 parent: Documentation Home
 nav_order: 6
 ---
 
-# Metadata Providers
+# Metadata Providers & Plugins
 
-Metadata powers AutoCats, the filter builder, and artwork for any game. Steam Vault
-combines several sources, and only three of them require an API key.
+Universal Game Launcher connects to an extensive ecosystem of modular metadata providers. Each provider is delivered as a drop-in plugin hosted in the official [Universal-Game-Launcher-Plugins](https://github.com/HELIX-Origin/Universal-Game-Launcher-Plugins) repository.
 
-## 🔌 Provider reference
+You can enable, disable, and configure individual providers directly from **Settings → Plugins**. Only the providers you enable are queried during library scans and showcase rendering.
 
-| Provider | Key | Endpoint | Provides |
-| :--- | :--- | :--- | :--- |
-| **Community Game Catalog** | No | *Local seed* & GitHub Releases | Curated offline catalog, multi-platform OS (`windows`, `macos`, `linux`), console hardware, and canonical metadata |
-| **Steam Store** | No | `store.steampowered.com/api/appdetails` | Genres, developers, publishers, release date, feature flags, covers, screenshots |
-| **Steam Store Search** | No | `store.steampowered.com/api/storesearch` | Search non-Steam & indie titles to match official Steam app IDs |
-| **GOG Store & Galaxy** | No | `embed.gog.com` & local Galaxy DB | Official GOG vertical covers, hero backgrounds, and publisher data |
-| **PCGamingWiki** | No | `www.pcgamingwiki.com/w/api.php` | Engine, developers, publishers, release dates, taxonomy genres, box art |
-| **Wikipedia** | No | `en.wikipedia.org/w/api.php` | Infobox wikitext parser & high-res `pageimages` box art |
-| **Libretro Thumbnails** | No | `thumbnails.libretro.com` CDN | Open emulation box art, snaps, and title screens across 24+ consoles |
-| **VNDB** | No | `api.vndb.org/kana/vn` | Visual novel developers, publishers, release dates, tags, covers, Japanese titles |
-| **Local Game Sniffer** | No | *Local disk* | itch `receipt.json`, Ren'Py signatures, RPG Maker data, PE VersionInfo |
-| **SteamGridDB** | Yes (Optional) | `www.steamgriddb.com/api/v2` | Grids, heroes, logos, icons (especially for non-Steam shortcuts) |
-| **IGDB (Twitch)** | Yes (Optional) | `api.igdb.com/v4` | Summary, genres, companies, cover |
-| **Steam Web API** | Yes (Optional) | `IPlayerService/GetOwnedGames` | Owned games, playtime, player summaries |
+---
 
-> **Note:** **RAWG is not supported.** The service is defunct and no RAWG provider exists by design.
+## 🔌 Provider Reference
 
-## 🔑 Keyed vs keyless
+| Provider Plugin | Key Required | Endpoint / Protocol | Capabilities & Information Provided |
+| :--- | :---: | :--- | :--- |
+| **Steam Store** | No | `store.steampowered.com/api/appdetails` | Descriptions, genres, release dates, features, Cloudflare CDN covers, and 1080p screenshots. |
+| **GOG Catalog** | No | `embed.gog.com` | Official GOG vertical covers, hero wallpapers, and publisher information. |
+| **Epic Games Store** | No | `store-content.ak.epicgames.com` | Official EGS catalog details, developer metadata, and wide keyart banners. |
+| **itch.io Catalog** | No | `itch.io/api/1` | Indie title descriptions, cover images, and creator links. |
+| **SteamGridDB** | User Key | `www.steamgriddb.com/api/v2` | Community-crafted vertical capsule art, hero banners, logos, and custom grid assets. |
+| **IGDB (Twitch)** | User Key | `api.igdb.com/v4` | Twitch IGDB game taxonomy, franchise links, developer studios, and user ratings. |
+| **VNDB** | No | `api.vndb.org/kana/vn` | Visual novel synopses, character profiles, voice cast rosters, and Japanese/English release data. |
+| **IndieDB / ModDB** | No | `www.indiedb.com/games` | Independent releases, standalone mods, total conversions, and developer logs. |
+| **PCGamingWiki** | No | `www.pcgamingwiki.com/w/api.php` | Save file directories, config file paths, FOV/ultrawide fixes, controller support, and community patches. |
+| **Wikipedia & Wikidata** | No | `en.wikipedia.org/w/api.php` | Encyclopedic summaries, game engine specifications, director/composer credits, and historical context. |
+| **MobyGames** | User Key | `api.mobygames.com/v1/games` | Historical credit registries, authentic box art scans, and platform port lineage. |
+| **RAWG.io** | User Key | `api.rawg.io/api/games` | Over 500,000 indexed games, ESRB/PEGI ratings, gameplay tags, and high-res screenshot feeds. |
+| **Giant Bomb** | User Key | `www.giantbomb.com/api/games/` | Editorial wiki decks, franchise universes, gameplay concepts, and character rosters. |
+| **ProtonDB** | No | `www.protondb.com/api/v1` | Linux / Steam Deck compatibility tiers (Native, Platinum, Gold) and launch option tweaks. |
+| **HowLongToBeat** | No | `howlongtobeat.com/api/search` | Main Story, Main + Extra, and Completionist playtime averages. |
+| **Metacritic** | No | `fandom-prod.metacritic.com` | Critic Metascore, User Score, and "Must-Play" accolade badges. |
+| **OpenCritic** | No | `api.opencritic.com/api/game` | Top Critic Average, Critics Recommend %, and tier badges (Mighty, Strong, Fair, Weak). |
 
-- **Keyless providers** work immediately. They are best-effort supplements and may change shape; a
-  failure is never fatal.
-- **Keyed providers** unlock extra data once you add a key in
-  [Settings & API Keys](Settings-and-API-Keys.md):
-  - **Steam Web API** — needs a key; `GetOwnedGames` also requires your profile's game details to
-    be public, or Steam returns `403`.
-  - **SteamGridDB** — needs an API key; powers the [Artwork Management](Artwork-Management.md)
-    view. Real Steam games are looked up by their **exact app id**; non-Steam shortcuts, which have
-    no store page, are looked up by **name** (with an exact-title preference).
-  - **IGDB** — needs a Twitch *client id* and *client secret*; Steam Vault obtains an app access
-    token automatically via the client-credentials flow.
+---
 
-## 🗄️ Caching
+## 🔑 User-Configurable Settings
 
-Fetched metadata is cached **locally** in an embedded SQLite database (`metadata.db`) so repeat lookups are instant and API usage stays
-low. Steam Store results are treated as fresh for about **7 days**; after that they are refetched.
+Providers that require credentials or support custom preferences expose these directly in the launcher interface (**Settings → Plugins → [Provider Name]**).
 
-## 🔒 Privacy
+- **SteamGridDB**: Enter your free API key from your SteamGridDB account preferences to unlock community capsule and hero artwork.
+- **IGDB**: Enter your Twitch Client ID and Client Secret; Universal Game Launcher manages OAuth token acquisition automatically.
+- **RAWG**: Enter your personal API key from RAWG.io.
+- **MobyGames**: Enter your API key from your MobyGames profile to access retro packaging scans and credits.
+- **Giant Bomb**: Enter your personal API key from Giant Bomb.
+- **Keyless Providers**: Function immediately without authentication.
 
-Metadata requests go only to the providers above, and only when you ask for them. Your API keys are
-stored locally and are never sent anywhere except to the provider they belong to. See
-[Privacy]({{ '/wiki/Privacy/' | relative_url }}) in the technical wiki.
+---
 
-## ➡️ Next steps
+## 🗄️ Local Caching & Performance
 
+All fetched metadata is cached locally in the embedded SQLite database (`database.sqlite`). Subsequent requests are served with sub-millisecond latency. Cached entries are refreshed on a configurable schedule (default: 7 days) or manually via the **↻ Refresh Metadata** action in the game showcase.
+
+---
+
+## ➡️ Next Steps
+
+- [Plugin Development Guide](Plugin-Development.md)
 - [Settings & API Keys](Settings-and-API-Keys.md)
 - [AutoCategorization](AutoCategorization.md)

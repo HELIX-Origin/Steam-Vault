@@ -9,12 +9,11 @@ import type {
   ArtworkSlotId,
   AutoCatPlan,
   CacheResetReport,
-  CatalogStats,
+  CacheStats,
   CategorizationPlan,
   CategorizeRequest,
   Collection,
   EosOverlayStatus,
-  EsDeSystemInfo,
   Filter,
   FilterPreset,
   FreeGamePromotion,
@@ -32,6 +31,7 @@ import type {
   PatchNote,
   PlatformGame,
   PlatformScan,
+  PluginInfo,
   ProviderInfo,
   Settings,
   SgdbAsset,
@@ -49,8 +49,8 @@ export const api = {
   saveSettings: (settings: Settings) => invoke<Settings>("save_settings", { settings }),
   isSteamRunning: () => invoke<boolean>("is_steam_running"),
 
-  loadLibrary: (accountId3?: string) =>
-    invoke<Game[]>("load_library", { accountId3: accountId3 ?? null }),
+  loadLibrary: (accountId3?: string, forceReload?: boolean) =>
+    invoke<Game[]>("load_library", { accountId3: accountId3 ?? null, forceReload: forceReload ?? null }),
   loadCollections: (accountId3?: string) =>
     invoke<Collection[]>("load_collections", { accountId3: accountId3 ?? null }),
 
@@ -94,11 +94,20 @@ export const api = {
   wikipediaGameLookup: (title: string) =>
     invoke<AppMeta | null>("wikipedia_game_lookup", { title }),
   vndbLookup: (title: string) => invoke<AppMeta | null>("vndb_lookup", { title }),
+  gogLookup: (title: string) => invoke<AppMeta | null>("gog_lookup", { title }),
+  epicLookup: (title: string) => invoke<AppMeta | null>("epic_lookup", { title }),
+  indiedbLookup: (title: string) => invoke<AppMeta | null>("indiedb_lookup", { title }),
+  itchLookup: (title: string) => invoke<AppMeta | null>("itch_lookup", { title }),
   steamStoreSearch: (term: string) =>
     invoke<SteamSearchResult[]>("steam_store_search", { term }),
 
-  computeAutocats: (accountId3?: string) =>
-    invoke<AutoCatPlan>("compute_autocats", { accountId3: accountId3 ?? null }),
+  // Community & First-Party Plugin Engine
+  getInstalledPlugins: () => invoke<PluginInfo[]>("get_installed_plugins"),
+  togglePlugin: (id: string, enabled: boolean) => invoke<void>("toggle_plugin", { id, enabled }),
+  openPluginsFolder: () => invoke<boolean>("open_plugins_folder"),
+  installPluginFromUrl: (url: string) => invoke<PluginInfo>("install_plugin_from_url", { url }),
+  scanAllPlatforms: (includeOtherDrives?: boolean) =>
+    invoke<PlatformScan>("scan_all_platforms", { includeOtherDrives: includeOtherDrives ?? false }),
 
   detectPlatforms: (includeOtherDrives?: boolean) =>
     invoke<PlatformScan>("detect_platforms", { includeOtherDrives: includeOtherDrives ?? false }),
@@ -127,85 +136,23 @@ export const api = {
       accountId3: accountId3 ?? null
     }),
 
-  // Create collections from a chosen sorting option.
-  computeCategorization: (request: CategorizeRequest, accountId3?: string) =>
-    invoke<CategorizationPlan>("compute_categorization", {
-      request,
-      accountId3: accountId3 ?? null,
-    }),
-  applyCategorization: (plan: CategorizationPlan, accountId3?: string) =>
-    invoke<ApplyResult>("apply_categorization", { plan, accountId3: accountId3 ?? null }),
-
-  // Storage management: inspect, register, and relocate Steam libraries.
+  // Storage report: inspect disk footprint across platform libraries (read-only).
   getStorageReport: (accountId3?: string) =>
     invoke<StorageReport>("get_storage_report", { accountId3: accountId3 ?? null }),
-  previewMoveLibrary: (from: string, to: string) =>
-    invoke<MovePreview>("preview_move_library", { from, to }),
-  moveLibrary: (from: string, to: string) =>
-    invoke<MoveOutcome>("move_library", { from, to }),
-  previewMoveGame: (appId: number, target: string) =>
-    invoke<MovePreview>("preview_move_game", { appId, target }),
-  moveGame: (appId: number, target: string) =>
-    invoke<MoveOutcome>("move_game", { appId, target }),
-  addLibraryFolder: (path: string) => invoke<string[]>("add_library_folder", { path }),
-  removeLibraryFolder: (path: string) => invoke<string[]>("remove_library_folder", { path }),
 
-  // Custom artwork: inspect, preview, apply, and remove grid/hero/logo/icon art.
-  getArtwork: (accountId3?: string, appIds?: number[]) =>
-    invoke<GameArtwork[]>("get_artwork", { accountId3: accountId3 ?? null, appIds: appIds ?? null }),
-  readArtwork: (appId: number, slot: ArtworkSlotId, accountId3?: string) =>
-    invoke<string | null>("read_artwork", { appId, slot, accountId3: accountId3 ?? null }),
-  applyArtworkFromUrl: (appId: number, slot: ArtworkSlotId, url: string, accountId3?: string) =>
-    invoke<ArtworkOutcome>("apply_artwork_from_url", {
-      appId,
-      slot,
-      url,
-      accountId3: accountId3 ?? null,
-    }),
-  applyArtworkFromFile: (appId: number, slot: ArtworkSlotId, path: string, accountId3?: string) =>
-    invoke<ArtworkOutcome>("apply_artwork_from_file", {
-      appId,
-      slot,
-      path,
-      accountId3: accountId3 ?? null,
-    }),
-  removeArtwork: (appId: number, slot: ArtworkSlotId, accountId3?: string) =>
-    invoke<ArtworkOutcome>("remove_artwork", { appId, slot, accountId3: accountId3 ?? null }),
-  steamGridDbForGame: (
-    appId: number,
-    name: string,
-    kind: "grids" | "grids_portrait" | "grids_landscape" | "heroes" | "logos" | "icons",
-    nsfw?: boolean,
-  ) => invoke<SgdbAsset[]>("steamgriddb_for_game", { appId, name, kind, nsfw: nsfw ?? false }),
-  autoFetchArtworkForGames: (appIds?: number[], accountId3?: string) =>
-    invoke<number>("auto_fetch_artwork_for_games", {
-      appIds: appIds ?? null,
-      accountId3: accountId3 ?? null,
-    }),
-
-  // Local game catalog & compressed archives
-  getCatalogStats: () => invoke<CatalogStats>("get_catalog_stats"),
-  exportCatalogArchive: (path: string) => invoke<number>("export_catalog_archive", { path }),
-  importCatalogArchive: (path: string) => invoke<number>("import_catalog_archive", { path }),
-  syncOnlineCatalog: (customUrl?: string) =>
-    invoke<number>("sync_online_catalog", { customUrl: customUrl ?? null }),
-  fetchOnlineGameEntry: (titleOrSlug: string) =>
-    invoke<AppMeta | null>("fetch_online_game_entry", { titleOrSlug }),
+  // Universal Cache & Persistence
+  getCacheStats: () => invoke<CacheStats>("get_cache_stats"),
 
   // Launcher actions
-  launchGame: (appId: number, launchUri?: string | null, exe?: string | null) =>
-    invoke<boolean>("launch_game", { appId, launchUri: launchUri ?? null, exe: exe ?? null }),
+  launchGame: (appId: number, launchUri?: string | null, exe?: string | null, platform?: string | null) =>
+    invoke<boolean>("launch_game", { appId, launchUri: launchUri ?? null, exe: exe ?? null, platform: platform ?? null }),
   installGame: (appId: number, installUri?: string | null) =>
     invoke<boolean>("install_game", { appId, installUri: installUri ?? null }),
   uninstallGame: (appId: number, uninstallUri?: string | null) =>
     invoke<boolean>("uninstall_game", { appId, uninstallUri: uninstallUri ?? null }),
   openGameFolder: (path: string) => invoke<boolean>("open_game_folder", { path }),
-
-  // EmulationStation (ES-DE) Integration & ROM Directory Scaffolding
-  getEsDeSystems: () => invoke<EsDeSystemInfo[]>("get_es_de_systems"),
-  scaffoldEsDeDirectories: (targetPath: string) =>
-    invoke<string[]>("scaffold_es_de_directories", { targetPath }),
-  searchCatalog: (term: string) => invoke<AppMeta[]>("search_catalog", { term }),
+  getCachedGameMetadata: (appId: number, name?: string | null, exe?: string | null) =>
+    invoke<AppMeta | null>("get_cached_game_metadata", { appId, name: name ?? null, exe: exe ?? null }),
 
   // Universal Cache & Artwork Management
   clearMetadataCache: (accountId3?: string, redownload?: boolean) =>

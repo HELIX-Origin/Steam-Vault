@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use flate2::read::GzDecoder;
 
-use super::{EmulatorConfig, Platform, PlatformGame, PlatformScan, PlatformStatus, ScanConfig};
+use super::{Platform, PlatformGame, PlatformScan, PlatformStatus, ScanConfig};
 
 /// The outcome of one detector run.
 pub(crate) struct Detection {
@@ -29,7 +29,7 @@ impl Detection {
 }
 
 /// Platforms surfaced in the UI, in display order.
-const ORDER: [Platform; 11] = [
+const ORDER: [Platform; 10] = [
     Platform::Gog,
     Platform::Epic,
     Platform::Itch,
@@ -39,7 +39,6 @@ const ORDER: [Platform; 11] = [
     Platform::Amazon,
     Platform::Rockstar,
     Platform::Xbox,
-    Platform::Emulator,
     Platform::Other,
 ];
 
@@ -87,24 +86,15 @@ pub fn scan_all(config: &ScanConfig) -> PlatformScan {
     if config.is_enabled(Platform::Itch) {
         merge(&mut by_platform, Platform::Itch, detect_itch());
     }
-    if config.is_enabled(Platform::Emulator) {
-        let extra_roots = config.roots_for(Platform::Emulator);
-        merge(
-            &mut by_platform,
-            Platform::Emulator,
-            detect_user_emulators(&config.emulator_configs, &extra_roots),
-        );
-    }
 
     // User-configured folders plus well-known folders on every mounted drive.
     for platform in ORDER {
-        if !config.is_enabled(platform) || platform == Platform::Emulator {
+        if !config.is_enabled(platform) {
             continue;
         }
         let mut roots = config.roots_for(platform);
         if config.include_other_drives
             && platform != Platform::Xbox
-            && platform != Platform::Emulator
         {
             roots.extend(drive_candidates(platform, &mounted_drives));
         }
@@ -198,7 +188,7 @@ fn drive_folder_names(platform: Platform) -> &'static [&'static str] {
         Platform::Amazon => &["Amazon Games", "Games\\Amazon Games"],
         Platform::Rockstar => &["Rockstar Games", "Games\\Rockstar Games"],
         Platform::Xbox => &["XboxGames"],
-        Platform::Emulator | Platform::Steam | Platform::Other => &[],
+        Platform::Steam | Platform::Other => &[],
     }
 }
 
@@ -334,159 +324,9 @@ fn ea_library_dirs() -> Vec<String> {
 
     out
 }
-
-/// Discover ROM directories from popular emulator configurations.
-fn emulator_library_dirs() -> Vec<String> {
-    let mut out = Vec::new();
-
-    // 1. Dolphin: %APPDATA%\Dolphin Emulator\Config\Dolphin.ini or Documents\Dolphin Emulator\Config\Dolphin.ini
-    let mut dolphin_inis = Vec::new();
-    if let Some(appdata) = env_dir("APPDATA") {
-        dolphin_inis.push(
-            appdata
-                .join("Dolphin Emulator")
-                .join("Config")
-                .join("Dolphin.ini"),
-        );
-    }
-    if let Some(docs) = dirs::document_dir() {
-        dolphin_inis.push(
-            docs.join("Dolphin Emulator")
-                .join("Config")
-                .join("Dolphin.ini"),
-        );
-    }
-    for ini in dolphin_inis {
-        if let Ok(text) = std::fs::read_to_string(&ini) {
-            for line in text.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("ISOPath") {
-                    if let Some(idx) = trimmed.find('=') {
-                        let path_str = trimmed[idx + 1..].trim();
-                        if !path_str.is_empty() && Path::new(path_str).is_dir() {
-                            out.push(path_str.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 2. PCSX2: inis\PCSX2.ini in Documents\PCSX2, APPDATA\PCSX2, or LOCALAPPDATA\PCSX2
-    let mut pcsx2_inis = Vec::new();
-    if let Some(docs) = dirs::document_dir() {
-        pcsx2_inis.push(docs.join("PCSX2").join("inis").join("PCSX2.ini"));
-    }
-    if let Some(appdata) = env_dir("APPDATA") {
-        pcsx2_inis.push(appdata.join("PCSX2").join("inis").join("PCSX2.ini"));
-    }
-    if let Some(local) = env_dir("LOCALAPPDATA") {
-        pcsx2_inis.push(local.join("PCSX2").join("inis").join("PCSX2.ini"));
-    }
-    for ini in pcsx2_inis {
-        if let Ok(text) = std::fs::read_to_string(&ini) {
-            for line in text.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("Games =") || trimmed.starts_with("RecursivePaths =") {
-                    if let Some(idx) = trimmed.find('=') {
-                        let path_str = trimmed[idx + 1..].trim();
-                        if !path_str.is_empty() && Path::new(path_str).is_dir() {
-                            out.push(path_str.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 3. DuckStation: settings.ini in Documents\DuckStation or APPDATA\DuckStation
-    let mut duck_inis = Vec::new();
-    if let Some(docs) = dirs::document_dir() {
-        duck_inis.push(docs.join("DuckStation").join("settings.ini"));
-    }
-    if let Some(appdata) = env_dir("APPDATA") {
-        duck_inis.push(appdata.join("DuckStation").join("settings.ini"));
-    }
-    for ini in duck_inis {
-        if let Ok(text) = std::fs::read_to_string(&ini) {
-            for line in text.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("RecursivePaths") {
-                    if let Some(idx) = trimmed.find('=') {
-                        let path_str = trimmed[idx + 1..].trim();
-                        if !path_str.is_empty() && Path::new(path_str).is_dir() {
-                            out.push(path_str.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 4. Ryujinx: %APPDATA%\Ryujinx\Config.json
-    if let Some(appdata) = env_dir("APPDATA") {
-        let ryu_cfg = appdata.join("Ryujinx").join("Config.json");
-        if let Ok(text) = std::fs::read_to_string(&ryu_cfg) {
-            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&text) {
-                if let Some(dirs) = val.get("game_dirs").and_then(|v| v.as_array()) {
-                    for d in dirs {
-                        if let Some(p) = d.as_str() {
-                            if Path::new(p).is_dir() {
-                                out.push(p.to_string());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 5. Cemu: %LOCALAPPDATA%\Cemu\settings.xml
-    if let Some(local) = env_dir("LOCALAPPDATA") {
-        let cemu_xml = local.join("Cemu").join("settings.xml");
-        if let Ok(text) = std::fs::read_to_string(&cemu_xml) {
-            let mut start = 0;
-            while let Some(open) = text[start..].find("<Path>") {
-                let tag_start = start + open + 6;
-                if let Some(close) = text[tag_start..].find("</Path>") {
-                    let path_str = text[tag_start..tag_start + close].trim();
-                    if !path_str.is_empty() && Path::new(path_str).is_dir() {
-                        out.push(path_str.to_string());
-                    }
-                    start = tag_start + close + 7;
-                } else {
-                    break;
-                }
-            }
-        }
-    }
-
-    // 6. RetroArch: %APPDATA%\RetroArch\retroarch.cfg
-    if let Some(appdata) = env_dir("APPDATA") {
-        let ra_cfg = appdata.join("RetroArch").join("retroarch.cfg");
-        if let Ok(text) = std::fs::read_to_string(&ra_cfg) {
-            for line in text.lines() {
-                let trimmed = line.trim();
-                if trimmed.starts_with("rgui_browser_directory")
-                    || trimmed.starts_with("content_directory")
-                {
-                    if let Some(idx) = trimmed.find('=') {
-                        let path_str = trimmed[idx + 1..].trim().trim_matches('"');
-                        if !path_str.is_empty() && Path::new(path_str).is_dir() {
-                            out.push(path_str.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    out
-}
-
 /// Existing locations for a platform, used to autofill Settings.
 ///
-/// Returns actual game install directories where games or ROMs reside. Launcher
+/// Returns actual game install directories where games reside. Launcher
 /// internal configuration/cache folders are explicitly excluded.
 pub fn library_folders(platform: Platform) -> Vec<String> {
     #[cfg(target_os = "windows")]
@@ -501,9 +341,7 @@ pub fn library_folders(platform: Platform) -> Vec<String> {
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     let mut out: Vec<String> = Vec::new();
 
-    if platform == Platform::Emulator {
-        out.extend(emulator_library_dirs());
-    }
+
 
     let mounted = drive_roots();
     out.extend(drive_candidates(platform, &mounted));
@@ -699,14 +537,7 @@ fn detect_extra_root(platform: Platform, root: &str) -> Detection {
             return detection;
         }
     }
-    if platform == Platform::Emulator {
-        let mut detection = Detection::empty();
-        let emu_map = BTreeMap::new();
-        scan_emulator_dir(Path::new(root), &mut detection, &emu_map);
-        if !detection.games.is_empty() {
-            return detection;
-        }
-    }
+
     detect_custom_roots(platform, &[root.to_string()])
 }
 
@@ -2534,472 +2365,6 @@ fn parse_appx_manifest(xml: &str, dir: &Path) -> Option<XboxMeta> {
     })
 }
 
-// ---------------------------------------------------------------------------
-// Emulators & ROMs
-// ---------------------------------------------------------------------------
-
-struct EmulatorDef {
-    name: &'static str,
-    exes: &'static [&'static str],
-    dirs: &'static [&'static str],
-    rom_exts: &'static [&'static str],
-    launch_arg: fn(&str) -> String,
-}
-
-const KNOWN_EMULATORS: &[EmulatorDef] = &[
-    EmulatorDef {
-        name: "Dolphin (GameCube/Wii)",
-        exes: &["Dolphin.exe"],
-        dirs: &["Dolphin", "Dolphin Emulator", "Dolphin-x64"],
-        rom_exts: &["iso", "gcm", "gcz", "ciso", "wbfs", "rvz", "wad"],
-        launch_arg: |p| format!("-b -e \"{p}\""),
-    },
-    EmulatorDef {
-        name: "Project64 / Mupen64 (N64)",
-        exes: &["Project64.exe", "mupen64plus.exe", "simple64-gui.exe"],
-        dirs: &["Project64", "Mupen64Plus", "simple64"],
-        rom_exts: &["z64", "n64", "v64"],
-        launch_arg: |p| format!("\"{p}\""),
-    },
-    EmulatorDef {
-        name: "PCSX2 (PlayStation 2)",
-        exes: &["pcsx2-qtx64.exe", "pcsx2.exe"],
-        dirs: &["PCSX2", "PCSX2 2.0"],
-        rom_exts: &["iso", "bin", "chd", "cso", "gz"],
-        launch_arg: |p| format!("-batch -nogui \"{p}\""),
-    },
-    EmulatorDef {
-        name: "DuckStation (PlayStation 1)",
-        exes: &[
-            "duckstation-qt-x64-ReleaseLTCG.exe",
-            "duckstation-nogui.exe",
-            "duckstation.exe",
-        ],
-        dirs: &["DuckStation"],
-        rom_exts: &["chd", "cue", "pbp"],
-        launch_arg: |p| format!("-batch \"{p}\""),
-    },
-    EmulatorDef {
-        name: "PPSSPP (PSP)",
-        exes: &["PPSSPPWindows64.exe", "PPSSPPWindows.exe", "PPSSPP.exe"],
-        dirs: &["PPSSPP"],
-        rom_exts: &["cso", "pbp", "iso"],
-        launch_arg: |p| format!("\"{p}\""),
-    },
-    EmulatorDef {
-        name: "Citra / Lime3DS (3DS)",
-        exes: &["citra-qt.exe", "lime-qt.exe", "citra.exe"],
-        dirs: &["Citra", "Lime3DS"],
-        rom_exts: &["3ds", "cia", "cxi"],
-        launch_arg: |p| format!("\"{p}\""),
-    },
-    EmulatorDef {
-        name: "Cemu (Wii U)",
-        exes: &["Cemu.exe"],
-        dirs: &["Cemu"],
-        rom_exts: &["rpx", "wua", "wud", "wux"],
-        launch_arg: |p| format!("-f -g \"{p}\""),
-    },
-    EmulatorDef {
-        name: "Ryujinx (Switch)",
-        exes: &["Ryujinx.exe", "Ryujinx.Ava.exe"],
-        dirs: &["Ryujinx"],
-        rom_exts: &["nsp", "xci"],
-        launch_arg: |p| format!("\"{p}\""),
-    },
-    EmulatorDef {
-        name: "mGBA (Game Boy Advance)",
-        exes: &["mGBA.exe"],
-        dirs: &["mGBA"],
-        rom_exts: &["gba", "gbc", "gb"],
-        launch_arg: |p| format!("\"{p}\""),
-    },
-    EmulatorDef {
-        name: "Snes9x (SNES)",
-        exes: &["snes9x-x64.exe", "snes9x.exe"],
-        dirs: &["Snes9x"],
-        rom_exts: &["sfc", "smc"],
-        launch_arg: |p| format!("\"{p}\""),
-    },
-    EmulatorDef {
-        name: "RetroArch",
-        exes: &["retroarch.exe"],
-        dirs: &["RetroArch", "RetroArch-Win64"],
-        rom_exts: &[
-            "nes", "sfc", "smc", "z64", "n64", "gba", "gbc", "gb", "iso", "chd", "cue",
-        ],
-        launch_arg: |p| format!("\"{p}\""),
-    },
-];
-
-/// Map explicitly configured emulators to their executable paths.
-fn map_configured_emulators(configs: &[EmulatorConfig]) -> BTreeMap<String, String> {
-    let mut map = BTreeMap::new();
-    for emu in configs {
-        let name = emu.name.trim();
-        let exe = emu.executable_path.trim();
-        if !name.is_empty() && !exe.is_empty() {
-            map.insert(name.to_string(), exe.to_string());
-        }
-    }
-    map
-}
-
-/// Detect emulated ROMs strictly from user-configured emulators and folders.
-///
-/// Automatic detection of emulator installation locations or filesystem ROM scanning
-/// is deliberately disabled to protect user privacy and respect anti-piracy policies.
-fn detect_user_emulators(configs: &[EmulatorConfig], extra_roots: &[String]) -> Detection {
-    let mut detection = Detection::empty();
-    if configs.is_empty() && extra_roots.is_empty() {
-        detection.note = Some(
-            "Emulated games are not auto-detected. Add your emulator and ROM folder in Settings.".into(),
-        );
-        return detection;
-    }
-
-    let emu_map = map_configured_emulators(configs);
-
-    // Scan ROM directories configured per emulator
-    for emu in configs {
-        for rom_dir in &emu.rom_directories {
-            let path = Path::new(rom_dir);
-            if path.is_dir() {
-                scan_emulator_dir(path, &mut detection, &emu_map);
-            }
-        }
-    }
-
-    // Scan any additional ROM directories configured by the user
-    for extra in extra_roots {
-        let path = Path::new(extra);
-        if path.is_dir() {
-            scan_emulator_dir(path, &mut detection, &emu_map);
-        }
-    }
-
-    if detection.games.is_empty() && detection.roots.is_empty() {
-        detection.note = Some(
-            "No ROM files found in the configured emulator directories.".into(),
-        );
-    }
-
-    detection
-}
-
-/// Determine the specific console platform (e.g. GameCube, Wii, PlayStation, etc.) for a ROM file.
-///
-/// Supports EmulationStation Desktop Edition (ES-DE) folder hierarchy (`ROMs/<system>/...`)
-/// as well as standard file extension heuristics.
-pub fn determine_console_platform(path: &Path, emu_name: Option<&str>) -> Option<String> {
-    // 1. EmulationStation (ES-DE) directory match
-    if let Some(parent) = path.parent() {
-        let parent_name = parent
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        match parent_name.as_str() {
-            "nes" | "famicom" => return Some("NES".to_string()),
-            "snes" | "sfc" => return Some("Super Nintendo".to_string()),
-            "n64" | "n64dd" => return Some("Nintendo 64".to_string()),
-            "gc" | "gamecube" => return Some("GameCube".to_string()),
-            "wii" => return Some("Wii".to_string()),
-            "wiiu" => return Some("Wii U".to_string()),
-            "switch" => return Some("Nintendo Switch".to_string()),
-            "gb" => return Some("Game Boy".to_string()),
-            "gbc" => return Some("Game Boy Color".to_string()),
-            "gba" => return Some("Game Boy Advance".to_string()),
-            "nds" => return Some("Nintendo DS".to_string()),
-            "n3ds" => return Some("Nintendo 3DS".to_string()),
-            "virtualboy" => return Some("Virtual Boy".to_string()),
-            "gameandwatch" => return Some("Game & Watch".to_string()),
-            "psx" | "ps1" => return Some("PlayStation".to_string()),
-            "ps2" => return Some("PlayStation 2".to_string()),
-            "ps3" => return Some("PlayStation 3".to_string()),
-            "psp" => return Some("PlayStation Portable".to_string()),
-            "psvita" => return Some("PlayStation Vita".to_string()),
-            "mastersystem" => return Some("Sega Master System".to_string()),
-            "genesis" | "megadrive" => return Some("Sega Genesis".to_string()),
-            "segacd" | "megacd" => return Some("Sega CD".to_string()),
-            "sega32x" => return Some("Sega 32X".to_string()),
-            "saturn" => return Some("Sega Saturn".to_string()),
-            "dreamcast" => return Some("Dreamcast".to_string()),
-            "gamegear" => return Some("Sega Game Gear".to_string()),
-            "arcade" | "mame" | "fbneo" => return Some("Arcade".to_string()),
-            "neogeo" => return Some("Neo Geo".to_string()),
-            "ngp" => return Some("Neo Geo Pocket".to_string()),
-            "ngpc" => return Some("Neo Geo Pocket Color".to_string()),
-            "wonderswan" => return Some("WonderSwan".to_string()),
-            "wonderswancolor" => return Some("WonderSwan Color".to_string()),
-            "pcengine" | "tg16" => return Some("TurboGrafx-16".to_string()),
-            "atari2600" => return Some("Atari 2600".to_string()),
-            "atari5200" => return Some("Atari 5200".to_string()),
-            "atari7800" => return Some("Atari 7800".to_string()),
-            "atarijaguar" => return Some("Atari Jaguar".to_string()),
-            "atarilynx" => return Some("Atari Lynx".to_string()),
-            "atarist" => return Some("Atari ST".to_string()),
-            "3do" => return Some("3DO".to_string()),
-            "colecovision" => return Some("ColecoVision".to_string()),
-            "intellivision" => return Some("Intellivision".to_string()),
-            "msx" | "msx1" => return Some("MSX".to_string()),
-            "msx2" | "msxturbor" => return Some("MSX2".to_string()),
-            "c64" => return Some("Commodore 64".to_string()),
-            "amiga" | "amiga1200" | "amiga600" => return Some("Amiga".to_string()),
-            "dos" => return Some("DOS".to_string()),
-            _ => {}
-        }
-    }
-
-    let ext = path
-        .extension()
-        .and_then(|s| s.to_str())?
-        .to_ascii_lowercase();
-    let p_str = path.to_string_lossy().to_ascii_lowercase();
-    let emu_lower = emu_name.unwrap_or("").to_ascii_lowercase();
-
-    match ext.as_str() {
-        "gcm" => Some("GameCube".to_string()),
-        "rvz" | "wbfs" | "wad" | "ciso" => Some("Wii".to_string()),
-        "z64" | "n64" | "v64" => Some("Nintendo 64".to_string()),
-        "sfc" | "smc" => Some("Super Nintendo".to_string()),
-        "nes" => Some("NES".to_string()),
-        "gba" => Some("Game Boy Advance".to_string()),
-        "gbc" => Some("Game Boy Color".to_string()),
-        "gb" => Some("Game Boy".to_string()),
-        "nds" => Some("Nintendo DS".to_string()),
-        "3ds" | "cia" | "cxi" => Some("Nintendo 3DS".to_string()),
-        "nsp" | "xci" => Some("Nintendo Switch".to_string()),
-        "rpx" | "wua" | "wud" | "wux" => Some("Wii U".to_string()),
-        "cso" => Some("PlayStation Portable".to_string()),
-        "pbp" => {
-            if p_str.contains("psp") || emu_lower.contains("psp") {
-                Some("PlayStation Portable".to_string())
-            } else {
-                Some("PlayStation".to_string())
-            }
-        }
-        "md" | "gen" | "smd" => Some("Sega Genesis".to_string()),
-        "gg" => Some("Sega Game Gear".to_string()),
-        "sms" => Some("Sega Master System".to_string()),
-        "a26" => Some("Atari 2600".to_string()),
-        "iso" => {
-            if emu_lower.contains("dolphin")
-                || p_str.contains("dolphin")
-                || p_str.contains("gamecube")
-                || p_str.contains("wii")
-            {
-                if p_str.contains("gamecube") || p_str.contains("gcn") {
-                    Some("GameCube".to_string())
-                } else if p_str.contains("wii") {
-                    Some("Wii".to_string())
-                } else {
-                    let file_size = std::fs::metadata(path).ok().map(|m| m.len()).unwrap_or(0);
-                    if file_size > 0 && file_size <= 1_500_000_000 {
-                        Some("GameCube".to_string())
-                    } else {
-                        Some("Wii".to_string())
-                    }
-                }
-            } else if emu_lower.contains("pcsx2")
-                || p_str.contains("pcsx2")
-                || p_str.contains("ps2")
-            {
-                Some("PlayStation 2".to_string())
-            } else if emu_lower.contains("duckstation")
-                || p_str.contains("duckstation")
-                || p_str.contains("ps1")
-                || p_str.contains("psx")
-            {
-                Some("PlayStation".to_string())
-            } else if emu_lower.contains("ppsspp") || p_str.contains("psp") {
-                Some("PlayStation Portable".to_string())
-            } else {
-                None
-            }
-        }
-        "chd" | "cue" | "bin" => {
-            if emu_lower.contains("pcsx2") || p_str.contains("ps2") {
-                Some("PlayStation 2".to_string())
-            } else if emu_lower.contains("duckstation")
-                || p_str.contains("duckstation")
-                || p_str.contains("ps1")
-                || p_str.contains("psx")
-            {
-                Some("PlayStation".to_string())
-            } else if p_str.contains("dreamcast") {
-                Some("Dreamcast".to_string())
-            } else if p_str.contains("saturn") {
-                Some("Sega Saturn".to_string())
-            } else if p_str.contains("genesis") || p_str.contains("megadrive") {
-                Some("Sega Genesis".to_string())
-            } else if emu_lower.contains("pcsx2") {
-                Some("PlayStation 2".to_string())
-            } else if emu_lower.contains("duckstation") {
-                Some("PlayStation".to_string())
-            } else {
-                None
-            }
-        }
-        _ => None,
-    }
-}
-
-/// Recursively scan a directory for ROM files up to depth 4.
-fn scan_emulator_dir(
-    dir: &Path,
-    detection: &mut Detection,
-    emu_map: &BTreeMap<String, String>,
-) {
-    let root_str = dir.display().to_string();
-    if !detection.roots.contains(&root_str) {
-        detection.roots.push(root_str);
-    }
-    scan_roms_recursive(dir, 0, 4, detection, emu_map);
-}
-
-fn scan_roms_recursive(
-    current: &Path,
-    depth: usize,
-    max_depth: usize,
-    detection: &mut Detection,
-    emu_map: &BTreeMap<String, String>,
-) {
-    if depth > max_depth {
-        return;
-    }
-    let Ok(entries) = std::fs::read_dir(current) else {
-        return;
-    };
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.is_dir() {
-            let folder_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-            let f_lower = folder_name.to_lowercase();
-            if folder_name.starts_with('.')
-                || f_lower == "sys"
-                || f_lower == "system"
-                || f_lower == "assets"
-                || f_lower == "shaders"
-                || f_lower == "bios"
-                || f_lower == "plugins"
-                || f_lower == "lang"
-                || f_lower == "languages"
-                || f_lower == "docs"
-                || f_lower == "user"
-                || f_lower == "config"
-                || f_lower == "paks"
-                || f_lower == "themes"
-                || f_lower == "dump"
-                || f_lower == "load"
-                || f_lower == "profiles"
-                || f_lower == "cache"
-                || f_lower == "temp"
-                || f_lower == "tmp"
-                || f_lower == "logs"
-            {
-                continue;
-            }
-            scan_roms_recursive(&path, depth + 1, max_depth, detection, emu_map);
-            continue;
-        }
-
-        let Some(ext) = path.extension().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        let ext_lower = ext.to_ascii_lowercase();
-
-        let raw_name = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let name_lower = raw_name.to_lowercase();
-
-        // Skip known system/firmware/internal tools
-        if name_lower.starts_with("codehandler")
-            || name_lower.starts_with("dsp_coef")
-            || name_lower.starts_with("dsp_rom")
-            || name_lower.starts_with("font")
-            || name_lower.starts_with("romfont")
-            || name_lower.starts_with("scph")
-            || name_lower.starts_with("bios")
-            || name_lower.starts_with("firmware")
-            || name_lower.starts_with("keys")
-            || name_lower.starts_with("titlekey")
-            || name_lower == "misc"
-        {
-            continue;
-        }
-
-        // For .bin files, require size >= 10 MB (disc image vs small internal binaries)
-        let file_len = entry.metadata().ok().map(|m| m.len()).unwrap_or(0);
-        if ext_lower == "bin" && file_len < 10 * 1024 * 1024 {
-            continue;
-        }
-
-        // Check if file is a known ROM extension
-        let matched_emu = KNOWN_EMULATORS.iter().find(|emu| {
-            emu.rom_exts
-                .iter()
-                .any(|e| e.eq_ignore_ascii_case(&ext_lower))
-        });
-
-        let Some(emu) = matched_emu else {
-            continue;
-        };
-
-        let name = crate::metadata::vndb::clean_search_term(&raw_name);
-        if name.is_empty() {
-            continue;
-        }
-
-        let rom_path_str = path.display().to_string();
-        let size = Some(file_len);
-
-        let emu_name_lower = emu.name.to_lowercase();
-        let configured_match = emu_map.iter().find_map(|(k, v)| {
-            let k_low = k.to_lowercase();
-            if k_low == emu_name_lower || emu_name_lower.contains(&k_low) || k_low.contains(&emu_name_lower) {
-                Some((k.as_str(), v.clone()))
-            } else {
-                None
-            }
-        });
-
-        let (emu_name, exe, launch_uri) = match configured_match {
-            Some((display_name, exe_path)) => {
-                let launch_options = (emu.launch_arg)(&rom_path_str);
-                (display_name, Some(exe_path), Some(launch_options))
-            }
-            None => (
-                "ROM (configure emulator in Settings)",
-                None,
-                Some(format!("\"{rom_path_str}\"")),
-            ),
-        };
-
-        let console = determine_console_platform(&path, Some(emu.name));
-        let display_source = match &console {
-            Some(c) => format!("{emu_name} · {c}"),
-            None => emu_name.to_string(),
-        };
-
-        detection.games.push(PlatformGame {
-            name,
-            platform: Platform::Emulator,
-            platform_id: Some(raw_name),
-            install_dir: path.parent().map(|p| p.display().to_string()),
-            exe,
-            size_on_disk: size,
-            launch_uri,
-            source: Some(display_source),
-            console,
-            installed: true,
-            ..Default::default()
-        });
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Registry-based (Ubisoft, EA, Battle.net, Rockstar, and other studios)
@@ -3202,15 +2567,6 @@ mod tests {
     }
 
     #[test]
-    fn emulator_definitions_cover_popular_rom_types() {
-        assert!(KNOWN_EMULATORS.iter().any(|e| e.rom_exts.contains(&"iso")));
-        assert!(KNOWN_EMULATORS.iter().any(|e| e.rom_exts.contains(&"z64")));
-        assert!(KNOWN_EMULATORS.iter().any(|e| e.rom_exts.contains(&"gba")));
-        assert!(KNOWN_EMULATORS.iter().any(|e| e.rom_exts.contains(&"sfc")));
-        assert!(KNOWN_EMULATORS.iter().any(|e| e.rom_exts.contains(&"chd")));
-    }
-
-    #[test]
     fn is_game_candidate_filters_launchers_and_redists() {
         assert!(!is_game_candidate("Epic Games Launcher", None, None));
         assert!(!is_game_candidate("GOG GALAXY", Some("unins000.exe"), None));
@@ -3323,7 +2679,6 @@ mod tests {
         let scan = scan_all(&ScanConfig {
             sources: Vec::new(),
             include_other_drives: true,
-            emulator_configs: Vec::new(),
         });
         for g in &scan.games {
             assert_ne!(g.name.to_lowercase(), "games");
@@ -3338,59 +2693,10 @@ mod tests {
     }
 
     #[test]
-    fn determines_console_platforms_correctly() {
-        assert_eq!(
-            determine_console_platform(
-                Path::new("C:\\Roms\\Melee.gcm"),
-                Some("Dolphin (GameCube/Wii)")
-            )
-            .as_deref(),
-            Some("GameCube")
-        );
-        assert_eq!(
-            determine_console_platform(
-                Path::new("C:\\Roms\\MarioKartWii.rvz"),
-                Some("Dolphin (GameCube/Wii)")
-            )
-            .as_deref(),
-            Some("Wii")
-        );
-        assert_eq!(
-            determine_console_platform(Path::new("C:\\Roms\\Mario64.z64"), None).as_deref(),
-            Some("Nintendo 64")
-        );
-        assert_eq!(
-            determine_console_platform(Path::new("C:\\Roms\\ChronoTrigger.sfc"), None).as_deref(),
-            Some("Super Nintendo")
-        );
-        assert_eq!(
-            determine_console_platform(Path::new("C:\\Roms\\PokemonEmerald.gba"), None).as_deref(),
-            Some("Game Boy Advance")
-        );
-        assert_eq!(
-            determine_console_platform(
-                Path::new("C:\\Roms\\Persona4.chd"),
-                Some("PCSX2 (PlayStation 2)")
-            )
-            .as_deref(),
-            Some("PlayStation 2")
-        );
-        assert_eq!(
-            determine_console_platform(
-                Path::new("C:\\Roms\\MGS.chd"),
-                Some("DuckStation (PlayStation 1)")
-            )
-            .as_deref(),
-            Some("PlayStation")
-        );
-    }
-
-    #[test]
     fn test_ubisoft_ea_xbox_real_detection() {
         let config = ScanConfig {
             sources: vec![],
             include_other_drives: false,
-            emulator_configs: Vec::new(),
         };
         let scan = scan_all(&config);
         let names: Vec<String> = scan.games.iter().map(|g| format!("[{:?}] {}", g.platform, g.name)).collect();

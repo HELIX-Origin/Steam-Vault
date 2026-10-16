@@ -1,19 +1,19 @@
 # ==============================================================================
-# Steam Vault - Jekyll Documentation Site Configuration
+# Universal Game Launcher - Jekyll Documentation Site Configuration
 # ==============================================================================
 
-title: Steam Vault
-tagline: Steam Library Organizer
-tagline_short: Steam Library Organizer
-description: "A clean-room, cross-platform revival of Depressurizer built with Tauri v2 - organize, categorize, filter, and auto-manage your Steam library."
+title: Universal Game Launcher
+tagline: Universal Game Launcher & Library Hub
+tagline_short: Universal Game Launcher
+description: "A fast, lightweight, privacy-first universal game launcher and library organizer across Steam, Epic, GOG, Xbox, EA, Ubisoft, and local games."
 url: "https://helix-origin.github.io"
 baseurl: "/Steam-Vault"
 repository: "HELIX-Origin/Steam-Vault"
 github_username: "HELIX-Origin"
 logo: "assets/images/logo.svg"
 favicon: "assets/images/favicon.ico"
-header_image: "assets/images/steam_banner.jpg"
-image: "assets/images/steam_banner.jpg"
+header_image: "assets/images/universal-game-launcher.svg"
+image: "assets/images/universal-game-launcher.svg"
 
 author:
   name: "HELIX Origin"

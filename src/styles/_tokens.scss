@@ -1,5 +1,5 @@
-// Steam Vault — Design Tokens & Platform Theme Maps
-// HELIX Origin Obsidian Design System
+// Universal Game Launcher — Design Tokens & Platform Theme Maps
+// HELIX Origin Futuristic Dark Purple Design System
 
 @use "sass:map";
 
@@ -65,80 +65,76 @@ $platforms: (
     accent: #eab308,
     accent-rgb: (234, 179, 8),
   ),
-  emulator: (
-    bg1: #2b0e20,
-    bg2: #0d040a,
-    accent: #ec4899,
-    accent-rgb: (236, 72, 153),
-  ),
   other: (
-    bg1: #141b24,
-    bg2: #080c12,
-    accent: #64748b,
-    accent-rgb: (100, 116, 139),
+    bg1: #17112a,
+    bg2: #0c0817,
+    accent: #a855f7,
+    accent-rgb: (168, 85, 247),
   ),
 );
 
 // CSS Custom Properties Export
 :root {
-  // Base Palette
-  --bg-0: #030712;
-  --bg-1: #070e1c;
-  --bg-2: #0c182c;
+  // Futuristic Dark Purple Base Palette
+  --bg-0: #080511;
+  --bg-1: #0e091e;
+  --bg-2: #150e2a;
 
-  // Glass Panels
-  --panel: rgba(14, 25, 44, 0.52);
-  --panel-subtle: rgba(14, 25, 44, 0.32);
-  --panel-strong: rgba(18, 32, 56, 0.74);
-  --panel-hover: rgba(28, 48, 80, 0.58);
-  --panel-active: rgba(36, 62, 102, 0.7);
+  // High-Performance Sleek Surfaces (Zero GPU composite lag)
+  --panel: #140d28;
+  --panel-subtle: #0f0a1f;
+  --panel-strong: #1b1236;
+  --panel-hover: #221743;
+  --panel-active: #2d1f56;
 
-  // Borders & Glows
-  --border: rgba(135, 195, 250, 0.13);
-  --border-subtle: rgba(135, 195, 250, 0.08);
-  --border-strong: rgba(135, 195, 250, 0.28);
-  --border-glow: rgba(56, 189, 248, 0.45);
+  // High-Tech Neon Violet & Cyan Borders
+  --border: rgba(168, 85, 247, 0.18);
+  --border-subtle: rgba(168, 85, 247, 0.10);
+  --border-strong: rgba(192, 132, 252, 0.35);
+  --border-glow: rgba(192, 132, 252, 0.60);
 
-  // Typography
-  --text: #f0f6fc;
-  --text-dim: #9bb2c9;
-  --text-mute: #63778f;
+  // Typography (Violet-tinted high contrast)
+  --text: #f5f3ff;
+  --text-dim: #c4b5fd;
+  --text-mute: #8b7ca6;
 
-  // Brand Accents
-  --accent: #38bdf8;
-  --accent-hover: #60a5fa;
-  --accent-rgb: 56, 189, 248;
-  --accent-2: #a855f7;
-  --accent-2-rgb: 168, 85, 247;
+  // Brand Accents: Futuristic Purple & Neon Highlights
+  --accent: #a855f7;
+  --accent-hover: #c084fc;
+  --accent-rgb: 168, 85, 247;
+  --accent-2: #e879f9;
+  --accent-2-rgb: 232, 121, 249;
+  --accent-cyan: #38bdf8;
+  --accent-cyan-rgb: 56, 189, 248;
   --danger: #f87171;
   --ok: #34d399;
   --warn: #fbbf24;
 
   // Radius Scales
-  --radius: 14px;
+  --radius: 12px;
   --radius-sm: 8px;
-  --radius-lg: 20px;
+  --radius-lg: 18px;
   --radius-pill: 9999px;
 
-  // Shadows & Elevation
-  --shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.28);
-  --shadow: 0 16px 42px rgba(0, 0, 0, 0.44);
-  --shadow-elevated: 0 24px 64px rgba(0, 0, 0, 0.58), 0 0 1px 1px rgba(135, 195, 250, 0.15);
+  // Shadows & Elevation (Crisp, fast rendering without lag)
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-elevated: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 1px 1px rgba(168, 85, 247, 0.25);
 
-  // Blur Strengths
-  --blur: 18px;
-  --blur-strong: 26px;
+  // Blur Tokens (Zero blur on cards to eliminate WebView2 compositing lag)
+  --blur: 0px;
+  --blur-strong: 0px;
 
-  // Highlights
-  --glass-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
-  --glass-highlight-strong: inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
+  // Sleek Panel Highlights
+  --glass-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.05), inset 0 0 0 1px rgba(168, 85, 247, 0.08);
+  --glass-highlight-strong: inset 0 1px 0 0 rgba(255, 255, 255, 0.08), inset 0 0 0 1px rgba(192, 132, 252, 0.16);
 
   // Card & Cover Tokens
   --card-cover-aspect: 600 / 900;
-  --card-bg: rgba(14, 25, 44, 0.45);
+  --card-bg: #140d28;
   --card-action-size: 24px;
   --card-check-size: 22px;
-  --badge-bg: rgba(6, 14, 26, 0.85);
+  --badge-bg: rgba(14, 9, 30, 0.92);
 
   // Details & Media Gallery Tokens
   --hero-min-height: 260px;

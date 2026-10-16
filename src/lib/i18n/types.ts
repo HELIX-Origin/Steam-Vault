@@ -191,11 +191,9 @@ export interface TranslationDictionary {
     removeArtwork: string;
     apiKeyNotice: string;
     allProviders: string;
-    communityCatalogue: string;
     pcgamingwiki: string;
     wikipedia: string;
     vndb: string;
-    emulation: string;
     steamGridDb: string;
     steamStore: string;
     igdb: string;
@@ -226,7 +224,5 @@ export interface TranslationDictionary {
     refreshMetadataRunning: string;
     refreshMetadataSuccess: string;
     alsoFetchArtwork: string;
-    catalogSync: string;
-    catalogSyncHelp: string;
   };
 }

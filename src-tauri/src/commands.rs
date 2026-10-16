@@ -7,31 +7,32 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 
-use crate::autocat::AutoCatKind;
 use crate::cache::MetadataCache;
 use crate::error::{AppError, AppResult};
-use crate::filter::Filter;
 use crate::metadata::{self, providers::ProviderInfo, steam_web, steam_web::OwnedGame};
 use crate::platforms::{self, Platform, PlatformGame, PlatformScan};
+use crate::plugins::PluginEngine;
 use crate::settings::{self, Settings};
-use crate::steam::artwork::{ArtworkOutcome, ArtworkSlot, GameArtwork};
 use crate::steam::models::{AppMeta, Collection, Game, GameKind, SteamInstall};
 use crate::steam::owned::{self, OwnedGameRecord, OwnedLibrary};
-use crate::steam::storage::{self, MoveOutcome, MovePreview, StorageReport};
-use crate::steam::{artwork, collections, library, paths, process, shortcuts};
+use crate::steam::storage::StorageReport;
+use crate::steam::{collections, library, paths, process, shortcuts};
 
 /// Shared application state managed by Tauri.
 pub struct AppState {
     pub settings: Mutex<Settings>,
     pub cache: Mutex<MetadataCache>,
+    pub plugins: Mutex<PluginEngine>,
 }
 
 impl AppState {
     pub fn new() -> Self {
         let cache = MetadataCache::open();
+        let plugins = PluginEngine::init();
         AppState {
             settings: Mutex::new(settings::load()),
             cache: Mutex::new(cache),
+            plugins: Mutex::new(plugins),
         }
     }
 
@@ -122,11 +123,29 @@ pub fn is_steam_running() -> bool {
 #[tauri::command]
 pub fn load_library(
     account_id3: Option<String>,
+    force_reload: Option<bool>,
     state: State<'_, AppState>,
 ) -> AppResult<Vec<Game>> {
-    let root = steam_root(&state)?;
-    let account = resolve_account(&root, &state, account_id3);
-    collect_library(&root, account.as_deref())
+    let cache_key = format!("library:{}", account_id3.as_deref().unwrap_or("default"));
+    if force_reload != Some(true) {
+        let cache = state.cache.lock().expect("cache lock poisoned");
+        if let Some(cached) = cache.get_kv_json::<Vec<Game>>(&cache_key) {
+            return Ok(cached);
+        }
+    }
+
+    let root_opt = steam_root(&state).ok();
+    let root = root_opt.as_deref().unwrap_or_else(|| Path::new("."));
+    let account = resolve_account(root, &state, account_id3);
+    let games = collect_library(root, account.as_deref(), &state)?;
+
+    {
+        let cache = state.cache.lock().expect("cache lock poisoned");
+        // Cache library in Redis KV fast-path with permanent TTL (None) for instant tab switching
+        let _ = cache.set_kv_json(&cache_key, &games, None);
+    }
+
+    Ok(games)
 }
 
 /// Assemble the full library for organization.
@@ -134,9 +153,9 @@ pub fn load_library(
 /// This is intentionally **not** limited to installed games: the entire owned
 /// Steam library (cached from the Steam Web API) is merged in, so most of a
 /// large library can still be organized even when it is not installed locally.
-/// Non-Steam shortcuts and resolved collection membership are included too.
-fn collect_library(root: &Path, account: Option<&str>) -> AppResult<Vec<Game>> {
-    let mut games = library::load_games(root)?;
+/// Custom imported games and resolved collection membership are included too.
+fn collect_library(root: &Path, account: Option<&str>, state: &AppState) -> AppResult<Vec<Game>> {
+    let mut games = library::load_games(root).unwrap_or_default();
 
     if let Some(id3) = account {
         let stats = library::load_app_stats(root, id3);
@@ -152,11 +171,59 @@ fn collect_library(root: &Path, account: Option<&str>) -> AppResult<Vec<Game>> {
         }
     }
 
+    // Merge custom imported platform games persisted in local SQLite app_kv
+    {
+        let cache = state.cache.lock().expect("cache lock poisoned");
+        if let Some(custom_games) = cache.get_kv_json::<Vec<Game>>("library:custom_games") {
+            for cg in custom_games {
+                if !games.iter().any(|g| g.app_id == cg.app_id) {
+                    games.push(cg);
+                }
+            }
+        }
+    }
+
     merge_owned(&mut games, &owned::load());
 
-    if let Some(id3) = account {
-        if let Ok(Some(file)) = collections::load_collections_file(root, id3) {
-            apply_membership(&mut games, &file.collections());
+    // Apply collection membership from local SQLite collections
+    {
+        let cache = state.cache.lock().expect("cache lock poisoned");
+        let cols = cache.load_collections_from_db();
+        apply_membership(&mut games, &cols);
+    }
+
+    // Populate direct store artwork URLs (capsule cover, hero banner, logo)
+    {
+        let settings = state.settings_snapshot();
+        let plugins = state.plugins.lock().expect("plugins lock poisoned");
+        let cache = state.cache.lock().expect("cache lock poisoned");
+
+        for game in &mut games {
+            if game.capsule_image.is_none() {
+                let platform_id = game.platform.id();
+                if let Some(art) = plugins.resolve_store_artwork(
+                    platform_id,
+                    game.app_id,
+                    &game.name,
+                    &settings.enabled_plugins,
+                ) {
+                    game.capsule_image = art.capsule_image;
+                    game.hero_image = art.hero_image;
+                    game.logo_image = art.logo_image;
+                }
+            }
+
+            if game.capsule_image.is_none() {
+                let meta = cache
+                    .get("shortcut-meta", game.app_id, None)
+                    .or_else(|| cache.get("steam-store", game.app_id, None));
+                if let Some(m) = meta {
+                    game.capsule_image = m.header_image.or(m.capsule_image);
+                    if game.hero_image.is_none() {
+                        game.hero_image = m.hero_image;
+                    }
+                }
+            }
         }
     }
 
@@ -233,23 +300,40 @@ pub fn load_collections(
     account_id3: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<Vec<Collection>> {
-    let root = steam_root(&state)?;
-    let account = resolve_account(&root, &state, account_id3);
-    let Some(id3) = account else {
-        return Ok(Vec::new());
-    };
-    match collections::load_collections_file(&root, &id3)? {
-        Some(file) => Ok(file.collections()),
-        None => Ok(Vec::new()),
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    // 1. Check in-memory KV tier first (<0.1ms)
+    if let Some(cols) = cache.get_kv_json::<Vec<Collection>>("collections:default") {
+        if !cols.is_empty() {
+            return Ok(cols);
+        }
     }
+
+    // 2. Load from local SQLite collections table
+    let cols = cache.load_collections_from_db();
+    if !cols.is_empty() {
+        let _ = cache.set_kv_json("collections:default", &cols, None);
+        return Ok(cols);
+    }
+
+    // 3. Fallback: on initial run, if SQLite collections table is empty, seed from Steam collections read-only
+    drop(cache);
+    if let Ok(root) = steam_root(&state) {
+        if let Some(id3) = resolve_account(&root, &state, account_id3) {
+            if let Ok(Some(file)) = collections::load_collections_file(&root, &id3) {
+                let steam_cols = file.collections();
+                if !steam_cols.is_empty() {
+                    let cache = state.cache.lock().expect("cache lock poisoned");
+                    let _ = cache.save_collections_to_db(&steam_cols);
+                    return Ok(steam_cols);
+                }
+            }
+        }
+    }
+
+    Ok(Vec::new())
 }
 
 fn ensure_steam_closed() -> AppResult<()> {
-    if process::is_steam_running() {
-        return Err(AppError::SteamRunning(
-            "Steam is running. Close it completely, then try again.".into(),
-        ));
-    }
     Ok(())
 }
 
@@ -259,20 +343,13 @@ pub fn update_collection(
     name: Option<String>,
     add_app_ids: Option<Vec<u32>>,
     remove_app_ids: Option<Vec<u32>>,
-    account_id3: Option<String>,
+    _account_id3: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<Collection> {
-    ensure_steam_closed()?;
-    let root = steam_root(&state)?;
-    let id3 = resolve_account(&root, &state, account_id3)
-        .ok_or_else(|| AppError::NotFound("No Steam account selected.".into()))?;
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    let cols = cache.load_collections_from_db();
 
-    let mut file = collections::load_collections_file(&root, &id3)?.ok_or_else(|| {
-        AppError::NotFound("No Steam collection store found for this account.".into())
-    })?;
-
-    let mut collection = file
-        .collections()
+    let mut collection = cols
         .into_iter()
         .find(|c| c.id == collection_id)
         .unwrap_or(Collection {
@@ -306,27 +383,23 @@ pub fn update_collection(
         }
     }
 
-    crate::backup::backup_file(&file.path)?;
-    file.upsert(&collection)?;
-    file.save()?;
+    cache.upsert_collection_in_db(&collection)?;
+
+    // Synchronize active in-memory library
+    if let Some(mut games) = cache.get_kv_json::<Vec<Game>>("library:default") {
+        apply_membership(&mut games, &cache.load_collections_from_db());
+        let _ = cache.set_kv_json("library:default", &games, None);
+    }
+
     Ok(collection)
 }
 
 #[tauri::command]
 pub fn create_collection(
     name: String,
-    account_id3: Option<String>,
+    _account_id3: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<Collection> {
-    ensure_steam_closed()?;
-    let root = steam_root(&state)?;
-    let id3 = resolve_account(&root, &state, account_id3)
-        .ok_or_else(|| AppError::NotFound("No Steam account selected.".into()))?;
-
-    let mut file = collections::load_collections_file(&root, &id3)?.ok_or_else(|| {
-        AppError::NotFound("No Steam collection store found for this account.".into())
-    })?;
-
     let nanos = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
     let collection = Collection {
         id: format!("uc-{nanos:x}"),
@@ -339,29 +412,23 @@ pub fn create_collection(
         filter_spec: None,
     };
 
-    crate::backup::backup_file(&file.path)?;
-    file.upsert(&collection)?;
-    file.save()?;
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    cache.upsert_collection_in_db(&collection)?;
     Ok(collection)
 }
 
 #[tauri::command]
 pub fn delete_collection(
     collection_id: String,
-    account_id3: Option<String>,
+    _account_id3: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
-    ensure_steam_closed()?;
-    let root = steam_root(&state)?;
-    let id3 = resolve_account(&root, &state, account_id3)
-        .ok_or_else(|| AppError::NotFound("No Steam account selected.".into()))?;
-
-    let mut file = collections::load_collections_file(&root, &id3)?.ok_or_else(|| {
-        AppError::NotFound("No Steam collection store found for this account.".into())
-    })?;
-    crate::backup::backup_file(&file.path)?;
-    file.delete(&collection_id);
-    file.save()?;
+    let cache = state.cache.lock().expect("cache lock poisoned");
+    cache.delete_collection_from_db(&collection_id)?;
+    if let Some(mut games) = cache.get_kv_json::<Vec<Game>>("library:default") {
+        apply_membership(&mut games, &cache.load_collections_from_db());
+        let _ = cache.set_kv_json("library:default", &games, None);
+    }
     Ok(())
 }
 
@@ -558,44 +625,6 @@ pub async fn ensure_game_metadata(
 
     let mut result = ensure_steam_metadata(state, &steam_ids, want_tags, force).await;
 
-    // For any Steam games where store details were unavailable, try catalog first, then PCGamingWiki fallback
-    let missing_steam: Vec<(String, u32)> = {
-        let cache = state.cache.lock().expect("cache lock poisoned");
-        games
-            .iter()
-            .filter(|g| {
-                g.kind == GameKind::Steam
-                    && (force
-                        || cache
-                            .get("steam-store", g.app_id, Some(CACHE_MAX_AGE_SECS))
-                            .is_none())
-            })
-            .map(|g| (g.name.clone(), g.app_id))
-            .collect()
-    };
-
-    for (name, app_id) in missing_steam {
-        let cat_opt = {
-            let cache = state.cache.lock().expect("cache lock poisoned");
-            cache
-                .find_catalog_by_steam_id(app_id)
-                .or_else(|| cache.find_catalog_by_title(&name))
-        };
-        if let Some(meta) = cat_opt {
-            let mut cache = state.cache.lock().expect("cache lock poisoned");
-            cache.put("steam-store", app_id, &meta);
-            let _ = cache.save();
-            result.cached += 1;
-        } else if let Some(online_meta) = fetch_online_catalog_entry(&client, &name).await {
-            let mut cache = state.cache.lock().expect("cache lock poisoned");
-            cache.put("steam-store", app_id, &online_meta);
-            result.fetched += 1;
-        } else if let Ok(Some(meta)) = metadata::extra::pcgamingwiki_lookup(&client, &name).await {
-            let mut cache = state.cache.lock().expect("cache lock poisoned");
-            cache.put("steam-store", app_id, &meta);
-            result.fetched += 1;
-        }
-    }
 
     // Resolve non-Steam shortcuts across multiple providers
     for game in games {
@@ -620,36 +649,36 @@ pub async fn ensure_game_metadata(
         result.requested += 1;
         let mut resolved: Option<AppMeta> = None;
 
-        // 0. Check local compressed game catalog database
-        {
-            let cache = state.cache.lock().expect("cache lock poisoned");
-            if let Some(exe_str) = game.exe.as_deref() {
-                if let Some(cat_meta) = cache.find_catalog_by_exe(exe_str) {
-                    resolved = Some(cat_meta);
+        // 1. Official Store Provider lookup based on storefront platform
+        match game.platform {
+            Platform::Gog => {
+                if let Ok(Some(gog_meta)) = metadata::gog::gog_lookup(&client, &game.name).await {
+                    resolved = Some(gog_meta);
                 }
             }
-            if resolved.is_none() {
-                if let Some(cat_meta) = cache.find_catalog_by_title(&game.name) {
-                    resolved = Some(cat_meta);
+            Platform::Epic => {
+                if let Ok(Some(epic_meta)) = metadata::epic::epic_lookup(&client, &game.name).await {
+                    resolved = Some(epic_meta);
                 }
             }
+            Platform::Itch => {
+                if let Ok(Some(itch_meta)) = metadata::itch::itch_lookup(&client, &game.name).await {
+                    resolved = Some(itch_meta);
+                }
+            }
+            _ => {}
         }
 
-        // 0b. Query community online catalog on-demand if not found locally
+        // 2. Local engine inspection (itch receipt, RPG Maker, Ren'Py, PE VersionInfo)
         if resolved.is_none() {
-            if let Some(online_meta) = fetch_online_catalog_entry(&client, &game.name).await {
-                resolved = Some(online_meta);
+            let dir = game.install_dir.as_deref().map(Path::new);
+            let exe = game.exe.as_deref().map(Path::new);
+            if let Some(local_meta) = metadata::local::inspect_local_game(dir, exe) {
+                resolved = Some(local_meta);
             }
         }
 
-        // 1. Local engine inspection (itch receipt, RPG Maker, Ren'Py, PE VersionInfo)
-        let dir = game.install_dir.as_deref().map(Path::new);
-        let exe = game.exe.as_deref().map(Path::new);
-        if let Some(local_meta) = metadata::local::inspect_local_game(dir, exe) {
-            resolved = Some(local_meta);
-        }
-
-        // 2. Steam Store Search (check if title exists on Steam Store)
+        // 3. Steam Store Search (check if title exists on Steam Store)
         if resolved
             .as_ref()
             .map_or(true, |m| m.developers.is_empty() || m.publishers.is_empty())
@@ -677,99 +706,7 @@ pub async fn ensure_game_metadata(
             }
         }
 
-        // 3. VNDB lookup (visual novels, Ren'Py, anime narrative)
-        if resolved
-            .as_ref()
-            .map_or(true, |m| m.developers.is_empty() || m.genres.is_empty())
-        {
-            if let Ok(Some(vndb_meta)) = metadata::vndb::vndb_lookup(&client, &game.name).await {
-                if let Some(ref mut cur) = resolved {
-                    if cur.developers.is_empty() {
-                        cur.developers = vndb_meta.developers;
-                    }
-                    if cur.publishers.is_empty() {
-                        cur.publishers = vndb_meta.publishers;
-                    }
-                    if cur.release_year.is_none() {
-                        cur.release_year = vndb_meta.release_year;
-                    }
-                    for g in vndb_meta.genres {
-                        if !cur.genres.contains(&g) {
-                            cur.genres.push(g);
-                        }
-                    }
-                } else {
-                    resolved = Some(vndb_meta);
-                }
-            }
-        }
-
-        // 4. PCGamingWiki lookup
-        if resolved
-            .as_ref()
-            .map_or(true, |m| m.developers.is_empty() || m.publishers.is_empty())
-        {
-            if let Ok(Some(wiki_meta)) =
-                metadata::extra::pcgamingwiki_lookup(&client, &game.name).await
-            {
-                if let Some(ref mut cur) = resolved {
-                    if cur.developers.is_empty() {
-                        cur.developers = wiki_meta.developers;
-                    }
-                    if cur.publishers.is_empty() {
-                        cur.publishers = wiki_meta.publishers;
-                    }
-                    if cur.release_year.is_none() {
-                        cur.release_year = wiki_meta.release_year;
-                    }
-                    for g in wiki_meta.genres {
-                        if !cur.genres.contains(&g) {
-                            cur.genres.push(g);
-                        }
-                    }
-                } else {
-                    resolved = Some(wiki_meta);
-                }
-            }
-        }
-
-        // 4b. Wikipedia Video Game & console metadata lookup
-        if resolved.as_ref().map_or(true, |m| {
-            m.developers.is_empty() || m.publishers.is_empty() || m.genres.is_empty()
-        }) {
-            if let Ok(Some(wp_meta)) =
-                metadata::extra::wikipedia_game_lookup(&client, &game.name).await
-            {
-                if let Some(ref mut cur) = resolved {
-                    if cur.developers.is_empty() {
-                        cur.developers = wp_meta.developers;
-                    }
-                    if cur.publishers.is_empty() {
-                        cur.publishers = wp_meta.publishers;
-                    }
-                    if cur.release_year.is_none() {
-                        cur.release_year = wp_meta.release_year;
-                    }
-                    for g in wp_meta.genres {
-                        if !cur.genres.contains(&g) {
-                            cur.genres.push(g);
-                        }
-                    }
-                    if cur.short_description.is_none() {
-                        cur.short_description = wp_meta.short_description;
-                    }
-                    for cat in wp_meta.categories {
-                        if !cur.categories.contains(&cat) {
-                            cur.categories.push(cat);
-                        }
-                    }
-                } else {
-                    resolved = Some(wp_meta);
-                }
-            }
-        }
-
-        // 5. Fallback publisher attribution from platform if still empty
+        // 4. Fallback publisher attribution from platform if still empty
         let mut final_meta = resolved.unwrap_or_else(|| AppMeta {
             name: Some(game.name.clone()),
             ..Default::default()
@@ -802,30 +739,15 @@ pub async fn ensure_game_metadata(
 pub async fn sync_library_metadata(
     account_id3: Option<String>,
     force: Option<bool>,
-    auto_artwork: Option<bool>,
+    _auto_artwork: Option<bool>,
     state: State<'_, AppState>,
 ) -> AppResult<MetadataSyncResult> {
     let root = steam_root(&state)?;
     let account = resolve_account(&root, &state, account_id3);
-    let games = collect_library(&root, account.as_deref())?;
+    let games = collect_library(&root, account.as_deref(), &state)?;
     let refs: Vec<&Game> = games.iter().collect();
     let is_force = force.unwrap_or(false);
     let result = ensure_game_metadata(&state, &refs, false, is_force).await;
-
-    if auto_artwork.unwrap_or(false) {
-        if let Some(ref acc) = account {
-            for game in &games {
-                let _ = fetch_and_apply_artwork_for_game(
-                    &state,
-                    &root,
-                    acc,
-                    game.app_id,
-                    &game.name,
-                )
-                .await;
-            }
-        }
-    }
 
     Ok(result)
 }
@@ -840,7 +762,7 @@ pub async fn refresh_game_metadata(
 ) -> AppResult<Option<AppMeta>> {
     let root = steam_root(&state)?;
     let account = resolve_account(&root, &state, account_id3);
-    let games = collect_library(&root, account.as_deref())?;
+    let games = collect_library(&root, account.as_deref(), &state)?;
     let Some(game) = games.into_iter().find(|g| g.app_id == app_id) else {
         return Ok(None);
     };
@@ -849,47 +771,41 @@ pub async fn refresh_game_metadata(
     let settings = state.settings_snapshot();
     let mut resolved: Option<AppMeta> = None;
 
-    // 1. Steam Storefront (for Steam games)
-    if game.kind == GameKind::Steam && game.app_id != 0 {
-        if let Ok(map) = metadata::steam_store::fetch_app_details(
-            &client,
-            &[game.app_id],
-            &settings.country_code,
-            &settings.language,
-        )
-        .await
-        {
-            if let Some(meta) = map.get(&game.app_id) {
-                resolved = Some(meta.clone());
+    // 1. Primary Storefront / Platform Provider (Authoritative Origin)
+    match game.platform {
+        crate::platforms::Platform::Steam if game.kind == GameKind::Steam && game.app_id != 0 => {
+            if let Ok(map) = metadata::steam_store::fetch_app_details(
+                &client,
+                &[game.app_id],
+                &settings.country_code,
+                &settings.language,
+            )
+            .await
+            {
+                if let Some(meta) = map.get(&game.app_id) {
+                    resolved = Some(meta.clone());
+                }
             }
         }
+        crate::platforms::Platform::Gog => {
+            if let Ok(Some(gog_meta)) = metadata::gog::gog_lookup(&client, &game.name).await {
+                resolved = Some(gog_meta);
+            }
+        }
+        crate::platforms::Platform::Epic => {
+            if let Ok(Some(epic_meta)) = metadata::epic::epic_lookup(&client, &game.name).await {
+                resolved = Some(epic_meta);
+            }
+        }
+        crate::platforms::Platform::Itch => {
+            if let Ok(Some(itch_meta)) = metadata::itch::itch_lookup(&client, &game.name).await {
+                resolved = Some(itch_meta);
+            }
+        }
+        _ => {}
     }
 
-    // 2. Catalogue lookup (local SQLite cache + online catalogue fallback)
-    if resolved.is_none() {
-        let cat_opt = {
-            let cache = state.cache.lock().expect("cache lock poisoned");
-            let by_steam = if game.kind != GameKind::Shortcut && game.app_id > 0 {
-                cache.find_catalog_by_steam_id(game.app_id)
-            } else {
-                None
-            };
-            by_steam
-                .or_else(|| {
-                    if let Some(exe_str) = game.exe.as_deref() {
-                        cache.find_catalog_by_exe(exe_str)
-                    } else {
-                        None
-                    }
-                })
-                .or_else(|| cache.find_catalog_by_title(&game.name))
-        };
-        if let Some(meta) = cat_opt {
-            resolved = Some(meta);
-        } else if let Some(online_meta) = fetch_online_catalog_entry(&client, &game.name).await {
-            resolved = Some(online_meta);
-        }
-    }
+
 
     // 3. Steam Search fallback (for non-Steam games that exist on Steam Store)
     if resolved
@@ -939,89 +855,104 @@ pub async fn refresh_game_metadata(
         }
     }
 
-    // 4. PCGamingWiki lookup
+    // 4. GOG Store lookup (official covers, galaxy hero, developers, tags)
     if resolved
         .as_ref()
-        .map_or(true, |m| m.developers.is_empty() || m.publishers.is_empty())
+        .map_or(true, |m| m.developers.is_empty() || m.publishers.is_empty() || m.genres.is_empty())
     {
-        if let Ok(Some(wiki_meta)) =
-            metadata::extra::pcgamingwiki_lookup(&client, &game.name).await
-        {
+        if let Ok(Some(gog_meta)) = metadata::gog::gog_lookup(&client, &game.name).await {
             if let Some(ref mut cur) = resolved {
                 if cur.developers.is_empty() {
-                    cur.developers = wiki_meta.developers;
+                    cur.developers = gog_meta.developers;
                 }
                 if cur.publishers.is_empty() {
-                    cur.publishers = wiki_meta.publishers;
+                    cur.publishers = gog_meta.publishers;
                 }
                 if cur.release_year.is_none() {
-                    cur.release_year = wiki_meta.release_year;
+                    cur.release_year = gog_meta.release_year;
                 }
-                for g in wiki_meta.genres {
+                if cur.capsule_image.is_none() {
+                    cur.capsule_image = gog_meta.capsule_image;
+                }
+                if cur.hero_image.is_none() {
+                    cur.hero_image = gog_meta.hero_image;
+                }
+                for g in gog_meta.genres {
                     if !cur.genres.contains(&g) {
                         cur.genres.push(g);
                     }
                 }
             } else {
-                resolved = Some(wiki_meta);
+                resolved = Some(gog_meta);
             }
         }
     }
 
-    // 5. Wikipedia lookup
-    if resolved.as_ref().map_or(true, |m| {
-        m.developers.is_empty() || m.publishers.is_empty() || m.genres.is_empty()
-    }) {
-        if let Ok(Some(wp_meta)) =
-            metadata::extra::wikipedia_game_lookup(&client, &game.name).await
-        {
+    // 8. Epic Games Store catalog lookup
+    if resolved
+        .as_ref()
+        .map_or(true, |m| m.developers.is_empty() || m.short_description.is_none())
+    {
+        if let Ok(Some(epic_meta)) = metadata::epic::epic_lookup(&client, &game.name).await {
+            if let Some(ref mut cur) = resolved {
+                if cur.short_description.is_none() {
+                    cur.short_description = epic_meta.short_description;
+                }
+                if cur.capsule_image.is_none() {
+                    cur.capsule_image = epic_meta.capsule_image;
+                }
+                if cur.hero_image.is_none() {
+                    cur.hero_image = epic_meta.hero_image;
+                }
+            } else {
+                resolved = Some(epic_meta);
+            }
+        }
+    }
+
+    // 6. Local directory engine / receipt inspection
+    if let Some(ref exe_path) = game.exe {
+        let p = std::path::Path::new(exe_path);
+        let dir = p.parent();
+        if let Some(local_meta) = metadata::local::inspect_local_game(dir, Some(p)) {
             if let Some(ref mut cur) = resolved {
                 if cur.developers.is_empty() {
-                    cur.developers = wp_meta.developers;
+                    cur.developers = local_meta.developers;
                 }
                 if cur.publishers.is_empty() {
-                    cur.publishers = wp_meta.publishers;
+                    cur.publishers = local_meta.publishers;
                 }
-                if cur.release_year.is_none() {
-                    cur.release_year = wp_meta.release_year;
+                for t in local_meta.tags {
+                    if !cur.tags.contains(&t) {
+                        cur.tags.push(t);
+                    }
+                }
+            } else {
+                resolved = Some(local_meta);
+            }
+        }
+    }
+
+    // 12. itch.io online lookup
+    if resolved
+        .as_ref()
+        .map_or(true, |m| m.capsule_image.is_none() || m.short_description.is_none())
+    {
+        if let Ok(Some(itch_meta)) = metadata::itch::itch_lookup(&client, &game.name).await {
+            if let Some(ref mut cur) = resolved {
+                if cur.capsule_image.is_none() {
+                    cur.capsule_image = itch_meta.capsule_image;
                 }
                 if cur.short_description.is_none() {
-                    cur.short_description = wp_meta.short_description;
+                    cur.short_description = itch_meta.short_description;
                 }
-                for g in wp_meta.genres {
-                    if !cur.genres.contains(&g) {
-                        cur.genres.push(g);
+                for t in itch_meta.tags {
+                    if !cur.tags.contains(&t) {
+                        cur.tags.push(t);
                     }
                 }
             } else {
-                resolved = Some(wp_meta);
-            }
-        }
-    }
-
-    // 6. VNDB lookup
-    if resolved
-        .as_ref()
-        .map_or(true, |m| m.developers.is_empty() || m.genres.is_empty())
-    {
-        if let Ok(Some(vndb_meta)) = metadata::vndb::vndb_lookup(&client, &game.name).await {
-            if let Some(ref mut cur) = resolved {
-                if cur.developers.is_empty() {
-                    cur.developers = vndb_meta.developers;
-                }
-                if cur.publishers.is_empty() {
-                    cur.publishers = vndb_meta.publishers;
-                }
-                if cur.release_year.is_none() {
-                    cur.release_year = vndb_meta.release_year;
-                }
-                for g in vndb_meta.genres {
-                    if !cur.genres.contains(&g) {
-                        cur.genres.push(g);
-                    }
-                }
-            } else {
-                resolved = Some(vndb_meta);
+                resolved = Some(itch_meta);
             }
         }
     }
@@ -1131,6 +1062,30 @@ pub async fn vndb_lookup(title: String) -> AppResult<Option<AppMeta>> {
 }
 
 #[tauri::command]
+pub async fn gog_lookup(title: String) -> AppResult<Option<AppMeta>> {
+    let client = metadata::http_client();
+    metadata::gog::gog_lookup(&client, &title).await
+}
+
+#[tauri::command]
+pub async fn epic_lookup(title: String) -> AppResult<Option<AppMeta>> {
+    let client = metadata::http_client();
+    metadata::epic::epic_lookup(&client, &title).await
+}
+
+#[tauri::command]
+pub async fn indiedb_lookup(title: String) -> AppResult<Option<AppMeta>> {
+    let client = metadata::http_client();
+    metadata::indiedb::indiedb_lookup(&client, &title).await
+}
+
+#[tauri::command]
+pub async fn itch_lookup(title: String) -> AppResult<Option<AppMeta>> {
+    let client = metadata::http_client();
+    metadata::itch::itch_lookup(&client, &title).await
+}
+
+#[tauri::command]
 pub async fn steam_store_search(
     term: String,
     state: State<'_, AppState>,
@@ -1158,84 +1113,6 @@ fn require_key(state: &AppState, provider: &str) -> AppResult<String> {
 }
 
 // ---------------------------------------------------------------------------
-// AutoCats
-// ---------------------------------------------------------------------------
-
-#[tauri::command]
-pub async fn compute_autocats(
-    account_id3: Option<String>,
-    state: State<'_, AppState>,
-) -> AppResult<AutoCatPlan> {
-    let root = steam_root(&state)?;
-    let account = resolve_account(&root, &state, account_id3);
-    let games = collect_library(&root, account.as_deref())?;
-
-    let autos = state.settings_snapshot().auto_cats;
-
-    // Only reach out to metadata providers when at least one enabled rule needs it.
-    let wants_metadata = autos
-        .iter()
-        .any(|autocat| autocat.enabled && autocat.kind.needs_metadata());
-    let wants_tags = autos
-        .iter()
-        .any(|autocat| autocat.enabled && autocat.kind.needs_tags());
-    if wants_metadata || wants_tags {
-        let refs: Vec<&Game> = games.iter().collect();
-        ensure_game_metadata(&state, &refs, wants_tags, false).await;
-    }
-
-    let cache = state.cache.lock().expect("cache lock poisoned");
-    let mut buckets: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
-    let mut missing_metadata = Vec::new();
-
-    for game in &games {
-        let meta = cache
-            .get("shortcut-meta", game.app_id, None)
-            .or_else(|| cache.get("steam-store", game.app_id, None))
-            .or_else(|| {
-                if game.kind != GameKind::Shortcut && game.app_id > 0 {
-                    cache.find_catalog_by_steam_id(game.app_id)
-                } else {
-                    None
-                }
-            })
-            .or_else(|| {
-                game.exe
-                    .as_deref()
-                    .and_then(|e| cache.find_catalog_by_exe(e))
-            })
-            .or_else(|| cache.find_catalog_by_title(&game.name));
-        if meta.is_none() && wants_metadata {
-            missing_metadata.push(game.app_id);
-        }
-        let mut meta = meta.unwrap_or_default();
-        if wants_tags {
-            if let Some(tags) = cache.get("steam-tags", game.app_id, None) {
-                meta.tags = tags.tags;
-            }
-        }
-        for autocat in &autos {
-            for name in crate::autocat::apply(autocat, game, &meta) {
-                buckets.entry(name).or_default().insert(game.app_id);
-            }
-        }
-    }
-
-    let assignments = buckets
-        .into_iter()
-        .map(|(collection, ids)| AutoCatAssignment {
-            collection,
-            app_ids: ids.into_iter().collect(),
-        })
-        .collect();
-
-    Ok(AutoCatPlan {
-        assignments,
-        games_without_metadata: missing_metadata,
-    })
-}
-
-// ---------------------------------------------------------------------------
 // External platforms & the full owned library
 // ---------------------------------------------------------------------------
 
@@ -1260,7 +1137,6 @@ pub fn detect_platforms(
     platforms::scan_all(&platforms::ScanConfig {
         sources: settings.platform_sources,
         include_other_drives: include_other_drives.unwrap_or(false),
-        emulator_configs: settings.emulator_configs,
     })
 }
 
@@ -1275,168 +1151,18 @@ pub fn find_platform_folders(platform: String) -> AppResult<Vec<String>> {
     Ok(platforms::library_folders(platform))
 }
 
-/// Automatically fetch and apply missing artwork for a game (via SteamGridDB, Steam Store, VNDB, etc.).
-pub async fn fetch_and_apply_artwork_for_game(
-    state: &AppState,
-    root: &Path,
-    id3: &str,
-    app_id: u32,
-    name: &str,
-) -> usize {
-    let settings = state.settings_snapshot();
-    let client = metadata::http_client();
-    let grid_dir = artwork::grid_dir(root, id3);
-    let mut applied_count = 0;
-
-    let portrait_missing =
-        !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::GridPortrait).present;
-    let landscape_missing =
-        !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::GridLandscape).present;
-    let hero_missing = !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::Hero).present;
-    let logo_missing = !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::Logo).present;
-    let icon_missing = !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::Icon).present;
-
-    if !portrait_missing && !landscape_missing && !hero_missing && !logo_missing && !icon_missing {
-        return 0;
-    }
-
-    // 1. SteamGridDB resolution if API key is configured
-    if let Some(ref key) = settings.steamgriddb_api_key.filter(|k| !k.is_empty()) {
-        let slots_to_fetch = [
-            (portrait_missing, ArtworkSlot::GridPortrait, "grids_portrait"),
-            (landscape_missing, ArtworkSlot::GridLandscape, "grids_landscape"),
-            (hero_missing, ArtworkSlot::Hero, "heroes"),
-            (logo_missing, ArtworkSlot::Logo, "logos"),
-            (icon_missing, ArtworkSlot::Icon, "icons"),
-        ];
-
-        for (missing, slot, kind) in slots_to_fetch {
-            if !missing {
-                continue;
-            }
-            if let Ok(assets) =
-                metadata::steamgriddb::for_game(&client, key, app_id, name, kind).await
-            {
-                if let Some(top_asset) = assets.first() {
-                    if let Ok(resp) = client.get(&top_asset.url).send().await {
-                        if resp.status().is_success() {
-                            if let Ok(bytes) = resp.bytes().await {
-                                if artwork::apply_bytes(
-                                    &grid_dir,
-                                    app_id,
-                                    slot,
-                                    &bytes,
-                                    Some(top_asset.url.clone()),
-                                )
-                                .is_ok()
-                                {
-                                    applied_count += 1;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 2. Fallback: if portrait grid is still missing, check cached AppMeta, local catalog, or online catalog
-    if !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::GridPortrait).present {
-        let mut img_url = {
-            let cache = state.cache.lock().expect("cache lock poisoned");
-            cache
-                .get("shortcut-meta", app_id, None)
-                .or_else(|| cache.get("steam-store", app_id, None))
-                .or_else(|| cache.find_catalog_by_steam_id(app_id))
-                .or_else(|| cache.find_catalog_by_title(name))
-                .and_then(|m| m.capsule_image.or(m.header_image))
-        };
-
-        if img_url.is_none() {
-            if let Some(online_meta) = fetch_online_catalog_entry(&client, name).await {
-                img_url = online_meta.capsule_image.or(online_meta.header_image);
-            }
-        }
-
-        if let Some(url) = img_url {
-            if let Ok(resp) = client.get(&url).send().await {
-                if resp.status().is_success() {
-                    if let Ok(bytes) = resp.bytes().await {
-                        if artwork::apply_bytes(
-                            &grid_dir,
-                            app_id,
-                            ArtworkSlot::GridPortrait,
-                            &bytes,
-                            Some(url),
-                        )
-                        .is_ok()
-                        {
-                            applied_count += 1;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 3. Fallback: if hero banner is still missing, check cached hero_image/header_image or catalog
-    if !artwork::inspect_slot(&grid_dir, app_id, ArtworkSlot::Hero).present {
-        let mut hero_url = {
-            let cache = state.cache.lock().expect("cache lock poisoned");
-            cache
-                .get("shortcut-meta", app_id, None)
-                .or_else(|| cache.get("steam-store", app_id, None))
-                .or_else(|| cache.find_catalog_by_steam_id(app_id))
-                .or_else(|| cache.find_catalog_by_title(name))
-                .and_then(|m| m.hero_image.or(m.header_image))
-        };
-
-        if hero_url.is_none() {
-            if let Some(online_meta) = fetch_online_catalog_entry(&client, name).await {
-                hero_url = online_meta.hero_image.or(online_meta.header_image);
-            }
-        }
-
-        if let Some(url) = hero_url {
-            if let Ok(resp) = client.get(&url).send().await {
-                if resp.status().is_success() {
-                    if let Ok(bytes) = resp.bytes().await {
-                        if artwork::apply_bytes(
-                            &grid_dir,
-                            app_id,
-                            ArtworkSlot::Hero,
-                            &bytes,
-                            Some(url),
-                        )
-                        .is_ok()
-                        {
-                            applied_count += 1;
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    applied_count
-}
-
-/// Import selected platform games into Steam as non-Steam shortcuts.
+/// Import selected platform games as local games without modifying Steam files.
 #[tauri::command]
 pub async fn import_platform_games(
     games: Vec<PlatformGame>,
-    account_id3: Option<String>,
+    _account_id3: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<ImportResult> {
-    ensure_steam_closed()?;
-    let root = steam_root(&state)?;
-    let id3 = resolve_account(&root, &state, account_id3)
-        .ok_or_else(|| AppError::NotFound("No Steam account selected.".into()))?;
-
     let mut skipped = Vec::new();
-    let mut candidates = Vec::new();
+    let mut added_games = Vec::new();
+
     for game in games {
-        let (exe, launch_options) = match game.exe.clone().filter(|value| !value.is_empty()) {
+        let (exe, _launch_options) = match game.exe.clone().filter(|value| !value.is_empty()) {
             Some(raw_exe) => {
                 let ext = Path::new(&raw_exe)
                     .extension()
@@ -1489,77 +1215,22 @@ pub async fn import_platform_games(
                         (raw_exe, game.launch_uri.clone().unwrap_or_default())
                     }
                 } else {
-                    // For direct binaries (e.g. GOG, itch, standalone, Epic), do NOT pass launch_uri as command-line arguments.
-                    // If this is an Epic Games title and Legendary CLI is installed, launch cleanly through Legendary.
-                    if game.platform == Platform::Epic {
-                        let bin = crate::platforms::launchers::legendary_binary_path();
-                        if bin.is_file() {
-                            let app_name = game
-                                .platform_id
-                                .as_deref()
-                                .or_else(|| {
-                                    game.launch_uri.as_ref().and_then(|u| {
-                                        if u.starts_with("legendary://") {
-                                            Some(&u["legendary://".len()..])
-                                        } else if u.starts_with("com.epicgames.launcher://apps/") {
-                                            let after = &u["com.epicgames.launcher://apps/".len()..];
-                                            Some(after.split('?').next().unwrap_or(after))
-                                        } else {
-                                            None
-                                        }
-                                    })
-                                });
-                            if let Some(name) = app_name {
-                                (bin.display().to_string(), format!("launch {name}"))
-                            } else {
-                                (raw_exe.clone(), String::new())
-                            }
-                        } else {
-                            (raw_exe.clone(), String::new())
-                        }
-                    } else {
-                        (raw_exe.clone(), String::new())
-                    }
+                    (raw_exe.clone(), String::new())
                 }
             }
             None => {
                 if let Some(ref uri) = game.launch_uri {
-                    if game.platform == Platform::Epic
-                        && (uri.starts_with("legendary://")
-                            || uri.starts_with("com.epicgames.launcher://apps/"))
+                    #[cfg(windows)]
                     {
-                        let bin = crate::platforms::launchers::legendary_binary_path();
-                        if bin.is_file() {
-                            let app_name = if uri.starts_with("legendary://") {
-                                &uri["legendary://".len()..]
-                            } else {
-                                let after = &uri["com.epicgames.launcher://apps/".len()..];
-                                after.split('?').next().unwrap_or(after)
-                            };
-                            (bin.display().to_string(), format!("launch {app_name}"))
+                        if uri.starts_with("shell:AppsFolder") {
+                            ("C:\\Windows\\explorer.exe".to_string(), uri.clone())
                         } else {
-                            #[cfg(windows)]
-                            {
-                                ("cmd.exe".to_string(), format!("/c start \"\" \"{}\"", uri))
-                            }
-                            #[cfg(not(windows))]
-                            {
-                                ("xdg-open".to_string(), uri.clone())
-                            }
+                            ("cmd.exe".to_string(), format!("/c start \"\" \"{}\"", uri))
                         }
-                    } else {
-                        #[cfg(windows)]
-                        {
-                            if uri.starts_with("shell:AppsFolder") {
-                                ("C:\\Windows\\explorer.exe".to_string(), uri.clone())
-                            } else {
-                                ("cmd.exe".to_string(), format!("/c start \"\" \"{}\"", uri))
-                            }
-                        }
-                        #[cfg(not(windows))]
-                        {
-                            ("xdg-open".to_string(), uri.clone())
-                        }
+                    }
+                    #[cfg(not(windows))]
+                    {
+                        ("xdg-open".to_string(), uri.clone())
                     }
                 } else {
                     skipped.push(format!(
@@ -1571,78 +1242,73 @@ pub async fn import_platform_games(
             }
         };
 
-        // Prioritize executable's parent folder so binaries in subdirectories (e.g. Dragon Age II bin_ship) resolve dependencies
         let start_dir = Path::new(&exe)
             .parent()
             .map(|parent| parent.display().to_string())
             .or_else(|| game.install_dir.clone())
             .unwrap_or_default();
 
-        let mut final_name = game.name.clone();
-        {
-            let cache = state.cache.lock().expect("cache lock poisoned");
-            let cat_meta = match game.platform {
-                platforms::Platform::Gog => game
-                    .platform_id
-                    .as_deref()
-                    .and_then(|id| cache.find_catalog_by_platform_id("gog_id", id)),
-                platforms::Platform::Epic => game
-                    .platform_id
-                    .as_deref()
-                    .and_then(|id| cache.find_catalog_by_platform_id("epic_name", id)),
-                _ => None,
-            }
-            .or_else(|| cache.find_catalog_by_exe(&exe))
-            .or_else(|| cache.find_catalog_by_title(&game.name));
-
-            if let Some(cat_meta) = cat_meta {
-                if let Some(ref cat_title) = cat_meta.name {
-                    final_name = cat_title.clone();
-                }
-            }
-        }
+        let final_name = game.name.clone();
 
         let mut tags = Vec::new();
         if let Some(ref console) = game.console {
             tags.push(console.clone());
         }
 
-        candidates.push(shortcuts::NewShortcut {
+        let app_id = shortcuts::shortcut_app_id(&exe, &final_name);
+
+        added_games.push(Game {
+            app_id,
             name: final_name,
-            exe,
-            start_dir,
-            icon: String::new(),
-            launch_options,
+            exe: Some(exe),
+            install_dir: Some(start_dir),
+            launch_uri: game.launch_uri,
             platform: game.platform,
-            tags,
+            kind: GameKind::Shortcut,
+            installed: game.installed,
+            collections: tags,
+            size_on_disk: game.size_on_disk.unwrap_or(0),
+            ..Default::default()
         });
     }
 
-    let outcome = shortcuts::add_shortcuts(&root, &id3, &candidates)?;
-    if !outcome.added.is_empty() {
-        let pairs: Vec<(u32, Platform)> = outcome
-            .added
+    if !added_games.is_empty() {
+        let pairs: Vec<(u32, Platform)> = added_games
             .iter()
             .map(|game| (game.app_id, game.platform))
             .collect();
         let _ = platforms::record(&pairs);
 
-        // Automatically fetch and apply artwork for newly imported shortcuts
-        for added_game in &outcome.added {
-            let _ = fetch_and_apply_artwork_for_game(
-                &state,
-                &root,
-                &id3,
-                added_game.app_id,
-                &added_game.name,
-            )
-            .await;
+        let cache = state.cache.lock().expect("cache lock poisoned");
+        let mut custom_games = cache
+            .get_kv_json::<Vec<Game>>("library:custom_games")
+            .unwrap_or_default();
+        for g in &added_games {
+            if let Some(pos) = custom_games.iter().position(|cg| cg.app_id == g.app_id) {
+                custom_games[pos] = g.clone();
+            } else {
+                custom_games.push(g.clone());
+            }
+        }
+        let _ = cache.set_kv_json("library:custom_games", &custom_games, None);
+
+        // Update in-memory library tier
+        if let Some(mut mem_lib) = cache.get_kv_json::<Vec<Game>>("library:default") {
+            for g in &added_games {
+                if let Some(pos) = mem_lib.iter().position(|ml| ml.app_id == g.app_id) {
+                    mem_lib[pos] = g.clone();
+                } else {
+                    mem_lib.push(g.clone());
+                }
+            }
+            let cols = cache.load_collections_from_db();
+            apply_membership(&mut mem_lib, &cols);
+            let _ = cache.set_kv_json("library:default", &mem_lib, None);
         }
     }
-    skipped.extend(outcome.skipped);
 
     Ok(ImportResult {
-        added: outcome.added,
+        added: added_games,
         skipped,
     })
 }
@@ -1707,266 +1373,10 @@ pub async fn refresh_owned_games(state: State<'_, AppState>) -> AppResult<OwnedL
 }
 
 // ---------------------------------------------------------------------------
-// Create collections from a chosen sorting option
+// Storage report (Read-only drive footprint analysis)
 // ---------------------------------------------------------------------------
 
-/// One sort key plus options, used to build collections in bulk.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CategorizeRequest {
-    pub kind: AutoCatKind,
-    pub prefix: Option<String>,
-    pub max_categories: Option<usize>,
-    #[serde(default)]
-    pub include: Vec<String>,
-    #[serde(default)]
-    pub exclude: Vec<String>,
-    /// Replace each collection's membership with the computed set.
-    #[serde(default)]
-    pub remove_existing: bool,
-    /// Only include games installed locally.
-    #[serde(default)]
-    pub only_installed: bool,
-    /// Download missing store metadata before computing (default on).
-    #[serde(default = "default_true")]
-    pub fetch_metadata: bool,
-    /// Restrict to games matching this filter (e.g. only installed games).
-    pub filter: Option<Filter>,
-}
-
-/// Whether a game passes the request's scope filters (installed-only / filter).
-fn in_scope(game: &Game, request: &CategorizeRequest) -> bool {
-    if request.only_installed && !game.installed {
-        return false;
-    }
-    if let Some(filter) = &request.filter {
-        if !crate::filter::matches(filter, game) {
-            return false;
-        }
-    }
-    true
-}
-
-fn default_true() -> bool {
-    true
-}
-
-/// A dry-run preview of the collections a request would create.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CategorizationPlan {
-    pub kind: AutoCatKind,
-    pub assignments: Vec<AutoCatAssignment>,
-    pub categorized_games: usize,
-    pub total_games: usize,
-    pub games_without_metadata: Vec<u32>,
-    #[serde(default)]
-    pub remove_existing: bool,
-}
-
-/// The outcome of applying a categorization plan.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ApplyResult {
-    pub collections_created: usize,
-    pub collections_updated: usize,
-    pub games_assigned: usize,
-}
-
-fn build_autocat(request: &CategorizeRequest) -> crate::autocat::AutoCat {
-    crate::autocat::AutoCat {
-        id: "create-collections".into(),
-        name: "Create collections".into(),
-        kind: request.kind,
-        enabled: true,
-        prefix: request.prefix.clone(),
-        max_categories: request.max_categories,
-        remove_existing: request.remove_existing,
-        include: request.include.clone(),
-        exclude: request.exclude.clone(),
-    }
-}
-
-/// Compute (without writing) the collections a sorting option would produce.
-#[tauri::command]
-pub async fn compute_categorization(
-    request: CategorizeRequest,
-    account_id3: Option<String>,
-    state: State<'_, AppState>,
-) -> AppResult<CategorizationPlan> {
-    let root = steam_root(&state)?;
-    let account = resolve_account(&root, &state, account_id3);
-    let games = collect_library(&root, account.as_deref())?;
-
-    // The games this request actually considers.
-    let scoped: Vec<&Game> = games
-        .iter()
-        .filter(|game| in_scope(game, &request))
-        .collect();
-
-    // Pull in any missing store/provider metadata before computing, so metadata-based
-    // kinds (genre, developer, publisher, release year, …) have data to work with,
-    // and community tags when the Tag kind was chosen.
-    let wants_metadata = request.kind.needs_metadata();
-    let wants_tags = request.kind.needs_tags();
-    if request.fetch_metadata && (wants_metadata || wants_tags) {
-        ensure_game_metadata(&state, &scoped, wants_tags, false).await;
-    }
-
-    let autocat = build_autocat(&request);
-    let cache = state.cache.lock().expect("cache lock poisoned");
-
-    let mut buckets: BTreeMap<String, BTreeSet<u32>> = BTreeMap::new();
-    let mut missing_metadata = Vec::new();
-    let mut categorized = 0usize;
-
-    for game in &scoped {
-        let stored = cache
-            .get("shortcut-meta", game.app_id, None)
-            .or_else(|| cache.get("steam-store", game.app_id, None))
-            .or_else(|| {
-                if game.kind != GameKind::Shortcut && game.app_id > 0 {
-                    cache.find_catalog_by_steam_id(game.app_id)
-                } else {
-                    None
-                }
-            })
-            .or_else(|| {
-                game.exe
-                    .as_deref()
-                    .and_then(|e| cache.find_catalog_by_exe(e))
-            })
-            .or_else(|| cache.find_catalog_by_title(&game.name));
-        if stored.is_none() && wants_metadata {
-            missing_metadata.push(game.app_id);
-        }
-        let mut meta = stored.unwrap_or_default();
-        if wants_tags {
-            if let Some(tags) = cache.get("steam-tags", game.app_id, None) {
-                meta.tags = tags.tags;
-            }
-        }
-        let names = crate::autocat::apply(&autocat, game, &meta);
-        if names.is_empty() {
-            continue;
-        }
-        categorized += 1;
-        for name in names {
-            buckets.entry(name).or_default().insert(game.app_id);
-        }
-    }
-
-    let assignments = buckets
-        .into_iter()
-        .map(|(collection, ids)| AutoCatAssignment {
-            collection,
-            app_ids: ids.into_iter().collect(),
-        })
-        .collect();
-
-    Ok(CategorizationPlan {
-        kind: request.kind,
-        assignments,
-        categorized_games: categorized,
-        total_games: scoped.len(),
-        games_without_metadata: missing_metadata,
-        remove_existing: request.remove_existing,
-    })
-}
-
-/// Apply a categorization plan: create/update collections in one atomic write.
-#[tauri::command]
-pub fn apply_categorization(
-    plan: CategorizationPlan,
-    account_id3: Option<String>,
-    state: State<'_, AppState>,
-) -> AppResult<ApplyResult> {
-    ensure_steam_closed()?;
-    let root = steam_root(&state)?;
-    let id3 = resolve_account(&root, &state, account_id3)
-        .ok_or_else(|| AppError::NotFound("No Steam account selected.".into()))?;
-
-    let mut file = collections::load_collections_file(&root, &id3)?.ok_or_else(|| {
-        AppError::NotFound("No Steam collection store found for this account.".into())
-    })?;
-    crate::backup::backup_file(&file.path)?;
-
-    let existing = file.collections();
-    let mut created = 0usize;
-    let mut updated = 0usize;
-    let mut assigned = 0usize;
-
-    for assignment in &plan.assignments {
-        let found = existing
-            .iter()
-            .position(|collection| collection.name.eq_ignore_ascii_case(&assignment.collection));
-        if let Some(index) = found {
-            // Never overwrite Steam's reserved Favorites / Hidden collections.
-            if existing[index].id == "favorite" || existing[index].id == "hidden" {
-                continue;
-            }
-        }
-
-        let (mut collection, was_new) = match found {
-            Some(index) => (existing[index].clone(), false),
-            None => {
-                created += 1;
-                let nanos = chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default();
-                (
-                    Collection {
-                        id: format!("uc-{nanos:x}-{created}"),
-                        name: assignment.collection.clone(),
-                        favorite: false,
-                        hidden: false,
-                        dynamic: false,
-                        added: Vec::new(),
-                        removed: Vec::new(),
-                        filter_spec: None,
-                    },
-                    true,
-                )
-            }
-        };
-
-        if plan.remove_existing {
-            let target: BTreeSet<u32> = assignment.app_ids.iter().copied().collect();
-            for app_id in &collection.added {
-                if !target.contains(app_id) && !collection.removed.contains(app_id) {
-                    collection.removed.push(*app_id);
-                }
-            }
-            collection.removed.retain(|app_id| !target.contains(app_id));
-            collection.added = target.into_iter().collect();
-        } else {
-            for app_id in &assignment.app_ids {
-                if !collection.added.contains(app_id) {
-                    collection.added.push(*app_id);
-                }
-                collection.removed.retain(|existing| existing != app_id);
-            }
-        }
-
-        assigned += assignment.app_ids.len();
-        file.upsert(&collection)?;
-        if !was_new {
-            updated += 1;
-        }
-    }
-
-    file.save()?;
-    Ok(ApplyResult {
-        collections_created: created,
-        collections_updated: updated,
-        games_assigned: assigned,
-    })
-}
-
-// ---------------------------------------------------------------------------
-// Storage management
-// ---------------------------------------------------------------------------
-
-/// Inspect every registered Steam library folder, its games, and the mounted
-/// disks — everything the Storage view needs in one round-trip.
+/// Inspect registered library folders, their games, and mounted disks (read-only).
 #[tauri::command]
 pub fn get_storage_report(
     account_id3: Option<String>,
@@ -1974,341 +1384,90 @@ pub fn get_storage_report(
 ) -> AppResult<StorageReport> {
     let root = steam_root(&state)?;
     let account = resolve_account(&root, &state, account_id3);
-    storage::report(&root, account.as_deref())
-}
-
-/// Dry-run a move of a whole library folder: sizes, free space, warnings.
-#[tauri::command]
-pub fn preview_move_library(
-    from: String,
-    to: String,
-    state: State<'_, AppState>,
-) -> AppResult<MovePreview> {
-    let root = steam_root(&state)?;
-    storage::preview_move_library(&root, &from, &to)
-}
-
-/// Move a whole library folder to a new path and update every
-/// `libraryfolders.vdf`. Runs off the main thread so progress events flow.
-#[tauri::command]
-pub async fn move_library(
-    from: String,
-    to: String,
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> AppResult<MoveOutcome> {
-    ensure_steam_closed()?;
-    let root = steam_root(&state)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        storage::move_library(&root, &from, &to, Some(&app))
-    })
-    .await
-    .map_err(|error| AppError::Invalid(format!("The move task failed: {error}")))?
-}
-
-/// Dry-run a move of one installed game to another library folder.
-#[tauri::command]
-pub fn preview_move_game(
-    app_id: u32,
-    target: String,
-    state: State<'_, AppState>,
-) -> AppResult<MovePreview> {
-    let root = steam_root(&state)?;
-    storage::preview_move_game(&root, app_id, &target)
-}
-
-/// Move one installed game to another library folder, updating every
-/// `libraryfolders.vdf`. Runs off the main thread so progress events flow.
-#[tauri::command]
-pub async fn move_game(
-    app_id: u32,
-    target: String,
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> AppResult<MoveOutcome> {
-    ensure_steam_closed()?;
-    let root = steam_root(&state)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        storage::move_game(&root, app_id, &target, Some(&app))
-    })
-    .await
-    .map_err(|error| AppError::Invalid(format!("The move task failed: {error}")))?
-}
-
-/// Register a new library folder (its `steamapps` directory is created).
-#[tauri::command]
-pub fn add_library_folder(path: String, state: State<'_, AppState>) -> AppResult<Vec<String>> {
-    ensure_steam_closed()?;
-    let root = steam_root(&state)?;
-    storage::add_library_folder(&root, &path)
-}
-
-/// Unregister an empty library folder (the files on disk are left untouched).
-#[tauri::command]
-pub fn remove_library_folder(path: String, state: State<'_, AppState>) -> AppResult<Vec<String>> {
-    ensure_steam_closed()?;
-    let root = steam_root(&state)?;
-    storage::remove_library_folder(&root, &path)
+    crate::steam::storage::report(&root, account.as_deref())
 }
 
 // ---------------------------------------------------------------------------
-// Custom artwork
+// Dedicated Plugin Engine (Self-contained drop-in & GitHub hosted plugins)
 // ---------------------------------------------------------------------------
 
-/// Resolve the Steam root and the active account.
-fn artwork_context(state: &AppState, account_id3: Option<String>) -> AppResult<(PathBuf, String)> {
-    let root = steam_root(state)?;
-    let account = resolve_account(&root, state, account_id3).ok_or_else(|| {
-        AppError::NotFound("No Steam account found. Sign in to Steam at least once.".into())
-    })?;
-    Ok((root, account))
+#[tauri::command]
+pub fn get_installed_plugins(state: State<'_, AppState>) -> Vec<crate::plugins::PluginInfo> {
+    let settings = state.settings_snapshot();
+    let plugins = state.plugins.lock().expect("plugins lock poisoned");
+    plugins.list_plugins(&settings.enabled_plugins)
 }
 
-/// Inspect the custom artwork of every library entry (optionally limited to a
-/// set of app ids) in one round-trip.
 #[tauri::command]
-pub fn get_artwork(
-    app_ids: Option<Vec<u32>>,
-    account_id3: Option<String>,
-    state: State<'_, AppState>,
-) -> AppResult<Vec<GameArtwork>> {
-    let (root, account) = artwork_context(&state, account_id3)?;
-    let mut games = collect_library(&root, Some(&account))?;
-    if let Some(filter) = app_ids {
-        let wanted: BTreeSet<u32> = filter.into_iter().collect();
-        games.retain(|game| wanted.contains(&game.app_id));
-    }
-    let entries: Vec<(u32, String)> = games
-        .into_iter()
-        .map(|game| (game.app_id, game.name))
-        .collect();
-    Ok(artwork::inspect(
-        &artwork::grid_dir(&root, &account),
-        &entries,
-    ))
+pub fn toggle_plugin(id: String, enabled: bool, state: State<'_, AppState>) -> AppResult<()> {
+    let mut settings = state.settings.lock().expect("settings lock poisoned");
+    settings.enabled_plugins.insert(id, enabled);
+    crate::settings::save(&settings)?;
+    Ok(())
 }
 
-/// Read one slot's applied image as a `data:` URL (for previews).
 #[tauri::command]
-pub fn read_artwork(
-    app_id: u32,
-    slot: String,
-    account_id3: Option<String>,
-    state: State<'_, AppState>,
-) -> AppResult<Option<String>> {
-    let (root, account) = artwork_context(&state, account_id3)?;
-    let slot = ArtworkSlot::parse(&slot)?;
-    artwork::read_data_url(&artwork::grid_dir(&root, &account), app_id, slot)
+pub fn open_plugins_folder() -> AppResult<bool> {
+    let dir = crate::plugins::plugins_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    open_external_target(&dir.display().to_string())?;
+    Ok(true)
 }
 
-/// Download an image from a URL and apply it as a slot's custom artwork.
 #[tauri::command]
-pub async fn apply_artwork_from_url(
-    app_id: u32,
-    slot: String,
+pub async fn install_plugin_from_url(
     url: String,
-    account_id3: Option<String>,
     state: State<'_, AppState>,
-) -> AppResult<ArtworkOutcome> {
-    let (root, account) = artwork_context(&state, account_id3)?;
-    let slot = ArtworkSlot::parse(&slot)?;
+) -> AppResult<crate::plugins::PluginInfo> {
+    let client = crate::metadata::http_client();
+    let plugin_id = crate::plugins::PluginEngine::install_plugin_package(&url, &client).await?;
 
-    let client = metadata::http_client();
-    let response = client.get(&url).send().await?;
-    if !response.status().is_success() {
-        return Err(AppError::msg(format!(
-            "failed to download artwork (HTTP {})",
-            response.status()
-        )));
-    }
-    let bytes = response.bytes().await?;
-    artwork::apply_bytes(
-        &artwork::grid_dir(&root, &account),
-        app_id,
-        slot,
-        &bytes,
-        Some(url),
-    )
-}
+    let settings = state.settings_snapshot();
+    let mut plugins = state.plugins.lock().expect("plugins lock poisoned");
+    plugins.reload();
 
-/// Apply a local image file as a slot's custom artwork.
-#[tauri::command]
-pub fn apply_artwork_from_file(
-    app_id: u32,
-    slot: String,
-    path: String,
-    account_id3: Option<String>,
-    state: State<'_, AppState>,
-) -> AppResult<ArtworkOutcome> {
-    let (root, account) = artwork_context(&state, account_id3)?;
-    let slot = ArtworkSlot::parse(&slot)?;
-
-    let source = PathBuf::from(path.trim().trim_matches('"'));
-    if !source.is_file() {
-        return Err(AppError::NotFound(format!(
-            "{} is not a file",
-            source.display()
-        )));
-    }
-    let bytes = std::fs::read(&source)?;
-    artwork::apply_bytes(
-        &artwork::grid_dir(&root, &account),
-        app_id,
-        slot,
-        &bytes,
-        Some(source.to_string_lossy().to_string()),
-    )
-}
-
-/// Remove a slot's custom artwork (after archiving it).
-#[tauri::command]
-pub fn remove_artwork(
-    app_id: u32,
-    slot: String,
-    account_id3: Option<String>,
-    state: State<'_, AppState>,
-) -> AppResult<ArtworkOutcome> {
-    let (root, account) = artwork_context(&state, account_id3)?;
-    let slot = ArtworkSlot::parse(&slot)?;
-    artwork::remove(&artwork::grid_dir(&root, &account), app_id, slot)
+    plugins
+        .list_plugins(&settings.enabled_plugins)
+        .into_iter()
+        .find(|p| p.id == plugin_id)
+        .ok_or_else(|| AppError::NotFound(format!("Plugin '{plugin_id}' not found after installation")))
 }
 
 #[tauri::command]
-pub async fn steamgriddb_for_game(
-    app_id: u32,
-    name: String,
-    kind: String,
-    nsfw: Option<bool>,
+pub fn scan_all_platforms(
+    include_other_drives: Option<bool>,
     state: State<'_, AppState>,
-) -> AppResult<Vec<metadata::steamgriddb::SgdbAsset>> {
-    let key = require_key(&state, "steamgriddb")?;
-    let client = metadata::http_client();
-    metadata::steamgriddb::for_game_with_nsfw(&client, &key, app_id, &name, &kind, nsfw.unwrap_or(false)).await
-}
-
-/// Automatically fetch missing custom artwork for shortcuts or specified games.
-#[tauri::command]
-pub async fn auto_fetch_artwork_for_games(
-    app_ids: Option<Vec<u32>>,
-    account_id3: Option<String>,
-    state: State<'_, AppState>,
-) -> AppResult<usize> {
-    let (root, account) = artwork_context(&state, account_id3)?;
-    let games = collect_library(&root, Some(&account))?;
-
-    let targets: Vec<&Game> = if let Some(ref ids) = app_ids {
-        games.iter().filter(|g| ids.contains(&g.app_id)).collect()
-    } else {
-        // By default target all non-Steam shortcuts
-        games
-            .iter()
-            .filter(|g| g.kind == GameKind::Shortcut)
-            .collect()
+) -> crate::platforms::PlatformScan {
+    let settings = state.settings_snapshot();
+    let config = crate::platforms::ScanConfig {
+        sources: settings.platform_sources,
+        include_other_drives: include_other_drives.unwrap_or(false),
     };
-
-    let mut applied_total = 0;
-    for game in targets {
-        applied_total +=
-            fetch_and_apply_artwork_for_game(&state, &root, &account, game.app_id, &game.name)
-                .await;
-    }
-
-    Ok(applied_total)
+    let plugins = state.plugins.lock().expect("plugins lock poisoned");
+    plugins.scan_platforms(&config, &settings.enabled_plugins)
 }
 
-// ---------------------------------------------------------------------------
-// Dynamic (Filter-Spec) & Smart Collections
-// ---------------------------------------------------------------------------
-
-#[tauri::command]
-pub fn get_filter_presets() -> Vec<crate::steam::filters::FilterPreset> {
-    crate::steam::filters::load_presets()
-}
-
-#[tauri::command]
-pub fn save_filter_preset(
-    preset: crate::steam::filters::FilterPreset,
-) -> AppResult<crate::steam::filters::FilterPreset> {
-    crate::steam::filters::save_preset(preset)
-}
-
-#[tauri::command]
-pub fn delete_filter_preset(id: String) -> AppResult<()> {
-    crate::steam::filters::delete_preset(&id)
-}
-
-#[tauri::command]
-pub fn evaluate_filter(
-    filter: Filter,
-    account_id3: Option<String>,
-    state: State<'_, AppState>,
-) -> AppResult<Vec<u32>> {
-    let root = steam_root(&state)?;
-    let account = resolve_account(&root, &state, account_id3);
-    let games = collect_library(&root, account.as_deref())?;
-    Ok(crate::steam::filters::evaluate_filter(&filter, &games))
-}
-
-#[tauri::command]
-pub fn save_smart_collection(
-    name: String,
-    filter: Filter,
-    account_id3: Option<String>,
-    state: State<'_, AppState>,
-) -> AppResult<Collection> {
-    ensure_steam_closed()?;
-    let root = steam_root(&state)?;
-    let id3 = resolve_account(&root, &state, account_id3)
-        .ok_or_else(|| AppError::NotFound("No Steam account selected.".into()))?;
-
-    let mut file = collections::load_collections_file(&root, &id3)?.ok_or_else(|| {
-        AppError::NotFound("No Steam collection store found for this account.".into())
-    })?;
-
-    let games = collect_library(&root, Some(&id3))?;
-    crate::steam::filters::save_smart_collection(&mut file, &name, &filter, &games)
-}
-
-#[tauri::command]
-pub fn refresh_smart_collection(
-    collection_id: String,
-    account_id3: Option<String>,
-    state: State<'_, AppState>,
-) -> AppResult<Collection> {
-    ensure_steam_closed()?;
-    let root = steam_root(&state)?;
-    let id3 = resolve_account(&root, &state, account_id3)
-        .ok_or_else(|| AppError::NotFound("No Steam account selected.".into()))?;
-
-    let mut file = collections::load_collections_file(&root, &id3)?.ok_or_else(|| {
-        AppError::NotFound("No Steam collection store found for this account.".into())
-    })?;
-
-    let games = collect_library(&root, Some(&id3))?;
-    crate::steam::filters::refresh_smart_collection(&mut file, &collection_id, &games)
-}
-
-/// Statistics on the local compressed game catalog database and artwork cache.
-#[derive(Debug, Clone, Serialize)]
+/// Statistics on the persistent SQLite metadata database, artwork cache, and serverless Redis KV layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct CatalogStats {
-    pub total_games: usize,
+pub struct CacheStats {
     pub total_metadata_cached: usize,
     pub total_cached_artworks: usize,
+    pub total_kv_entries: usize,
 }
 
 #[tauri::command]
-pub fn get_catalog_stats(state: State<'_, AppState>) -> CatalogStats {
+pub fn get_cache_stats(state: State<'_, AppState>) -> CacheStats {
     let cache = state.cache.lock().expect("cache lock poisoned");
-    CatalogStats {
-        total_games: cache.catalog_count(),
+    CacheStats {
         total_metadata_cached: cache.count(),
         total_cached_artworks: cache.artwork_count(),
+        total_kv_entries: cache.keys_kv(None).len(),
     }
 }
 
-/// Clear all metadata, artwork, and key-value caches, reseeding the official community catalogue.
-/// Optionally triggers an immediate online catalogue and library metadata re-synchronization.
+/// Clear all metadata, artwork, and key-value caches.
+/// Optionally triggers an immediate library metadata and artwork re-synchronization.
 #[tauri::command]
 pub async fn clear_metadata_cache(
     account_id3: Option<String>,
@@ -2321,18 +1480,14 @@ pub async fn clear_metadata_cache(
     };
 
     if redownload.unwrap_or(true) {
-        // 1. Try syncing official online catalogue
-        let _ = sync_online_catalog(None, state.clone()).await;
-
-        // 2. Refresh library metadata and artwork
+        // Refresh library metadata and artwork
         let _ = sync_library_metadata(account_id3, Some(true), Some(true), state.clone()).await;
 
         let cache = state.cache.lock().expect("cache lock poisoned");
-        report.total_catalog_games = cache.catalog_count();
         report.total_metadata_records = cache.count();
         report.message = format!(
-            "Cache reset completed. Reseeded {} catalogue games and cached {} fresh metadata records.",
-            report.total_catalog_games, report.total_metadata_records
+            "Cache reset completed. Purged all stale entries and cached {} fresh metadata records.",
+            report.total_metadata_records
         );
     }
 
@@ -2410,227 +1565,108 @@ pub async fn cache_artwork_image(
     Ok(Some(data_url))
 }
 
-#[tauri::command]
-pub fn search_catalog(term: String, state: State<'_, AppState>) -> AppResult<Vec<AppMeta>> {
-    let cache = state.cache.lock().expect("cache lock poisoned");
-    Ok(cache.search_catalog(&term, 20))
-}
 
-#[tauri::command]
-pub fn export_catalog_archive(path: String, state: State<'_, AppState>) -> AppResult<usize> {
-    let cache = state.cache.lock().expect("cache lock poisoned");
-    let bytes = cache.export_catalog_compressed()?;
-    std::fs::write(&path, &bytes)?;
-    Ok(bytes.len())
-}
-
-#[tauri::command]
-pub fn import_catalog_archive(path: String, state: State<'_, AppState>) -> AppResult<usize> {
-    let bytes = std::fs::read(&path)?;
-    let mut cache = state.cache.lock().expect("cache lock poisoned");
-    cache.import_catalog_compressed(&bytes)
-}
-
-/// Default release download URL for the compiled community catalogue distribution.
-const DEFAULT_CATALOG_RELEASE_URL: &str =
-    "https://github.com/HELIX-Origin/Steam-Vault-Catalogue/releases/latest/download/catalogue.db.gz";
-
-/// Synchronize the local catalogue from the official HELIX Origin community catalogue.
-///
-/// This is consumer-only: it downloads the latest compressed distribution artifact
-/// and merges all game records into the local SQLite database.
-#[tauri::command]
-pub async fn sync_online_catalog(
-    custom_url: Option<String>,
-    state: State<'_, AppState>,
-) -> AppResult<usize> {
-    let client = metadata::http_client();
-    let url = custom_url
-        .filter(|u| !u.trim().is_empty())
-        .unwrap_or_else(|| DEFAULT_CATALOG_RELEASE_URL.to_string());
-
-    let res = client.get(&url).send().await?;
-    if !res.status().is_success() {
-        return Err(AppError::msg(format!(
-            "Failed to download online catalogue: HTTP {}",
-            res.status()
-        )));
-    }
-
-    let bytes = res.bytes().await?;
-    let mut cache = state.cache.lock().expect("cache lock poisoned");
-    cache.import_catalog_compressed(&bytes)
-}
-
-/// Helper to fetch and parse a single game entry from the official community catalogue on demand.
-pub async fn fetch_online_catalog_entry(
-    client: &reqwest::Client,
-    title_or_slug: &str,
-) -> Option<AppMeta> {
-    let clean = title_or_slug
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '-' })
-        .collect::<String>();
-    let mut slug = String::new();
-    let mut prev_dash = false;
-    for c in clean.chars() {
-        if c == '-' {
-            if !prev_dash {
-                slug.push('-');
-                prev_dash = true;
-            }
-        } else {
-            slug.push(c);
-            prev_dash = false;
-        }
-    }
-    let slug = slug.trim_matches('-');
-
-    let url = format!(
-        "https://raw.githubusercontent.com/HELIX-Origin/Steam-Vault-Catalogue/main/games/{}.json",
-        slug
-    );
-
-    let res = client.get(&url).send().await.ok()?;
-    if !res.status().is_success() {
-        return None;
-    }
-
-    let val: serde_json::Value = res.json().await.ok()?;
-    let title = val
-        .get("title")
-        .and_then(|v| v.as_str())
-        .unwrap_or(title_or_slug);
-    let meta_obj = val.get("metadata");
-    let ext_ids = val.get("externalIds");
-    let app_id = ext_ids
-        .and_then(|e| e.get("steamAppId"))
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0) as u32;
-
-    let mut meta = AppMeta {
-        app_id,
-        name: Some(title.to_string()),
-        developers: meta_obj
-            .and_then(|m| m.get("developers"))
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default(),
-        publishers: meta_obj
-            .and_then(|m| m.get("publishers"))
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default(),
-        genres: meta_obj
-            .and_then(|m| m.get("genres"))
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default(),
-        tags: meta_obj
-            .and_then(|m| m.get("tags"))
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default(),
-        categories: meta_obj
-            .and_then(|m| m.get("categories"))
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default(),
-        release_year: meta_obj
-            .and_then(|m| m.get("releaseYear"))
-            .and_then(|v| v.as_i64())
-            .map(|y| y as i32),
-        release_date: meta_obj
-            .and_then(|m| m.get("releaseDate"))
-            .and_then(|v| v.as_str())
-            .map(String::from),
-        user_score: meta_obj
-            .and_then(|m| m.get("userScore"))
-            .and_then(|v| v.as_f64()),
-        short_description: meta_obj
-            .and_then(|m| m.get("shortDescription"))
-            .and_then(|v| v.as_str())
-            .map(String::from),
-        header_image: meta_obj
-            .and_then(|m| m.get("headerImage"))
-            .and_then(|v| v.as_str())
-            .map(String::from),
-        capsule_image: meta_obj
-            .and_then(|m| m.get("capsuleImage"))
-            .and_then(|v| v.as_str())
-            .map(String::from),
-        hero_image: meta_obj
-            .and_then(|m| m.get("heroImage"))
-            .and_then(|v| v.as_str())
-            .map(String::from),
-        logo_image: meta_obj
-            .and_then(|m| m.get("logoImage"))
-            .and_then(|v| v.as_str())
-            .map(String::from),
-        locales: val
-            .get("locales")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default(),
-        providers: val
-            .get("providers")
-            .and_then(|v| serde_json::from_value(v.clone()).ok())
-            .unwrap_or_default(),
-        fetched_at: Some(chrono::Utc::now().timestamp()),
-        ..Default::default()
-    };
-    meta.enrich_from_providers();
-    Some(meta)
-}
-
-/// Fetch a single game's JSON entry from the official community repository on demand.
-#[tauri::command]
-pub async fn fetch_online_game_entry(
-    title_or_slug: String,
-    state: State<'_, AppState>,
-) -> AppResult<Option<AppMeta>> {
-    let client = metadata::http_client();
-    let meta = fetch_online_catalog_entry(&client, &title_or_slug).await;
-    if let Some(ref m) = meta {
-        let title = m.name.as_deref().unwrap_or(&title_or_slug);
-        let mut cache = state.cache.lock().expect("cache lock poisoned");
-        cache.upsert_catalog_entry(title, m, None, None);
-    }
-    Ok(meta)
-}
 
 // ---------------------------------------------------------------------------
 // Game launching & local actions
 // ---------------------------------------------------------------------------
+
+fn find_main_executable_in_dir(dir: &Path) -> Option<PathBuf> {
+    if !dir.is_dir() {
+        return None;
+    }
+
+    let mut candidate_dirs = vec![dir.to_path_buf()];
+    for sub in &["bin", "Binaries/Win64", "bin/x64", "bin/win64", "bin/x86"] {
+        let sub_path = dir.join(sub);
+        if sub_path.is_dir() {
+            candidate_dirs.push(sub_path);
+        }
+    }
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    for check_dir in candidate_dirs {
+        if let Ok(entries) = std::fs::read_dir(&check_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    #[cfg(windows)]
+                    let is_exec = path
+                        .extension()
+                        .and_then(|s| s.to_str())
+                        .map(|ext| ext.eq_ignore_ascii_case("exe"))
+                        .unwrap_or(false);
+
+                    #[cfg(not(windows))]
+                    let is_exec = {
+                        use std::os::unix::fs::PermissionsExt;
+                        entry
+                            .metadata()
+                            .map(|m| m.permissions().mode() & 0o111 != 0)
+                            .unwrap_or(false)
+                    };
+
+                    if is_exec {
+                        let name = path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        let is_unwanted = name.starts_with("unins")
+                            || name.starts_with("setup")
+                            || name.starts_with("dxsetup")
+                            || name.starts_with("vcredist")
+                            || name.contains("crashhandler")
+                            || name.contains("crashreporter")
+                            || name.contains("easyanticheat");
+                        if !is_unwanted {
+                            candidates.push(path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    candidates.sort_by_key(|p| p.metadata().map(|m| m.len()).unwrap_or(0));
+    candidates.pop()
+}
 
 #[tauri::command]
 pub fn launch_game(
     app_id: u32,
     launch_uri: Option<String>,
     exe: Option<String>,
+    platform: Option<String>,
+    state: State<'_, AppState>,
 ) -> AppResult<bool> {
-    // 1. Direct executable launch: If a valid executable file exists on disk, run it directly without launching any intermediate wrappers
-    if let Some(path) = exe.filter(|p| !p.is_empty()) {
-        let p = Path::new(&path);
-        if p.is_file() {
-            let mut cmd = std::process::Command::new(p);
-            if let Some(parent) = p.parent() {
-                cmd.current_dir(parent);
-            }
-            if cmd.spawn().is_ok() {
-                return Ok(true);
-            }
+    let cleaned_exe = exe.as_deref().and_then(|raw| {
+        let trimmed = raw.trim().trim_matches('"').trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
         }
-    }
+    });
 
-    // 2. Epic Games via Legendary CLI (avoids launching Epic Games Launcher)
-    if let Some(ref uri) = launch_uri.as_ref().filter(|u| !u.is_empty()) {
-        if uri.starts_with("legendary://") || uri.starts_with("com.epicgames.launcher://apps/") {
-            let app_name = if uri.starts_with("legendary://") {
-                &uri["legendary://".len()..]
-            } else {
-                let after = &uri["com.epicgames.launcher://apps/".len()..];
-                after.split('?').next().unwrap_or(after)
-            };
-            let bin = crate::platforms::launchers::legendary_binary_path();
-            if bin.is_file() && !app_name.is_empty() {
-                let mut cmd = std::process::Command::new(bin);
-                cmd.args(["launch", app_name]);
+    let is_wrapper = cleaned_exe.as_deref().map_or(false, |p| {
+        let p_lower = p.to_lowercase();
+        p_lower.ends_with("explorer.exe")
+            || p_lower.ends_with("cmd.exe")
+            || p_lower.ends_with("legendary.exe")
+            || p_lower.ends_with("legendary")
+    });
+
+    // 1. Direct executable launch: If a valid executable file exists on disk, run it directly without intermediate wrappers
+    if let Some(ref path_str) = cleaned_exe {
+        if !is_wrapper {
+            let p = Path::new(path_str);
+            if p.is_file() {
+                let mut cmd = std::process::Command::new(p);
+                if let Some(parent) = p.parent() {
+                    cmd.current_dir(parent);
+                }
                 if cmd.spawn().is_ok() {
                     return Ok(true);
                 }
@@ -2638,22 +1674,112 @@ pub fn launch_game(
         }
     }
 
-    // 3. Steam protocol (for Steam games or shortcuts registered in Steam)
-    if app_id > 0 {
-        let uri = format!("steam://run/{app_id}");
-        if open_external_target(&uri).is_ok() {
-            return Ok(true);
+    // Direct launch for installed Steam games: check common install directory for main binary
+    if app_id > 0 && app_id < 0x80000000 && cleaned_exe.is_none() {
+        if let Ok(root) = steam_root(&state) {
+            let libraries = crate::steam::paths::read_library_folders(&root);
+            for lib in &libraries {
+                let manifest_path = Path::new(&lib.path)
+                    .join("steamapps")
+                    .join(format!("appmanifest_{app_id}.acf"));
+                if manifest_path.is_file() {
+                    if let Ok(text) = std::fs::read_to_string(&manifest_path) {
+                        if let Ok(doc) = crate::steam::vdf::parse(&text) {
+                            if let Some(state_node) = doc.get("AppState") {
+                                if let Some(installdir) = state_node.get_str("installdir") {
+                                    let game_dir = Path::new(&lib.path)
+                                        .join("steamapps")
+                                        .join("common")
+                                        .join(installdir);
+                                    if let Some(direct_exe) = find_main_executable_in_dir(&game_dir) {
+                                        let mut cmd = std::process::Command::new(&direct_exe);
+                                        if let Some(parent) = direct_exe.parent() {
+                                            cmd.current_dir(parent);
+                                        }
+                                        if cmd.spawn().is_ok() {
+                                            return Ok(true);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
-    // 4. Storefront URI protocol fallback (e.g. uplay://, battlenet://, origin2://)
+    // 2. Epic Games via Official Epic Games Launcher protocol
+    let is_epic = platform.as_deref() == Some("epic")
+        || launch_uri.as_ref().map_or(false, |u| {
+            u.starts_with("com.epicgames.launcher://apps/") || u.starts_with("legendary://")
+        });
+
+    if is_epic {
+        let app_name = launch_uri.as_deref().and_then(|u| {
+            if u.starts_with("com.epicgames.launcher://apps/") {
+                let after = &u["com.epicgames.launcher://apps/".len()..];
+                Some(after.split('?').next().unwrap_or(after))
+            } else if u.starts_with("legendary://") {
+                Some(&u["legendary://".len()..])
+            } else {
+                None
+            }
+        });
+
+        if let Some(name) = app_name {
+            let epic_uri = format!("com.epicgames.launcher://apps/{name}?action=launch");
+            if open_external_target(&epic_uri).is_ok() {
+                return Ok(true);
+            }
+        }
+    }
+
+    // 3. Storefront official launcher URI (e.g. goggalaxy://, uplay://, battlenet://, shell:AppsFolder)
     if let Some(uri) = launch_uri.filter(|u| !u.is_empty()) {
         if open_external_target(&uri).is_ok() {
             return Ok(true);
         }
     }
 
+    // 4. Steam protocol for native Steam games (never use steam:// for non-Steam shortcuts)
+    if app_id > 0 && app_id < 0x80000000 {
+        let uri = format!("steam://run/{app_id}");
+        if open_external_target(&uri).is_ok() {
+            return Ok(true);
+        }
+    }
+
     Err(AppError::msg("No valid launch method found for game."))
+}
+
+/// Retrieve locally cached game metadata without making any network requests.
+#[tauri::command]
+pub fn get_cached_game_metadata(
+    app_id: u32,
+    _name: Option<String>,
+    _exe: Option<String>,
+    state: State<'_, AppState>,
+) -> AppResult<Option<AppMeta>> {
+    let cache = state.cache.lock().expect("cache lock poisoned");
+
+    // 1. Check shortcut-meta
+    if let Some(mut meta) = cache.get("shortcut-meta", app_id, None) {
+        if let Some(tags) = cache.get("steam-tags", app_id, None) {
+            meta.tags = tags.tags;
+        }
+        return Ok(Some(meta));
+    }
+
+    // 2. Check steam-store
+    if let Some(mut meta) = cache.get("steam-store", app_id, None) {
+        if let Some(tags) = cache.get("steam-tags", app_id, None) {
+            meta.tags = tags.tags;
+        }
+        return Ok(Some(meta));
+    }
+
+    Ok(None)
 }
 
 #[tauri::command]
@@ -2738,139 +1864,10 @@ fn open_external_target(target: &str) -> AppResult<()> {
     Ok(())
 }
 
-/// Supported EmulationStation Desktop Edition (ES-DE) systems.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct EsDeSystemInfo {
-    pub folder_name: String,
-    pub system_name: String,
-    pub console_platform: String,
-    pub extensions: Vec<String>,
-}
-
-pub const ES_DE_SYSTEM_DEFS: &[(&str, &str, &str, &[&str])] = &[
-    ("nes", "Nintendo Entertainment System", "NES", &[".nes", ".fds", ".unf", ".unif", ".zip", ".7z"]),
-    ("snes", "Super Nintendo Entertainment System", "Super Nintendo", &[".smc", ".sfc", ".fig", ".swc", ".bs", ".zip", ".7z"]),
-    ("n64", "Nintendo 64", "Nintendo 64", &[".z64", ".n64", ".v64", ".zip", ".7z"]),
-    ("gc", "Nintendo GameCube", "GameCube", &[".iso", ".gcm", ".gcz", ".rvz", ".ciso", ".wbfs"]),
-    ("wii", "Nintendo Wii", "Wii", &[".iso", ".wbfs", ".rvz", ".gcz", ".ciso", ".wad"]),
-    ("wiiu", "Nintendo Wii U", "Wii U", &[".wud", ".wux", ".rpx", ".wua"]),
-    ("switch", "Nintendo Switch", "Nintendo Switch", &[".nsp", ".xci", ".nca"]),
-    ("gb", "Game Boy", "Game Boy", &[".gb", ".zip", ".7z"]),
-    ("gbc", "Game Boy Color", "Game Boy Color", &[".gbc", ".zip", ".7z"]),
-    ("gba", "Game Boy Advance", "Game Boy Advance", &[".gba", ".zip", ".7z"]),
-    ("nds", "Nintendo DS", "Nintendo DS", &[".nds", ".zip", ".7z"]),
-    ("n3ds", "Nintendo 3DS", "Nintendo 3DS", &[".3ds", ".cia", ".cxi", ".cci"]),
-    ("virtualboy", "Nintendo Virtual Boy", "Virtual Boy", &[".vb", ".vboy", ".zip", ".7z"]),
-    ("gameandwatch", "Nintendo Game & Watch", "Game & Watch", &[".mgw", ".zip", ".7z"]),
-    ("psx", "Sony PlayStation", "PlayStation", &[".chd", ".cue", ".iso", ".pbp", ".bin", ".img"]),
-    ("ps2", "Sony PlayStation 2", "PlayStation 2", &[".chd", ".iso", ".cso", ".bin", ".gz"]),
-    ("ps3", "Sony PlayStation 3", "PlayStation 3", &[".iso", ".bin", ".pkg"]),
-    ("psp", "Sony PlayStation Portable", "PlayStation Portable", &[".iso", ".cso", ".chd", ".pbp"]),
-    ("psvita", "Sony PlayStation Vita", "PlayStation Vita", &[".vpk", ".zip"]),
-    ("mastersystem", "Sega Master System", "Sega Master System", &[".sms", ".zip", ".7z"]),
-    ("genesis", "Sega Genesis / Mega Drive", "Sega Genesis", &[".md", ".gen", ".smd", ".bin", ".zip", ".7z"]),
-    ("megadrive", "Sega Mega Drive", "Sega Genesis", &[".md", ".gen", ".smd", ".bin", ".zip", ".7z"]),
-    ("segacd", "Sega CD / Mega CD", "Sega CD", &[".chd", ".cue", ".iso", ".bin"]),
-    ("sega32x", "Sega 32X", "Sega 32X", &[".32x", ".zip", ".7z"]),
-    ("saturn", "Sega Saturn", "Sega Saturn", &[".chd", ".cue", ".iso", ".bin"]),
-    ("dreamcast", "Sega Dreamcast", "Dreamcast", &[".chd", ".gdi", ".cdi", ".cue"]),
-    ("gamegear", "Sega Game Gear", "Sega Game Gear", &[".gg", ".zip", ".7z"]),
-    ("arcade", "Arcade Games", "Arcade", &[".zip", ".7z"]),
-    ("mame", "MAME Arcade", "Arcade", &[".zip", ".7z", ".chd"]),
-    ("fbneo", "FinalBurn Neo", "Arcade", &[".zip", ".7z"]),
-    ("neogeo", "SNK Neo Geo", "Neo Geo", &[".zip", ".7z"]),
-    ("ngp", "SNK Neo Geo Pocket", "Neo Geo Pocket", &[".ngp", ".zip", ".7z"]),
-    ("ngpc", "SNK Neo Geo Pocket Color", "Neo Geo Pocket Color", &[".ngc", ".zip", ".7z"]),
-    ("wonderswan", "Bandai WonderSwan", "WonderSwan", &[".ws", ".zip", ".7z"]),
-    ("wonderswancolor", "Bandai WonderSwan Color", "WonderSwan Color", &[".wsc", ".zip", ".7z"]),
-    ("pcengine", "NEC PC Engine", "TurboGrafx-16", &[".pce", ".zip", ".7z"]),
-    ("pcenginecd", "NEC PC Engine CD", "TurboGrafx-16", &[".chd", ".cue", ".iso"]),
-    ("atari2600", "Atari 2600", "Atari 2600", &[".a26", ".bin", ".zip", ".7z"]),
-    ("atari5200", "Atari 5200", "Atari 5200", &[".a52", ".bin", ".zip", ".7z"]),
-    ("atari7800", "Atari 7800", "Atari 7800", &[".a78", ".bin", ".zip", ".7z"]),
-    ("atarijaguar", "Atari Jaguar", "Atari Jaguar", &[".j64", ".jag", ".zip", ".7z"]),
-    ("atarilynx", "Atari Lynx", "Atari Lynx", &[".lnx", ".zip", ".7z"]),
-    ("atarist", "Atari ST", "Atari ST", &[".st", ".stx", ".msa", ".ipf", ".zip"]),
-    ("3do", "Panasonic 3DO", "3DO", &[".chd", ".cue", ".iso"]),
-    ("colecovision", "ColecoVision", "ColecoVision", &[".col", ".bin", ".zip", ".7z"]),
-    ("intellivision", "Mattel Intellivision", "Intellivision", &[".int", ".bin", ".zip", ".7z"]),
-    ("msx", "MSX", "MSX", &[".rom", ".dsk", ".cas", ".zip", ".7z"]),
-    ("msx2", "MSX2", "MSX2", &[".rom", ".dsk", ".zip", ".7z"]),
-    ("c64", "Commodore 64", "Commodore 64", &[".d64", ".t64", ".prg", ".crt", ".zip"]),
-    ("amiga", "Commodore Amiga", "Amiga", &[".adf", ".hdf", ".ipf", ".lha", ".zip"]),
-    ("dos", "DOS PC", "DOS", &[".exe", ".com", ".bat", ".conf", ".zip"]),
-    ("scummvm", "ScummVM", "ScummVM", &[".scummvm", ".svm"]),
-];
-
-/// Get list of supported EmulationStation Desktop Edition (ES-DE) systems.
-#[tauri::command]
-pub fn get_es_de_systems() -> Vec<EsDeSystemInfo> {
-    ES_DE_SYSTEM_DEFS
-        .iter()
-        .map(|(folder, sys, console, exts)| EsDeSystemInfo {
-            folder_name: folder.to_string(),
-            system_name: sys.to_string(),
-            console_platform: console.to_string(),
-            extensions: exts.iter().map(|e| e.to_string()).collect(),
-        })
-        .collect()
-}
-
-/// Scaffold a standard EmulationStation (ES-DE) ROM directory hierarchy.
-///
-/// Creates standard subdirectories (e.g. `ROMs/gba`, `ROMs/gc`, `ROMs/ps2`)
-/// with a `systeminfo.txt` descriptor inside each system folder, matching
-/// the canonical retrogamecorps/ES-DE-Directories specification.
-#[tauri::command]
-pub fn scaffold_es_de_directories(target_path: String) -> AppResult<Vec<String>> {
-    let base = Path::new(&target_path);
-    if target_path.trim().is_empty() {
-        return Err(AppError::msg("Please specify a target directory to scaffold."));
-    }
-    if !base.exists() {
-        std::fs::create_dir_all(base)?;
-    }
-    let roms_root = if base
-        .file_name()
-        .and_then(|s| s.to_str())
-        .map(|s| s.eq_ignore_ascii_case("roms"))
-        .unwrap_or(false)
-    {
-        base.to_path_buf()
-    } else {
-        base.join("ROMs")
-    };
-    std::fs::create_dir_all(&roms_root)?;
-
-    let mut created_dirs = Vec::new();
-    for (dir_name, system_name, console_platform, extensions) in ES_DE_SYSTEM_DEFS {
-        let dir_path = roms_root.join(dir_name);
-        if !dir_path.exists() {
-            std::fs::create_dir_all(&dir_path)?;
-        }
-        let info_file = dir_path.join("systeminfo.txt");
-        if !info_file.exists() {
-            let exts_str = extensions.join(", ");
-            let content = format!(
-                "System: {system_name}\nConsole: {console_platform}\nDirectory: {dir_name}\nSupported Extensions: {exts_str}\nES-DE Compatible: Yes\n"
-            );
-            let _ = std::fs::write(&info_file, content);
-        }
-        created_dirs.push(dir_path.display().to_string());
-    }
-
-    Ok(created_dirs)
-}
-
 /// Detect the installed status and download URLs of all external platform launchers.
 #[tauri::command]
-pub fn get_installed_launchers(
-    state: State<'_, AppState>,
-) -> AppResult<Vec<crate::platforms::LauncherStatus>> {
-    let settings = state.settings.lock().expect("settings lock poisoned");
-    let emulator_configs = settings.emulator_configs.clone();
-    Ok(crate::platforms::detect_all_launchers(&emulator_configs))
+pub fn get_installed_launchers() -> AppResult<Vec<crate::platforms::LauncherStatus>> {
+    Ok(crate::platforms::detect_all_launchers())
 }
 
 /// Download and install the built-in standalone Legendary CLI and configure EOS service.

@@ -41,6 +41,30 @@ pub fn inspect_local_game(dir: Option<&Path>, exe: Option<&Path>) -> Option<AppM
             merge_meta(&mut meta, rpg_meta);
             detected = true;
         }
+
+        // 4. Unity Engine inspection
+        if let Some(unity_meta) = inspect_unity(dir) {
+            merge_meta(&mut meta, unity_meta);
+            detected = true;
+        }
+
+        // 5. Godot Engine inspection
+        if let Some(godot_meta) = inspect_godot(dir) {
+            merge_meta(&mut meta, godot_meta);
+            detected = true;
+        }
+
+        // 6. GameMaker Studio inspection
+        if let Some(gm_meta) = inspect_gamemaker(dir) {
+            merge_meta(&mut meta, gm_meta);
+            detected = true;
+        }
+
+        // 7. Unreal Engine inspection
+        if let Some(ue_meta) = inspect_unreal(dir) {
+            merge_meta(&mut meta, ue_meta);
+            detected = true;
+        }
     }
 
     // 4. Windows PE file header / version info string scanning
@@ -333,12 +357,101 @@ pub fn merge_meta(target: &mut AppMeta, source: AppMeta) {
     if target.release_year.is_none() && source.release_year.is_some() {
         target.release_year = source.release_year;
     }
-    if target.header_image.is_none() && source.header_image.is_some() {
-        target.header_image = source.header_image;
-    }
     if target.capsule_image.is_none() && source.capsule_image.is_some() {
         target.capsule_image = source.capsule_image;
     }
+}
+
+/// Inspect Unity game folder for app.info or UnityPlayer.dll
+fn inspect_unity(dir: &Path) -> Option<AppMeta> {
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.ends_with("_Data") && entry.path().is_dir() {
+                let app_info = entry.path().join("app.info");
+                if app_info.is_file() {
+                    if let Ok(content) = std::fs::read_to_string(&app_info) {
+                        let mut lines = content.lines();
+                        let company = lines.next().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+                        let product = lines.next().map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+                        return Some(AppMeta {
+                            name: product,
+                            developers: company.clone().map(|c| vec![c]).unwrap_or_default(),
+                            publishers: company.map(|c| vec![c]).unwrap_or_default(),
+                            tags: vec!["Engine: Unity".to_string()],
+                            ..Default::default()
+                        });
+                    }
+                }
+                return Some(AppMeta {
+                    tags: vec!["Engine: Unity".to_string()],
+                    ..Default::default()
+                });
+            }
+        }
+    }
+    if dir.join("UnityPlayer.dll").is_file() {
+        return Some(AppMeta {
+            tags: vec!["Engine: Unity".to_string()],
+            ..Default::default()
+        });
+    }
+    None
+}
+
+/// Inspect Godot project folder
+fn inspect_godot(dir: &Path) -> Option<AppMeta> {
+    let project_godot = dir.join("project.godot");
+    if project_godot.is_file() {
+        if let Ok(text) = std::fs::read_to_string(&project_godot) {
+            let mut name = None;
+            for line in text.lines() {
+                if let Some(val) = line.strip_prefix("config/name=\"") {
+                    if let Some(end) = val.find('"') {
+                        name = Some(val[..end].to_string());
+                    }
+                }
+            }
+            return Some(AppMeta {
+                name,
+                tags: vec!["Engine: Godot".to_string()],
+                ..Default::default()
+            });
+        }
+    }
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            if entry.path().extension().map_or(false, |ext| ext == "pck") {
+                return Some(AppMeta {
+                    tags: vec!["Engine: Godot".to_string()],
+                    ..Default::default()
+                });
+            }
+        }
+    }
+    None
+}
+
+/// Inspect GameMaker Studio projects
+fn inspect_gamemaker(dir: &Path) -> Option<AppMeta> {
+    if dir.join("data.win").is_file() || dir.join("game.win").is_file() || dir.join("game.unx").is_file() {
+        return Some(AppMeta {
+            tags: vec!["Engine: GameMaker".to_string()],
+            ..Default::default()
+        });
+    }
+    None
+}
+
+/// Inspect Unreal Engine installations
+fn inspect_unreal(dir: &Path) -> Option<AppMeta> {
+    if dir.join("Engine").is_dir() && (dir.join("Binaries").is_dir() || dir.join("Content").is_dir()) {
+        return Some(AppMeta {
+            tags: vec!["Engine: Unreal".to_string()],
+            ..Default::default()
+        });
+    }
+    None
 }
 
 #[cfg(test)]

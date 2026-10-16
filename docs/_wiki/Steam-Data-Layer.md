@@ -77,8 +77,8 @@ of the five slots is a fixed filename derived from the app id:
 | Icon | `<appid>_icon` |
 
 Steam Vault sniffs the image's real format and writes it with the matching `.png` / `.jpg` /
-`.jpeg` extension. Because the scheme is keyed by app id, it works equally for real Steam games and
-non-Steam shortcuts (whose synthetic appids begin at `0x80000000`). Replacing or removing an image
+`.jpeg` extension. Because the scheme is keyed by app id, it works equally for store-linked games and
+manually added local titles (whose synthetic appids begin at `0x80000000`). Replacing or removing an image
 copies the previous one into the timestamped backup store first.
 
 ## 🛡️ Write safety

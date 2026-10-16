@@ -49,7 +49,7 @@ which handle ordering for you.
 
 If launching Steam Vault or an external tool triggers a missing DLL error (such as `VCRUNTIME140.dll` or `MSVCP140.dll`):
 - Install the official [Microsoft Visual C++ 2015–2022 Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe).
-- If an emulator or companion tool prompts for .NET, install the [Microsoft .NET Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0).
+- If an external utility or companion tool prompts for .NET, install the [Microsoft .NET Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0).
 
 ## 🧾 Where are my backups?
 

@@ -58,19 +58,6 @@ fn default_true() -> bool {
     true
 }
 
-/// User-configured emulator executable and ROM directories.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct EmulatorConfig {
-    pub id: String,
-    pub name: String,
-    pub executable_path: String,
-    #[serde(default)]
-    pub rom_directories: Vec<String>,
-    #[serde(default)]
-    pub default_args: Option<String>,
-}
-
 /// Options controlling one [`scan_all`] pass.
 #[derive(Debug, Clone, Default)]
 pub struct ScanConfig {
@@ -78,8 +65,6 @@ pub struct ScanConfig {
     pub sources: Vec<PlatformSource>,
     /// Also look on every mounted drive for well-known game folders.
     pub include_other_drives: bool,
-    /// Explicitly configured emulators and their ROM directories.
-    pub emulator_configs: Vec<EmulatorConfig>,
 }
 
 impl ScanConfig {
@@ -102,7 +87,7 @@ impl ScanConfig {
     }
 }
 
-/// A storefront / launcher Steam Vault can detect games from.
+/// A storefront / launcher Universal Game Launcher can detect games from.
 ///
 /// Serialized with the same stable ids surfaced by [`Platform::id`]
 /// (`steam`, `gog`, `epic`, `battlenet`, …) so the frontend can index it
@@ -123,7 +108,6 @@ pub enum Platform {
     Amazon,
     Xbox,
     Rockstar,
-    Emulator,
     Other,
 }
 
@@ -141,7 +125,6 @@ impl Platform {
             Platform::Amazon => "amazon",
             Platform::Xbox => "xbox",
             Platform::Rockstar => "rockstar",
-            Platform::Emulator => "emulator",
             Platform::Other => "other",
         }
     }
@@ -159,7 +142,6 @@ impl Platform {
             Platform::Amazon => "Amazon Games",
             Platform::Xbox => "Xbox / Microsoft Store",
             Platform::Rockstar => "Rockstar",
-            Platform::Emulator => "Emulators & ROMs",
             Platform::Other => "Other",
         }
     }
@@ -176,7 +158,6 @@ impl Platform {
             "amazon" => Platform::Amazon,
             "xbox" => Platform::Xbox,
             "rockstar" => Platform::Rockstar,
-            "emulator" => Platform::Emulator,
             "other" => Platform::Other,
             _ => return None,
         })
@@ -259,12 +240,18 @@ pub struct PlatformScan {
 // Library grouped by source and powers the "Platform" categorization option.
 // ---------------------------------------------------------------------------
 
-/// `…/steam-vault/platform-map.json` under the OS config directory.
+/// `…/universal-game-launcher/platform-map.json` under the OS config directory.
 pub fn map_path() -> PathBuf {
-    dirs::config_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join("steam-vault")
-        .join("platform-map.json")
+    let base = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
+    let new_path = base.join("universal-game-launcher").join("platform-map.json");
+    if new_path.exists() {
+        return new_path;
+    }
+    let legacy_path = base.join("steam-vault").join("platform-map.json");
+    if legacy_path.exists() {
+        return legacy_path;
+    }
+    new_path
 }
 
 /// Load the persisted appid → platform map.

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Steam Vault",
+  "productName": "Universal Game Launcher",
   "version": "1.3.3",
-  "identifier": "org.helixorigin.steamvault",
+  "identifier": "org.helixorigin.universal-game-launcher",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Steam Vault",
+        "title": "Universal Game Launcher",
         "width": 1280,
         "height": 820,
         "minWidth": 940,
@@ -22,15 +22,15 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost https://*.steamstatic.com https://*.akamaihd.net https://*.steamgriddb.com https://images.igdb.com https://*.gog.com https://*.gog-statics.com https://*.pcgamingwiki.com https://upload.wikimedia.org blob: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://*.steamstatic.com https://en.wikipedia.org"
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost https://*.steamstatic.com https://*.akamaihd.net https://*.steamgriddb.com https://images.igdb.com https://*.gog.com https://*.gog-statics.com https://*.pcgamingwiki.com https://upload.wikimedia.org https://*.epicgames.com https://*.itch.zone https://img.itch.zone https://*.indiedb.com https://media.indiedb.com https://*.libretro.com https://*.google.com https://*.gstatic.com https://*.googleusercontent.com blob: data:; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost https://*.steamstatic.com https://en.wikipedia.org"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
     "category": "Utility",
-    "shortDescription": "Organize and manage your Steam library",
-    "longDescription": "Steam Vault is a cross-platform Steam library organizer. It reads your local Steam data to categorize, filter, and auto-organize games, and manages non-Steam shortcuts with SteamGridDB artwork.",
+    "shortDescription": "Universal game library organizer and launcher",
+    "longDescription": "Universal Game Launcher is a privacy-first, cross-platform game launcher and library organizer. It consolidates games across Steam, GOG, Epic Games, itch.io, emulators, and local installations with rich artwork, provider fallbacks, and direct launch support.",
     "icon": [
       "icons/32x32.png",
       "icons/64x64.png",

@@ -58,23 +58,22 @@ snake_case Rust parameters.
 | `sync_library_metadata` | Bulk warm cache for all games in the owned library. |
 | `fetch_owned_games` | Steam Web API owned games (keyed). |
 | `steamgriddb_search` / `steamgriddb_assets` | SteamGridDB search and artwork (keyed). |
-| `steamgriddb_for_game` | SteamGridDB assets resolved by exact app id (Steam) or by name (non-Steam shortcut). |
-| `auto_fetch_artwork_for_games` | Automatically resolve missing artwork for multiple games or shortcuts. |
+| `steamgriddb_for_game` | SteamGridDB assets resolved by exact app id or by name (manually added local games). |
+| `auto_fetch_artwork_for_games` | Automatically resolve missing artwork for multiple games or titles. |
 | `igdb_search` | IGDB search (keyed). |
 | `pcgamingwiki_lookup` / `wikipedia_summary` | Keyless supplemental providers. |
-| `wikipedia_game_lookup` | Keyless MediaWiki wikitext infobox parser for console games (developer, publisher, genre, year, console platforms). |
 | `vndb_lookup` | Keyless VNDB Kana API provider for visual novel metadata. |
-| `steam_store_search` | Keyless Steam storefront title search to resolve App IDs for non-Steam games. |
+| `steam_store_search` | Keyless Steam storefront title search to resolve App IDs for standalone & indie titles. |
 | `compute_autocats` | Build an AutoCat plan without writing. |
-| `detect_platforms` | Scans the machine for games installed by other launchers and emulators. |
+| `detect_platforms` | Scans the machine for games installed by official storefront launchers. |
 | `find_platform_folders` | Auto-detects existing library / config folders for a platform. |
-| `import_platform_games` | Writes selected platform games to `shortcuts.vdf` as shortcuts with tags and console identification. |
-| `set_game_platform` | Sets or clears the persisted platform storefront attribution for a shortcut. |
-| `get_owned_library` / `refresh_owned_games` | Returns / fetches the full owned Steam library. |
+| `import_platform_games` | Writes selected platform games to library with platform attribution. |
+| `set_game_platform` | Sets or clears the persisted platform storefront attribution for a title. |
+| `get_owned_library` / `refresh_owned_games` | Returns / fetches the full owned library. |
 | `compute_categorization` / `apply_categorization` | Previews and writes collections from a sorting option. |
 | `get_storage_report` | Reports mounted drives, library folders, and each installed game's size and placement. |
 | `preview_move_library` / `preview_move_game` | Dry-run a move: bytes to move, destination free space, and same-drive check. |
-| `move_library` / `move_game` | Move a library or game and update every `libraryfolders.vdf`. |
+| `move_library` / `move_game` | Move a library or game and update library folders. |
 | `add_library_folder` / `remove_library_folder` | Register or unregister a library folder. |
 | `get_artwork` | Inspect the five custom-artwork slots for a game. |
 | `read_artwork` | Read one slot's image as a data URL for preview. |
@@ -83,18 +82,12 @@ snake_case Rust parameters.
 | `get_filter_presets` / `save_filter_preset` / `delete_filter_preset` | Persist and manage named filter-spec presets. |
 | `evaluate_filter` | Evaluate Allowed/Required/Excluded dynamic filter specs against the current library. |
 | `save_smart_collection` / `refresh_smart_collection` | Save and re-evaluate native Valve `filterSpec` smart collections. |
-| `get_catalog_stats` | Report total games and version in the community game catalog database. |
-| `export_catalog_archive` / `import_catalog_archive` | Export or import compressed catalog database archives (`catalog.db.gz`). |
-| `sync_online_catalog` | Fetch and update the offline catalog from GitHub Releases or custom URLs. |
-| `fetch_online_game_entry` | Lookup a specific game title directly from the community catalog. |
 
 ## 🎮 External platforms & the owned library
 
-`platforms/` discovers games installed by other launchers from local sources only — launcher
+`platforms/` discovers games installed by official storefront launchers from local sources only — launcher
 manifests, the GOG registry, the itch app library folder, and the Windows Uninstall registry.
-Selected games are written to `shortcuts.vdf` with Steam-compatible appids
-(`crc32(exe + name) | 0x80000000`), and the appid → platform map is persisted so imported shortcuts
-stay attributable to their storefront.
+Selected games are registered with persistent platform attribution so titles stay attributable to their storefront.
 
 Because most of a large Steam library is not installed locally, `steam/owned.rs` caches the Web API's
 `GetOwnedGames` result and `load_library` merges it into the game list. Owned-but-not-installed games
@@ -102,13 +95,13 @@ are first-class candidates for categorization and collections.
 
 ## 🎨 Custom artwork
 
-`steam/artwork.rs` manages Steam's five custom-artwork slots — portrait grid (`<appid>p`), landscape
+`steam/artwork.rs` manages custom-artwork slots — portrait grid (`<appid>p`), landscape
 grid (`<appid>`), hero (`<appid>_hero`), logo (`<appid>_logo`), and icon (`<appid>_icon`) — in
 `userdata/<id3>/config/grid/`. The image's real format is sniffed from its bytes so it is written
 with the correct `.png` / `.jpg` / `.jpeg` extension, and a data-url helper lets the UI preview an
-existing slot. Matching SteamGridDB assets by **exact app id** sidesteps search ambiguity for real
-games, while non-Steam shortcuts (synthetic appids from `0x80000000`) are matched by name. Unlike
-collection and shortcut writes, artwork writes do **not** require Steam to be closed.
+existing slot. Matching SteamGridDB assets by **exact app id** sidesteps search ambiguity for store
+games, while manually added local games (synthetic appids from `0x80000000`) are matched by name. Unlike
+collection writes, artwork writes do **not** require Steam to be closed.
 
 ## 🗃️ Shared state
 

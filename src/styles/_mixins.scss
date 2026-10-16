@@ -1,23 +1,38 @@
-// Steam Vault — Reusable SCSS Mixins
-// Glassmorphism, Elevations, Animations, and Layout Utilities
+// Universal Game Launcher — High-Performance SCSS Mixins
+// Futuristic Dark Purple Theme: Hardware-Accelerated, Zero-Lag, Low Resource Footprint
 
-@mixin glass($bg: var(--panel), $blur: var(--blur), $border: var(--border), $shadow: var(--shadow-sm), $highlight: var(--glass-highlight)) {
+@mixin glass($bg: var(--panel), $border: var(--border), $shadow: var(--shadow-sm), $highlight: var(--glass-highlight)) {
   background: $bg;
-  backdrop-filter: blur($blur);
-  -webkit-backdrop-filter: blur($blur);
   border: 1px solid $border;
   border-radius: var(--radius);
   box-shadow: $highlight, $shadow;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.18s ease;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease, transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-@mixin glass-strong($bg: var(--panel-strong), $blur: var(--blur-strong), $border: var(--border-strong), $shadow: var(--shadow-elevated)) {
+@mixin glass-strong($bg: var(--panel-strong), $border: var(--border-strong), $shadow: var(--shadow-elevated)) {
   background: $bg;
-  backdrop-filter: blur($blur);
-  -webkit-backdrop-filter: blur($blur);
   border: 1px solid $border;
   border-radius: var(--radius);
   box-shadow: var(--glass-highlight-strong), $shadow;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+@mixin card-interactive {
+  cursor: pointer;
+  transform: translateZ(0);
+  will-change: transform, box-shadow;
+  transition: transform 0.14s cubic-bezier(0.2, 0.8, 0.2, 1), border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+
+  &:hover {
+    background: var(--panel-hover);
+    border-color: var(--border-strong);
+    transform: translateY(-2px) translateZ(0);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45), 0 0 12px rgba(168, 85, 247, 0.2);
+  }
+
+  &:active {
+    transform: translateY(0) scale(0.99) translateZ(0);
+  }
 }
 
 @mixin flex-center {
@@ -63,11 +78,11 @@
   }
 
   &::-webkit-scrollbar-thumb {
-    background: rgba(135, 195, 250, 0.16);
+    background: rgba(168, 85, 247, 0.22);
     border-radius: var(--radius-pill);
 
     &:hover {
-      background: rgba(135, 195, 250, 0.32);
+      background: rgba(192, 132, 252, 0.45);
     }
   }
 }

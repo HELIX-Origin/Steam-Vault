@@ -90,18 +90,6 @@ pub fn default_library_folders(platform: Platform) -> Vec<String> {
                 ));
             }
         }
-        Platform::Emulator => {
-            if let Some(h) = &home {
-                out.push(normalize_path(
-                    &h.join(".var/app/org.libretro.RetroArch/config/retroarch")
-                        .display()
-                        .to_string(),
-                ));
-                out.push(normalize_path(
-                    &h.join(".config/retroarch").display().to_string(),
-                ));
-            }
-        }
         Platform::Ubisoft
         | Platform::Ea
         | Platform::BattleNet
@@ -416,7 +404,7 @@ fn parse_desktop_game(path: &Path) -> Option<PlatformGame> {
 
     let game_name = name?;
     let lower_name = game_name.to_lowercase();
-    // Exclude Steam client, settings, emulators already detected separately
+    // Exclude Steam client, settings, and desktop utility items
     if lower_name == "steam" || lower_name.contains("settings") {
         return None;
     }

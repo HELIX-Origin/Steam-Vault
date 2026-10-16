@@ -20,6 +20,14 @@ pub enum Provider {
     Vndb,
     /// Wikipedia / Wikidata summaries (keyless).
     Wikipedia,
+    /// GOG Store and Galaxy (keyless).
+    Gog,
+    /// Epic Games Store Catalog (keyless).
+    Epic,
+    /// IndieDB Indie games and engines portal (keyless).
+    IndieDb,
+    /// itch.io Indie platform and games (keyless).
+    Itch,
 }
 
 impl Provider {
@@ -32,6 +40,10 @@ impl Provider {
             Provider::PcGamingWiki => "pcgamingwiki",
             Provider::Vndb => "vndb",
             Provider::Wikipedia => "wikipedia",
+            Provider::Gog => "gog",
+            Provider::Epic => "epic",
+            Provider::IndieDb => "indiedb",
+            Provider::Itch => "itch",
         }
     }
 
@@ -44,6 +56,10 @@ impl Provider {
             Provider::PcGamingWiki => "PCGamingWiki",
             Provider::Vndb => "VNDB",
             Provider::Wikipedia => "Wikipedia",
+            Provider::Gog => "GOG",
+            Provider::Epic => "Epic Games",
+            Provider::IndieDb => "IndieDB",
+            Provider::Itch => "itch.io",
         }
     }
 
@@ -61,6 +77,7 @@ impl Provider {
             Provider::SteamGridDb => "artwork",
             Provider::Igdb => "metadata",
             Provider::PcGamingWiki | Provider::Vndb | Provider::Wikipedia => "metadata",
+            Provider::Gog | Provider::Epic | Provider::IndieDb | Provider::Itch => "metadata",
         }
     }
 
@@ -85,6 +102,10 @@ impl Provider {
                 "Keyless visual novel database: developers, publishers, tags, and covers for visual novels and Ren'Py titles."
             }
             Provider::Wikipedia => "Keyless article summaries used as a fallback description.",
+            Provider::Gog => "Official GOG Store covers, heroes, developers, publishers, and tags.",
+            Provider::Epic => "Official Epic Games Store covers, banners, logos, and descriptions.",
+            Provider::IndieDb => "Indie games, engine classifications, developers, and artwork from IndieDB.",
+            Provider::Itch => "Indie games, creators, covers, and descriptions from itch.io.",
         }
     }
 }
@@ -101,7 +122,7 @@ pub struct ProviderInfo {
 }
 
 /// The full ordered provider list.
-pub const ALL: [Provider; 7] = [
+pub const ALL: [Provider; 11] = [
     Provider::SteamStore,
     Provider::SteamWebApi,
     Provider::SteamGridDb,
@@ -109,6 +130,10 @@ pub const ALL: [Provider; 7] = [
     Provider::PcGamingWiki,
     Provider::Vndb,
     Provider::Wikipedia,
+    Provider::Gog,
+    Provider::Epic,
+    Provider::IndieDb,
+    Provider::Itch,
 ];
 
 /// Describe every provider.

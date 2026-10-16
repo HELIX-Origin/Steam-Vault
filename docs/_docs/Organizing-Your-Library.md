@@ -43,8 +43,8 @@ Use **Select all** to act on everything currently shown, and **Clear** to reset 
 ## 🏷️ Reading collection membership
 
 Each row lists the collections a game already belongs to as small pills, so you can see membership
-at a glance. Favorites are marked with a star, and non-Steam shortcuts carry a pill naming their
-source platform.
+at a glance. Favorites are marked with a star, and titles carry a badge naming their
+source platform (e.g. Steam, Epic, GOG, or Other for manually added games).
 
 ## 📊 Columns
 

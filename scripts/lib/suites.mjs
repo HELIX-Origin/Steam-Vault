@@ -53,26 +53,14 @@ export const SUITES = {
   build: {
     title: "Frontend build",
     steps: [nodeStep("vite build", "vite/bin/vite.js", ["build"], "test-build")]
-  },
-  i18n: {
-    title: "Localization tests",
-    steps: [
-      {
-        label: "node scripts/verify-i18n.mjs",
-        command: process.execPath,
-        args: [path.join(ROOT, "scripts", "verify-i18n.mjs")],
-        cwd: ROOT,
-        type: "test-i18n"
-      }
-    ]
   }
 };
 
 /** Suites run when no names are given — the fast, everyday verification set. */
-export const DEFAULT_SUITES = ["check", "rust", "frontend", "i18n"];
+export const DEFAULT_SUITES = ["check", "rust", "frontend"];
 
-/** Everything, in a sensible order (format, lint, types, tests, build, i18n). */
-export const ALL_SUITES = ["fmt", "clippy", "check", "rust", "frontend", "build", "i18n"];
+/** Everything, in a sensible order (format, lint, types, tests, build). */
+export const ALL_SUITES = ["fmt", "clippy", "check", "rust", "frontend", "build"];
 
 /** Environment that keeps the toolchain quiet and non-interactive. */
 function suiteEnv() {

@@ -38,7 +38,6 @@
     itch: { label: "itch.io", icon: "⌗", color: "#ef4444" },
     amazon: { label: "Amazon Games", icon: "📦", color: "#eab308" },
     rockstar: { label: "Rockstar Games", icon: "★", color: "#fbbf24" },
-    emulator: { label: "Emulators", icon: "🕹", color: "#ec4899" },
     other: { label: "Other", icon: "⚙", color: "#94a3b8" }
   };
 
@@ -119,8 +118,11 @@
     }
   }
 
-  async function refresh() {
-    loading.set(true);
+  async function refresh(isManual = false) {
+    const hasData = $games.length > 0;
+    if (!hasData || isManual) {
+      loading.set(true);
+    }
     try {
       const [steamInstall, lib, report] = await Promise.all([
         api.detectSteam().catch(() => null),
@@ -130,13 +132,18 @@
       if (steamInstall) install.set(steamInstall);
       games.set(lib);
       storageReport = report;
-      await Promise.all([loadNotifications(), loadDownloads()]);
       error.set(null);
     } catch (e) {
       error.set(errorMessage(e));
     } finally {
-      loading.set(false);
+      if (!hasData || isManual) {
+        loading.set(false);
+      }
     }
+
+    // Load background notification feeds and downloads asynchronously without blocking dashboard mount
+    loadNotifications().catch(() => {});
+    loadDownloads().catch(() => {});
   }
 
   // Library computations
@@ -331,7 +338,7 @@
           </span>
         {/if}
       </button>
-      <button class="btn btn-ghost" onclick={refresh} disabled={$loading}>
+      <button class="btn btn-ghost" onclick={() => refresh(true)} disabled={$loading}>
         <span class:spin={$loading}>🔄</span>
         <span>{$loading ? $t("common.refreshing") : $t("common.refresh")}</span>
       </button>
