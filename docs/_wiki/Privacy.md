@@ -26,15 +26,18 @@ Universal Game Launcher operates fully offline. The only outbound HTTP requests 
 
 | Destination | When Triggered | API Key Required |
 | :--- | :--- | :--- |
-| `store.steampowered.com` | Fetching Steam Store metadata & official capsules | ❌ No |
-| `catalog.gog.com` | Fetching official GOG catalog descriptions & covers | ❌ No |
-| `www.pcgamingwiki.com` | Fetching game engine, taxonomy, and box art | ❌ No |
-| `en.wikipedia.org` | Fetching article summaries & high-resolution cover images | ❌ No |
-| `api.vndb.org` | Fetching visual novel metadata & tags | ❌ No |
-| `api.steampowered.com` | Fetching Steam owned games list / player summaries | ✅ Yes (Optional) |
-| `api.steamgriddb.com` | Searching and downloading custom grids, heroes, logos, icons | ✅ Yes (Optional) |
-| `id.twitch.tv` / `api.igdb.com` | Fetching IGDB game summaries and companies | ✅ Yes (Optional) |
-| `itch.io/api` | Fetching itch.io library titles | ✅ Yes (Optional) |
+| `store.steampowered.com` | Fetching official Steam Store details & CDN artwork | ❌ No |
+| `embed.gog.com` | Fetching official GOG catalog descriptions & covers | ❌ No |
+| `store-content.ak.epicgames.com` | Fetching Epic Games Store catalog manifests & keyart | ❌ No |
+| `itch.io/api` | Fetching itch.io indie game details & creator profiles | ❌ No |
+| `api.thegamesdb.net` | Fetching retro console ROM metadata & authentic box art | ❌ No (Optional dev key) |
+| `screenscraper.fr` | Fetching multi-console ROM box art, wheel logos & video snaps | ❌ No |
+| `howlongtobeat.com` | Fetching community gameplay completion times | ❌ No |
+| `www.pcgamingwiki.com` | Fetching game engine, FOV/widescreen fixes, and save locations | ❌ No |
+| `www.protondb.com` | Fetching Linux & Steam Deck compatibility ratings | ❌ No |
+| `www.gamerpower.com` | Fetching 100% free game giveaways, promotions, and patch notes | ❌ No |
+| `api.steamgriddb.com` | Fetching community capsule covers, heroes, logos, and square icons | ✅ Yes (Optional) |
+| `id.twitch.tv` / `api.igdb.com` | Fetching IGDB game taxonomy, franchise links, and critic ratings | ✅ Yes (Optional) |
 
 Each provider endpoint receives only what its specific API query requires — typically a game title string or numeric app ID, along with your user-configured API key (if keyed).
 

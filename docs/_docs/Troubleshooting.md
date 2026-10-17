@@ -8,97 +8,65 @@ nav_order: 10
 
 # Troubleshooting
 
-This guide covers common issues, platform detection quirks, and steps to resolve them.
+This guide covers common issues, platform detection quirks, and steps to resolve them in Universal Game Launcher.
 
 ---
 
 ## 🧭 Platform or Launcher Not Detected
 
-If games from an installed launcher (Steam, Epic, GOG, Xbox, EA, Ubisoft, Battle.net, etc.) do not appear:
+If games from an installed launcher (Steam, Epic, GOG, Xbox, EA, Ubisoft, Battle.net, itch, Amazon, or Rockstar) do not appear in your library:
 
-1. **Verify the Platform Plugin is Enabled**: Go to **Settings → Plugins** and ensure the platform integration plugin is enabled.
-2. **Check Custom Install Directories**: If you installed a client or games to a non-standard drive, open **Settings → Plugin Settings**, select the platform's tab, and specify custom known directory paths.
-3. **Trigger a Background Scan**: Click the `↻ Scan` button at the top of the left games list sidebar.
-4. **Client Installation State**: Ensure the launcher client has been run at least once so it generates its local manifest databases and registry keys.
+1. **Verify the Platform Plugin is Enabled**: Go to **Settings → Plugins** and ensure the corresponding platform integration plugin is enabled.
+2. **Specify Custom Executable or Install Paths**: If you installed a client or games to a non-standard drive, open **Settings → Plugin Settings**, select the platform's tab, and specify custom executable or installation folder paths.
+3. **Trigger a Background Scan**: Open the **Library** view and click the **↻ Scan** button at the top of the left games list sidebar.
+4. **Client State**: Ensure the launcher client has been opened at least once so it generates its local manifest databases and registry keys.
 
 ---
 
-## 🛑 "Client is Running" During File Operations
+## 🕹️ EmulationStation & ROM Scans Not Finding Games
 
-When performing physical file relocations (such as moving Steam library games between drives), Universal Game Launcher requires the client to be closed to prevent cloud save sync conflicts and manifest file locking.
+If console ROMs are not appearing in your library:
 
-- **Quit the Client Completely**: Check your system tray (notification area) and exit the client (Steam, Epic, etc.) before initiating disk moves.
-- **Normal Operations Do Not Require Closing**: Note that browsing, launching games, organizing collections, and applying custom artwork can all be performed while clients are running freely.
+1. **Verify the EmulationStation Plugin is Enabled**: Go to **Settings → Plugins** and check that `platform-emulationstation` is enabled.
+2. **Configure ROMs Root Directory**: Open **Settings → Plugin Settings → EmulationStation Integration** and ensure `romsPath` points to the folder containing your console subdirectories (e.g. `D:\Emulation\ROMs`).
+3. **Verify Folder Scaffolding**: Ensure console folders follow standard lowercase naming (`nes`, `snes`, `n64`, `gc`, `wii`, `psx`, `ps2`, `gba`, `nds`, etc.). Universal Game Launcher can scaffold these automatically when `autoScaffold: true` is enabled.
+4. **Trigger Scan**: Click **↻ Scan** in the Library sidebar to normalize titles and import ROMs.
 
 ---
 
 ## 🔑 Plugin API Key Verification Fails
 
-If SteamGridDB, IGDB, or itch.io lookups fail or return authorization errors:
+If SteamGridDB or IGDB lookups fail or return authorization errors:
 
 1. Open **Settings → Plugin Settings**.
-2. Select the provider's tab in the left rail.
-3. Verify your API credentials:
-   - **SteamGridDB**: Ensure the API key is active and has no leading/trailing spaces.
+2. Select the provider's tab in the left rail:
+   - **SteamGridDB**: Ensure your API key from `steamgriddb.com/profile/preferences/api` is pasted without leading or trailing whitespace.
    - **IGDB**: Ensure both the **Client ID** and **Client Secret** are provided (both are required by Twitch OAuth).
-4. Click **⚡ Test Connection** in the dialog to verify credentials directly against the provider's API.
+3. Click **⚡ Test Connection** in the dialog to verify credentials directly against the provider's API endpoint.
 
 ---
 
-## 🧩 Community Drop-In Plugin Issues
+## 🔄 Reverting Metadata to Official Storefront Defaults
 
-If a plugin dropped into `%APPDATA%\universal-game-launcher\plugins\<plugin_id>\` does not load:
+If metadata was customized or enhanced by a third-party metadata provider and you want to restore official storefront details:
 
-1. **Check Manifest Filename**: The folder must contain a valid `plugin.json` (or `index.json` / `manifest.json`).
-2. **Validate JSON Syntax**: Ensure there are no syntax errors (such as trailing commas) in your manifest file.
-3. **Required Fields**: Ensure `id`, `name`, `version`, and `type` (`platform`, `metadata`, `media`, or `utility`) are specified.
-4. **Reload Plugins**: Click **Settings → Plugins → Reload Plugins** or restart the application to trigger a directory re-scan.
-
----
-
-## ⚙️ Missing System Runtimes (`VCRUNTIME140.dll` or MSVC)
-
-If launching the application displays a missing runtime error:
-- Install the official [Microsoft Visual C++ 2015–2022 Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe).
-- If using companion external tools that require .NET, install the [Microsoft .NET Desktop Runtime (x64)](https://dotnet.microsoft.com/download/dotnet/8.0).
+1. Select the game in the **Library** showcase view.
+2. Click **Manage → Manage Metadata** (or click the three-dot action menu).
+3. Click **↺ Reset Cache to Provider Defaults**.
+4. Universal Game Launcher will clear the cached enhancement record and re-query the authoritative game provider plugin.
 
 ---
 
-## 🧱 Build Fails on Fresh Clone (`cargo check`)
+## ⚙️ Missing System Runtimes (`VCRUNTIME140.dll` or WebView2)
 
-The Tauri build embeds the compiled SvelteKit frontend into the Rust binary. On a fresh repository clone, you must build the frontend before compiling Rust:
-
-```bash
-# Correct build sequence:
-npm install
-npm run build
-npm run check
-cargo test --manifest-path src-tauri/Cargo.toml
-```
-
-Alternatively, use `npm run tauri:dev` or `npm run tauri:build`, which orchestrate the frontend and backend build pipelines automatically.
+On fresh Windows installations:
+- If the application fails to launch with a missing DLL error, install the [Microsoft Visual C++ 2015–2022 Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe).
+- If the window fails to render on Windows 10, ensure the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) is installed (preinstalled on Windows 11).
 
 ---
 
-## 🧾 Where are My Settings and Backups?
+## ➡️ Next Steps
 
-All data is stored locally in your operating system's standard application data directory:
-- **Windows**: `%APPDATA%\universal-game-launcher\`
-- **Linux**: `~/.config/universal-game-launcher/`
-- **macOS**: `~/Library/Application Support/universal-game-launcher/`
-
-Inside this folder:
-- `database.sqlite` — SQLite database storing collections, tags, favorites, and cached metadata.
-- `plugins/` — Drop-in community plugins folder (accessible via **Settings → 📂 Open Plugins Folder**).
-- `backups/` — Timestamped backups made prior to physical file modifications.
-
----
-
-## 🆘 Still Stuck?
-
-Open an issue on the [Universal Game Launcher Issue Tracker](https://github.com/HELIX-Origin/Universal-Game-Launcher/issues) with:
-1. Your operating system and version.
-2. Universal Game Launcher version.
-3. Steps to reproduce the issue and any relevant log output from the `logs/` directory.
-
-> **Caution:** Never paste private API keys, passwords, or personal credentials into public issue reports.
+- [Settings & Plugin Configuration](Settings-and-API-Keys.md) — configuring plugin settings.
+- [Available Plugins Catalog](Available-Plugins.md) — inspecting available plugins.
+- [FAQ](FAQ.md) — frequently asked questions.

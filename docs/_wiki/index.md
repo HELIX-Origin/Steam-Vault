@@ -1,14 +1,14 @@
 ---
 layout: wiki
 title: Universal Game Launcher Technical Wiki
-summary: Architecture, in-app modular plugin system, Rust backend, SvelteKit frontend, and security model.
+summary: Architecture, in-app modular plugin system, developer guides, Rust backend, SvelteKit frontend, and security model.
 permalink: /wiki/
 nav_order: 1
 ---
 
 # Universal Game Launcher Technical Wiki
 
-This technical wiki documents how Universal Game Launcher is built: the decoupled core architecture, the in-app modular plugin system, the Rust backend with generic SQLite persistence and fast-tier in-memory KV caching, the SvelteKit frontend, and the non-invasive security and privacy model.
+This technical wiki documents how Universal Game Launcher is built: the decoupled core architecture, the in-app modular plugin system, the developer guides for authoring plugins, the Rust backend with generic SQLite persistence and fast-tier in-memory KV caching, the SvelteKit frontend, and the non-invasive security and privacy model.
 
 ---
 
@@ -26,6 +26,7 @@ This technical wiki documents how Universal Game Launcher is built: the decouple
   <ul>
     <li><a href="{{ '/wiki/Architecture/' | relative_url }}">Architecture</a> — core launcher responsibilities, in-app modular plugin boundaries, and module map.</li>
     <li><a href="{{ '/wiki/Plugins-Architecture/' | relative_url }}">Plugins Architecture</a> — dedicated per-plugin files, `UniversalPlugin` TypeScript framework, client capabilities, and tabbed settings dialog.</li>
+    <li><a href="{{ '/wiki/Plugin-Developer-Guide/' | relative_url }}">Plugin Developer Guide</a> — comprehensive step-by-step developer tutorial with copy-pasteable TypeScript templates for Platform, Metadata, Utility, and Media plugins.</li>
   </ul>
 </section>
 
@@ -39,7 +40,7 @@ This technical wiki documents how Universal Game Launcher is built: the decouple
   </div>
   <ul>
     <li><a href="{{ '/wiki/Backend-Rust/' | relative_url }}">Backend (Rust)</a> — the Tauri v2 command surface, in-memory KV tier (`mem_kv`), and SQLite persistence (`database.sqlite`).</li>
-    <li><a href="{{ '/wiki/Frontend-SvelteKit/' | relative_url }}">Frontend (SvelteKit)</a> — frameless titlebar navigation, Steam/GOG sidebar games list, showcase view, and `PluginSettingsDialog`.</li>
+    <li><a href="{{ '/wiki/Frontend-SvelteKit/' | relative_url }}">Frontend (SvelteKit)</a> — frameless titlebar navigation, Library-only sidebar games list, showcase view, and `PluginSettingsDialog`.</li>
   </ul>
 </section>
 

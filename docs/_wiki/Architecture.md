@@ -31,10 +31,10 @@ flowchart TB
     end
 
     subgraph Plugins["Native Modular Plugins (src/lib/plugins/)"]
-        Platforms["Platform Plugins (Steam, Epic [Official & Legendary], GOG, Xbox, EA, Ubisoft, Battle.net, itch, Rockstar, Amazon, Standalone)"]
-        Meta["Metadata Plugins (Steam Store, GOG, IGDB, SGDB, PCGamingWiki, ProtonDB, HLTB, itch)"]
-        Utility["Utility Plugins (Free Game Alerts, Store Deals, Patch Notes, Storage Analyzer)"]
-        Media["Media Plugins (Video Trailers, Ambient Audio)"]
+        Platforms["12 Platform Plugins (Steam, Epic, GOG, Xbox, EA, Ubisoft, Battle.net, itch, Amazon, Rockstar, Standalone, EmulationStation)"]
+        Meta["11 Metadata Plugins (Steam Store, GOG, Epic, itch, SGDB, IGDB, TheGamesDB, ScreenScraper, HLTB, PCGW, ProtonDB)"]
+        Utility["2 Utility Plugins (GamerPower Feeds & Alerts, Storage Analyzer)"]
+        Media["2 Media Plugins (Video Trailers, Ambient Audio)"]
     end
 
     Frontend -->|Typed IPC| IPC
@@ -51,8 +51,8 @@ flowchart TB
 
 ### 1. The Core Application
 1. **Ergonomic UI System:**
-   - **Custom Titlebar Navigation:** Seamless switching between Dashboard, Library, Storage, Plugins, and Settings with instant 0ms tab rendering.
-   - **Steam & GOG Galaxy-Style Left Sidebar:** Instant search filter, status pills (All, Installed, ★ Favorites), platform accordions with live game counts, collections tree, and instant game selection.
+   - **Custom Titlebar Navigation:** Seamless switching between Dashboard, Library, Store, Social, Storage, Plugins, and Settings with instant 0ms tab rendering.
+   - **Steam & GOG Galaxy-Style Left Sidebar:** Dedicated to the Library view with instant search filter, status pills (All, Installed, ★ Favorites), platform accordions with live game counts, and collections tree.
    - **Main Game Showcase View:** 16:9 hero wallpaper banner with dark vignette, title logo typography, prominent PLAY NOW launch button, 10-screenshot gallery with fullscreen lightbox, and custom artwork studio.
 2. **Universal Non-Blocking Background Workers:**
    - Heavy filesystem and disk scans are offloaded to background threads via `tauri::async_runtime::spawn_blocking`, eliminating UI hangs across all tabs.
@@ -65,25 +65,26 @@ flowchart TB
 
 ### 2. Features Provided via Plugins (`src/lib/plugins/`)
 All external integrations are decoupled into the in-app modular plugin ecosystem:
-- **Game Platform Integrations (`src/lib/plugins/platforms/`):** Discovering installed titles and delegating launch protocols for Steam, Epic Games (official launcher or optional Legendary CLI), GOG Galaxy, Xbox, EA App, Ubisoft Connect, Battle.net, itch.io, Amazon Games, Rockstar Games, and Standalone Executables.
-- **Metadata Providers (`src/lib/plugins/metadata/`):** Retrieving covers, heroes, descriptions, release years, tags, and reviews via Steam Store, GOG Catalog, IGDB, SteamGridDB, PCGamingWiki, ProtonDB, HowLongToBeat, and itch.io.
-- **Utility Plugins (`src/lib/plugins/utility/`):** Delivering live notifications, giveaways, deals, patch notes, and disk storage inspection.
+- **Game Platform Integrations (`src/lib/plugins/platforms/`):** Discovering installed titles, querying native store metadata, and delegating launch protocols for Steam, Epic Games (official launcher or optional Legendary CLI), GOG Galaxy, Xbox, EA Desktop, Ubisoft Connect, Battle.net, itch.io, Amazon Games, Rockstar Games, Standalone Executables, and EmulationStation.
+- **Metadata Providers (`src/lib/plugins/metadata/`):** Retrieving covers, heroes, descriptions, release years, tags, and reviews via Steam Store, GOG Catalog, Epic Games Store, itch.io, SteamGridDB, IGDB, TheGamesDB, ScreenScraper, PCGamingWiki, ProtonDB, and HowLongToBeat.
+- **Utility Plugins (`src/lib/plugins/utility/`):** Delivering live notifications, giveaways, deals, patch notes, and disk storage inspection via GamerPower and Storage Analyzer.
 - **Media Enhancements (`src/lib/plugins/media/`):** Video trailer streaming and ambient game soundtrack playback.
 - **Decoupled Settings Forms:** Each plugin exports its own `PluginSettingsConfig` schema, rendered inside the dedicated tabbed `PluginSettingsDialog.svelte` sub-window.
 
 ---
 
-## 🔒 Non-Invasive Safety Invariant
+## 🔒 Non-Invasive Safety & Isolation Invariant
+
 The core launcher operates completely non-invasively:
-- Never modifies or writes to external client files (no Steam VDF tampering).
-- Never requires storefront clients to be closed during normal operation.
-- Never handles or stores user passwords or login credentials.
-- All game launching delegates to official client protocols or standalone binaries.
+- **Zero External File Writes:** Never modifies or writes to external client files (no Steam VDF tampering).
+- **Never Blocks Clients:** Never requires storefront clients to be closed during normal operation.
+- **Zero Credential Harvesting:** Never handles or stores user passwords or login credentials.
+- **Cache Reset Invariant:** Game providers cannot overwrite metadata contributed by metadata providers unless the user explicitly resets the metadata cache.
 
 ---
 
 ## ➡️ Next Steps
 
-- [Plugins Architecture](Plugins-Architecture.md) — modular plugin engine details.
-- [Backend Rust Architecture](Backend-Rust.md) — internal Rust modules and IPC.
-- [Security Model](Security.md) — non-invasive security and credential boundaries.
+- [Plugins Architecture & Ecosystem](Plugins-Architecture.md) — deep dive into the plugin engine.
+- [Plugin Developer Guide](Plugin-Developer-Guide.md) — step-by-step developer tutorial with templates.
+- [Backend (Rust)](Backend-Rust.md) — IPC commands and database layer.

@@ -29,9 +29,11 @@ It compiles to static HTML/CSS/JS assets bundled directly into the Tauri desktop
 
 | Path | Role |
 | :--- | :--- |
-| `src/routes/+layout.svelte` | App shell: Custom frameless title bar navigation (Dashboard, Library, Storage, Plugins, Settings) and the persistent **Steam & GOG Galaxy-style left games list sidebar**. |
+| `src/routes/+layout.svelte` | App shell: Custom frameless title bar navigation (Dashboard, Library, Store, Social, Storage, Plugins, Settings) and the Library-dedicated **Steam & GOG Galaxy-style left games list sidebar**. |
 | `src/routes/+page.svelte` | **Dashboard**: Quick launch carousel, library statistics, volume utilization snapshot, and plugin-powered free games and deals feeds. |
-| `src/routes/library/+page.svelte` | **Library Showcase**: Dedicated selected game showcase featuring 16:9 hero wallpaper, capsule, title logo, big prominent PLAY NOW button, 10-screenshot gallery with lightbox, and custom artwork studio. |
+| `src/routes/library/+page.svelte` | **Library Showcase**: Dedicated selected game showcase featuring 16:9 hero wallpaper, capsule, title logo, big prominent PLAY NOW button, 10-screenshot gallery with lightbox, metadata enhancement workflows, and custom artwork studio. |
+| `src/routes/store/+page.svelte` | **Store**: Multi-storefront game discovery and deals browser delegating securely to official store clients. |
+| `src/routes/social/+page.svelte` | **Social**: Unified friends list and activity tracker aggregating status across connected platform plugins. |
 | `src/routes/storage/+page.svelte` | **Storage**: Disk capacity usage gauges and game storage footprint explorer across connected drives. |
 | `src/routes/settings/+page.svelte` | **Settings & Plugins Manager**: Core preferences, system locale, cache reset, and installed plugin toggles. |
 | `src/lib/components/settings/PluginSettingsDialog.svelte` | Tabbed per-plugin settings configuration dialog for API keys (with password toggle), executable paths, options, and live connection testing. |
@@ -44,9 +46,9 @@ It compiles to static HTML/CSS/JS assets bundled directly into the Tauri desktop
 ## 🎮 Navigation & Interaction Model
 
 ```
-+---------------------------------------------------------------------------------------------------------+
-| [LOGO] Universal Game Launcher  < >   DASHBOARD   LIBRARY   STORAGE   PLUGINS   SETTINGS    [Search] [_][#][X]|  <- Custom Title Bar
-+------------------------------------+--------------------------------------------------------------------+
++-------------------------------------------------------------------------------------------------------------------------+
+| [LOGO] Universal Game Launcher   DASHBOARD   LIBRARY   STORE   SOCIAL   STORAGE   PLUGINS   SETTINGS            [_][#][X]   |  <- Custom Title Bar
++------------------------------------+------------------------------------------------------------------------------------+
 |  [🔍 Filter games...             ] |  HERO WALLPAPER BANNER (16:9 / 21:9 with dark vignette)            |
 |  [All (142)] [Installed] [★ Favs]  |  +---------------------------------------------------------------+ |
 |                                    |  | [Capsule]  TITLE LOGO TYPOGRAPHY                              | |

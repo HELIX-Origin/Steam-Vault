@@ -20,7 +20,7 @@ Unlike legacy tools that modified store files, Universal Game Launcher is entire
 ## 🔑 Secrets & Plugin Configuration
 
 - **Zero Hardcoded Secrets:** No API keys or tokens are hardcoded into the source code or binary.
-- **Per-Plugin Settings Isolation:** Optional API keys provided by the user (e.g. SteamGridDB, IGDB, MobyGames) are stored in the local SQLite database and provided only to the specific plugin requesting them.
+- **Per-Plugin Settings Isolation:** Optional API keys provided by the user (e.g. SteamGridDB, IGDB) are stored in the local SQLite database and provided only to the specific plugin requesting them.
 - **Password Input Hygiene:** The frontend renders sensitive credential inputs with password masking and explicit eye show/hide toggles.
 
 ## 🚀 Process Execution & Launcher Delegation

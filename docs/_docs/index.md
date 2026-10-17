@@ -43,6 +43,7 @@ Built on **Tauri v2** (Rust backend + SvelteKit frontend), Universal Game Launch
 - **[Artwork Management](Artwork-Management.md)** — custom art studio for capsules, heroes, logos, and icons.
 - **[Storage Management](Storage-Management.md)** — drive utilization and game storage exploration.
 - **[Plugin Development](Plugin-Development.md)** — creating platform and metadata plugins.
+- **[Available Plugins Catalog](Available-Plugins.md)** — complete directory of all 27 platform, metadata, utility, and media plugins.
 - **[Metadata Providers](Metadata-Providers.md)** — provider capabilities and keyless architecture.
 - **[Settings & API Keys](Settings-and-API-Keys.md)** — configuration reference.
 - **[Troubleshooting](Troubleshooting.md)** — common issues and fixes.
@@ -64,7 +65,7 @@ Built on **Tauri v2** (Rust backend + SvelteKit frontend), Universal Game Launch
 
 ### 📚 Documentation Index
 - **Core**: [Home]({{ '/' | relative_url }}) · [Getting Started](Getting-Started.md) · [Organizing Your Library](Organizing-Your-Library.md)
-- **Features**: [Supported Launchers](External-Platforms.md) · [Manually Added Local Games](Non-Steam-Games.md) · [Collections](Collections.md) · [Artwork Management](Artwork-Management.md) · [Storage Management](Storage-Management.md) · [Plugin Development](Plugin-Development.md)
+- **Features**: [Supported Launchers](External-Platforms.md) · [Manually Added Local Games](Non-Steam-Games.md) · [Collections](Collections.md) · [Artwork Management](Artwork-Management.md) · [Storage Management](Storage-Management.md) · [Available Plugins](Available-Plugins.md) · [Plugin Development](Plugin-Development.md)
 - **Reference**: [Metadata Providers](Metadata-Providers.md) · [Settings & API Keys](Settings-and-API-Keys.md) · [Troubleshooting](Troubleshooting.md) · [FAQ](FAQ.md)
 
 ---

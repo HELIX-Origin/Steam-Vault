@@ -15,7 +15,7 @@ The **Storage** view (`/storage`) in Universal Game Launcher provides a comprehe
 ## ⚡ Non-Blocking Background Worker & Plugin Gating
 
 The Storage view is powered by the **Storage & Drive Analyzer** utility plugin (`utility-storage`):
-- **Instant UI Rendering**: Switching to the Storage tab renders the page structure immediately (0ms blocking time). Heavy disk inspection is dispatched to a background thread pool (`tauri::async_runtime::spawn_blocking`), streaming metrics in reactively without UI hitches.
+- **Instant UI Rendering**: Switching to the Storage tab renders the page structure immediately with 0ms blocking time. Heavy disk inspection is dispatched to a background thread pool (`tauri::async_runtime::spawn_blocking`), streaming metrics in reactively without UI hitches.
 - **Plugin-Aware Filtering**: Only installed titles from enabled platform plugins (`platform-steam`, `platform-gog`, `platform-epic`, etc.) are tracked and computed. Disabling a storefront plugin in **Settings → Plugins** automatically excludes its titles from the storage footprint.
 - **Utility Plugin Control**: If `utility-storage` is disabled in plugin settings, drive scanning is deactivated gracefully.
 
@@ -26,8 +26,8 @@ The Storage view is powered by the **Storage & Drive Analyzer** utility plugin (
 At the top of the Storage view, Universal Game Launcher visualizes disk utilization across every mounted drive on your system:
 
 - **Drive Capacity Gauges**: Visual percentage bars indicating used vs. available gigabytes.
-- **Game Footprint vs. Other Data**: Differentiates between storage consumed by discovered games and other operating system / user data.
-- **Drive Health & Threshold Alerts**: Clear indicators when volumes are running low on disk space.
+- **Game Footprint vs. Other Data**: Differentiates between storage consumed by discovered games and other operating system or user data.
+- **Drive Health & Threshold Alerts**: Clear visual warnings when volumes are running low on disk space.
 
 ---
 
@@ -41,7 +41,7 @@ Below the system drive gauges, games are grouped and filterable by platform orig
 | **GOG Galaxy** | Queries local Galaxy SQLite DB and install paths for discrete game directory sizes. |
 | **Epic Games** | Reads `.item` manifests in `Manifests/` for install sizes and target directories. |
 | **Xbox / Windows Apps** | Inspects AppX/MSIX package footprints across system and secondary drives. |
-| **EA App & Ubisoft Connect** | Inspects installer registry entries and configured game folders. |
+| **EA Desktop & Ubisoft Connect** | Inspects installer registry entries and configured game folders. |
 | **Battle.net & Amazon Games** | Reads client product databases and manifests. |
 | **Standalone / ROMs** | Directly calculates disk usage of manually added executables, directories, and emulator ROMs. |
 
@@ -52,20 +52,15 @@ Below the system drive gauges, games are grouped and filterable by platform orig
 - **Search & Filter**: Search games by name or filter to titles installed on a specific drive.
 - **Sort by Size**: Instantly sort from largest to smallest to identify games consuming the most disk space.
 - **One-Click Folder Access**: Click the **Open Folder** action to open the game's local installation directory directly in your operating system's file manager (Windows Explorer, macOS Finder, or Linux file manager).
-- **Uninstall Trigger**: Initiate uninstallation via native client protocol handlers (`steam://uninstall/{id}`, `goggalaxy://uninstallGame/{id}`, etc.) or launcher delegation.
+- **Uninstall Protocol Trigger**: Initiate uninstallation via native client protocol handlers (`steam://uninstall/{appId}`, `com.epicgames.launcher://apps/{appId}?action=uninstall`) or official launcher delegation.
 
 ---
 
-## 📦 Steam Library Folder Management & Game Moving
+## 🛡️ Non-Invasive Storage Safety
 
-For Steam installations, Universal Game Launcher provides advanced library folder management:
-
-1. **Viewing Registered Libraries**: View all Steam library directories registered across secondary drives.
-2. **Moving Games Between Drives**:
-   - **Choose Destination**: Select another registered Steam library with sufficient free space.
-   - **Pre-Flight Validation**: Checks available destination headroom and ensures the game is not currently running.
-   - **Safe File Copy**: Copies game assets, relocates the `appmanifest_<appid>.acf` file, and updates `libraryfolders.vdf`.
-   - **Safety Margin**: Requires Steam to be closed during file moves to prevent cloud sync collisions and maintains automatic backups in the app data directory.
+Universal Game Launcher operates completely read-only against external client configuration files:
+- It **never modifies** Steam's `libraryfolders.vdf` or client configuration databases.
+- Relocating games between drives or managing game installations is performed through official client interfaces or your operating system, preventing cloud synchronization issues and file locking conflicts.
 
 ---
 
