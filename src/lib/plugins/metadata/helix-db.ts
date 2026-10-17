@@ -60,7 +60,7 @@ export interface HelixDbGamePayload {
 
 // Support Cloudflare raw GitHub proxy, official custom domain, www alias, and GitHub Pages origin fallback
 const HELIX_DOMAINS = [
-  "https://api.helix-origin.club/helix-gaming-db/main",
+  "https://api.helix-origin.club/helix-gaming-db",
   "https://helix-origin.club/helix-gaming-db",
   "https://www.helix-origin.club/helix-gaming-db",
   "https://helix-origin.github.io/helix-gaming-db",
@@ -212,9 +212,9 @@ export const helixDbMetadataPlugin: UniversalPlugin = {
           key: "endpoint_url",
           label: "Custom API Endpoint",
           type: "text",
-          default: "https://api.helix-origin.club/helix-gaming-db/main",
+          default: "https://api.helix-origin.club/helix-gaming-db",
           description: "Base URL for the HELIX Gaming DB REST API (defaults to Cloudflare raw proxy with GitHub Pages fallback).",
-          placeholder: "https://api.helix-origin.club/helix-gaming-db/main",
+          placeholder: "https://api.helix-origin.club/helix-gaming-db",
         },
       ],
     };
