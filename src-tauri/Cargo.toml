@@ -1,6 +1,6 @@
 [package]
 name = "universal-game-launcher"
-version = "1.3.3"
+version = "1.4.0"
 description = "A cross-platform universal game launcher and library organizer"
 authors = ["HELIX Origin"]
 edition = "2021"

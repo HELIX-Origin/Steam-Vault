@@ -1,9 +1,46 @@
 # Changelog
 
-All notable changes to Steam Vault are documented in this file.
+All notable changes to Universal Game Launcher are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.4.0] - 2026-10-17
+
+### Added
+
+- **Universal Game Launcher Rebranding & Multi-Platform Library**:
+  - Official rebranding to **Universal Game Launcher** with dark obsidian aesthetic (`#07111f` / `#0d1b2d`) and cyan/purple accents.
+  - Unified library management for Steam, GOG, Epic Games (via native protocol or Legendary CLI), itch.io, standalone executables, and retro emulator ROMs.
+  - Standalone game addition modal and enhanced manual metadata editor.
+- **Modular Universal Core Plugins Framework (`src/lib/plugins/`)**:
+  - Re-architected native in-app modular framework with `platform-universal`, `metadata-universal`, `metadata-helix`, `utility-title-normalizer`, `media-universal`, `utility-deals`, `utility-patchnotes`, and `utility-storage`.
+  - Non-blocking background worker execution for storage space scanning and library aggregation.
+- **Authoritative HELIX Gaming DB Metadata Integration (`metadata-helix`)**:
+  - Multi-shard volume federation support querying across `helix-gaming-db-00`, `01`, `02`, and `03`.
+  - Consolidated multi-shard search index aggregation and deduplication with SQLite KV persistence.
+  - Cloudflare Edge direct shard proxy support (`https://api.helix-origin.club/{shard}/api/...`) with automated failover to GitHub CDN.
+  - Three-tier catalog segregation: `v1` legacy, `v2` family/general indie & retro, and `v3` adult 18+ titles.
+- **Dynamic `i18next` Localization Engine**:
+  - Replaced hand-rolled hardcoded dictionaries with dynamic `i18next` client library.
+  - Remote edge bundle loading (`/api/v2/i18n/{code}/bundle.json`) for 12 primary languages (`en`, `ja`, `zh-CN`, `zh-TW`, `es`, `fr`, `de`, `it`, `pt-BR`, `ru`, `ko`, `pl`).
+  - Dual UI (`app.json`) and metadata taxonomy (`genres`, `categories`, `platforms`, `common`) support in a single atomic payload.
+  - Persistent SQLite KV caching (`i18n_bundle_{code}`) providing instant 0ms offline startup.
+  - Dynamic RTL (Right-to-Left) layout support for Arabic and robust English fallback chains.
+- **Automated Continuous Integration CI Workflow**:
+  - Deployed `.github/workflows/ci.yml` verifying frontend type safety (`svelte-check`) and Rust backend compilation and unit tests (`cargo check`, `cargo test --lib`) on `windows-latest` and `ubuntu-22.04`.
+
+### Changed
+
+- **Centralized Documentation Decoupling**:
+  - Migrated detailed technical guides and wikis to organization hubs (`https://docs.helix-origin.club/universal-game-launcher/` and `https://wiki.helix-origin.club/universal-game-launcher/`).
+  - Streamlined repository `README.md` into a minimal, clean entry point.
+
+### Security & Compliance
+
+- **Organization Standards Compliance**:
+  - Canonical BSD-3-Clause license harmonization across manifests and source headers.
+  - Standardized all repository shields and badges to raw HTML `<a><img ... height="20" /></a>`.
 
 ## [1.3.3] - 2026-10-16
 
