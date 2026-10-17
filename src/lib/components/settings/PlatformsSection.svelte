@@ -5,6 +5,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { error, platformScan } from "$lib/stores";
   import { PLATFORM_PLUGINS } from "$lib/plugins";
+  import PlatformIcon from "$lib/components/PlatformIcon.svelte";
   import type { EosOverlayStatus, LauncherStatus, LegendaryAuthStatus, ManagedDirectories, Platform, PlatformGame } from "$lib/types";
 
   type SourceRow = { id: string; label: string; enabled: boolean; roots: string[] };
@@ -281,6 +282,7 @@
             />
             <div class="integration-label">
               <div class="row" style="align-items:center;gap:0.4rem;flex-wrap:wrap">
+                <PlatformIcon platform={source.id} size={14} />
                 <strong>{source.label}</strong>
                 {#if launcher}
                   {#if isInstalled}
@@ -448,7 +450,10 @@
             onclick={() => (filter = filter === status.platform ? "all" : status.platform)}
           >
             <div class="row-between">
-              <span class="name">{status.label}</span>
+              <span class="name" style="display:inline-flex;align-items:center;gap:0.35rem">
+                <PlatformIcon platform={status.platform} size={14} />
+                {status.label}
+              </span>
               <span class="pill" class:pill-dim={status.count === 0}>{status.count}</span>
             </div>
             <span class="muted-sm">
@@ -485,9 +490,12 @@
         {#each shown as game (key(game))}
           <button class="row platform-game" class:selected={selected.has(key(game))} onclick={() => toggle(game)}>
             <span class="platform-check">{selected.has(key(game)) ? "✓" : ""}</span>
-            <span class="platform-name">
+            <span class="platform-name" style="display:inline-flex;align-items:center;gap:0.4rem;flex-wrap:wrap">
               {game.name}
-              <span class="pill pill-accent2">{labels[game.platform]}</span>
+              <span class="pill pill-accent2" style="display:inline-flex;align-items:center;gap:0.3rem">
+                <PlatformIcon platform={game.platform} consoleName={game.console} size={12} />
+                {labels[game.platform]}
+              </span>
               {#if game.console}
                 <span class="pill pill-dim">{game.console}</span>
               {/if}

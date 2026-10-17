@@ -16,8 +16,8 @@ The **Storage** view (`/storage`) in Universal Game Launcher provides a comprehe
 
 The Storage view is powered by the **Storage & Drive Analyzer** utility plugin (`utility-storage`):
 - **Instant UI Rendering**: Switching to the Storage tab renders the page structure immediately with 0ms blocking time. Heavy disk inspection is dispatched to a background thread pool (`tauri::async_runtime::spawn_blocking`), streaming metrics in reactively without UI hitches.
-- **Plugin-Aware Filtering**: Only installed titles from enabled platform plugins (`platform-steam`, `platform-gog`, `platform-epic`, etc.) are tracked and computed. Disabling a storefront plugin in **Settings → Plugins** automatically excludes its titles from the storage footprint.
-- **Utility Plugin Control**: If `utility-storage` is disabled in plugin settings, drive scanning is deactivated gracefully.
+- **Platform-Aware Calculation**: Only installed titles from enabled platform specifications (Steam, GOG, Epic, Xbox, etc.) are computed. Disabling a platform in **Settings → Platforms** automatically excludes its titles from the storage footprint.
+- **Non-Invasive Safety**: Disk usage calculation is strictly read-only and never modifies external launcher storage manifests.
 
 ---
 
@@ -56,11 +56,12 @@ Below the system drive gauges, games are grouped and filterable by platform orig
 
 ---
 
-## 🛡️ Non-Invasive Storage Safety
+## 🧹 Cache Maintenance in Settings
 
-Universal Game Launcher operates completely read-only against external client configuration files:
-- It **never modifies** Steam's `libraryfolders.vdf` or client configuration databases.
-- Relocating games between drives or managing game installations is performed through official client interfaces or your operating system, preventing cloud synchronization issues and file locking conflicts.
+If you wish to manage the application's internal data cache and local artwork storage:
+- Navigate to **Settings → Storage & Cache**.
+- **↻ Refresh Metadata Cache**: Re-queries data providers without altering your custom game titles or tags.
+- **🗑 Purge Data Cache**: Clears in-memory cache and disk image assets to rebuild fresh thumbnails.
 
 ---
 
@@ -68,4 +69,5 @@ Universal Game Launcher operates completely read-only against external client co
 
 - [Organizing Your Library](Organizing-Your-Library.md) — filter by installed games in the left sidebar.
 - [Manually Added Local Games](Non-Steam-Games.md) — manage standalone game paths.
+- [Settings & Plugin Configuration](Settings-and-API-Keys.md) — storage & cache controls.
 - [Troubleshooting](Troubleshooting.md) — resolving storage and permission issues.

@@ -1,16 +1,15 @@
 <script lang="ts">
   import { onMount } from "svelte";
-  import { page } from "$app/state";
+  import { goto } from "$app/navigation";
   import { api, errorMessage } from "$lib/api";
   import { STEAM_LANGUAGES, setLocale, syncWithSettingsLanguage, t } from "$lib/i18n";
   import { collections, error, games, install, settings, steamRunning } from "$lib/stores";
-  import type { CacheStats, PluginInfo, Settings } from "$lib/types";
+  import type { CacheStats, Settings } from "$lib/types";
   import PlatformsSection from "$lib/components/settings/PlatformsSection.svelte";
-  import PluginSettingsDialog from "$lib/components/settings/PluginSettingsDialog.svelte";
   import { pluginEngine } from "$lib/plugins/engine";
   import "$styles/settings.scss";
 
-  type SettingsTab = "general" | "platforms" | "plugins";
+  type SettingsTab = "general" | "providers" | "api" | "media" | "storage";
   let activeTab = $state<SettingsTab>("general");
 
   let form = $state<Settings | null>(null);
@@ -24,50 +23,96 @@
   let busy = $state(false);
   let saved = $state(false);
 
-  // Modular Plugins State
-  let installedPlugins = $state<PluginInfo[]>([]);
-  let loadingPlugins = $state(false);
-  let pluginActionMsg = $state<string | null>(null);
-  let pluginFilterType = $state<string>("all");
-  let showPluginSettingsDialog = $state(false);
-  let configuringPluginId = $state<string | null>(null);
+  // Feature configuration states organized by domain
+  let trailersConfig = $state({ autoPlay: false, muted: true });
+  let ambientConfig = $state({ volume: 50, loopPlayback: true });
+  let gamerpowerConfig = $state({ enableFreeGames: true, enableDeals: true, notifyDesktop: true });
+  let storageConfig = $state({ backgroundSync: true });
+  let screenscraperConfig = $state({ userId: "", userPassword: "" });
+  let igdbConfig = $state({ clientId: "", clientSecret: "" });
+  let steamgriddbConfig = $state({ apiKey: "", dimensions: "600x900", allowNsfw: false });
 
-  // Synchronize activeTab with URL search params reactively
-  $effect(() => {
-    const tabParam = page.url.searchParams.get("tab") as SettingsTab | null;
-    if (tabParam && ["general", "platforms", "plugins"].includes(tabParam)) {
-      if (activeTab !== tabParam) {
-        activeTab = tabParam;
-        if (tabParam === "plugins") {
-          loadPlugins();
-        }
-      }
-    } else if (!tabParam && activeTab !== "general") {
-      activeTab = "general";
-    }
-  });
+  // Verification & connection testing states
+  let testingScreenScraper = $state(false);
+  let screenScraperTestResult = $state<{ success: boolean; message: string } | null>(null);
 
-  async function loadPlugins() {
-    loadingPlugins = true;
+  let testingIgdb = $state(false);
+  let igdbTestResult = $state<{ success: boolean; message: string } | null>(null);
+
+  let testingSteamGrid = $state(false);
+  let steamGridTestResult = $state<{ success: boolean; message: string } | null>(null);
+
+
+
+  async function loadFeatureConfigs() {
     try {
-      const backendList = await api.getInstalledPlugins();
-      installedPlugins = pluginEngine.mergePluginInfo(backendList);
+      const [trailers, ambient, gamerpower, storage, screenscraper, igdb, steamgriddb] = await Promise.all([
+        pluginEngine.loadPluginConfig("media-trailers"),
+        pluginEngine.loadPluginConfig("media-ambient"),
+        pluginEngine.loadPluginConfig("utility-gamerpower"),
+        pluginEngine.loadPluginConfig("utility-storage"),
+        pluginEngine.loadPluginConfig("metadata-screenscraper"),
+        pluginEngine.loadPluginConfig("metadata-igdb"),
+        pluginEngine.loadPluginConfig("metadata-steamgriddb")
+      ]);
+
+      if (trailers) trailersConfig = { ...trailersConfig, ...trailers };
+      if (ambient) ambientConfig = { ...ambientConfig, ...ambient };
+      if (gamerpower) gamerpowerConfig = { ...gamerpowerConfig, ...gamerpower };
+      if (storage) storageConfig = { ...storageConfig, ...storage };
+      if (screenscraper) screenscraperConfig = { ...screenscraperConfig, ...screenscraper };
+      if (igdb) igdbConfig = { ...igdbConfig, ...igdb };
+      if (steamgriddb) steamgriddbConfig = { ...steamgriddbConfig, ...steamgriddb };
     } catch (e) {
-      console.error("Failed to load plugins:", e);
-    } finally {
-      loadingPlugins = false;
+      console.warn("Could not load some feature configurations:", e);
     }
   }
 
-  async function handleTogglePlugin(plugin: PluginInfo) {
+  async function saveFeatureConfigs() {
+    await Promise.all([
+      pluginEngine.savePluginConfig("media-trailers", trailersConfig),
+      pluginEngine.savePluginConfig("media-ambient", ambientConfig),
+      pluginEngine.savePluginConfig("utility-gamerpower", gamerpowerConfig),
+      pluginEngine.savePluginConfig("utility-storage", storageConfig),
+      pluginEngine.savePluginConfig("metadata-screenscraper", screenscraperConfig),
+      pluginEngine.savePluginConfig("metadata-igdb", igdbConfig),
+      pluginEngine.savePluginConfig("metadata-steamgriddb", steamgriddbConfig)
+    ]);
+  }
+
+  async function testScreenScraper() {
+    testingScreenScraper = true;
+    screenScraperTestResult = null;
     try {
-      await api.togglePlugin(plugin.id, !plugin.enabled);
-      plugin.enabled = !plugin.enabled;
-      installedPlugins = [...installedPlugins];
-      pluginActionMsg = `${plugin.name} is now ${plugin.enabled ? "enabled" : "disabled"}.`;
-      setTimeout(() => (pluginActionMsg = null), 3000);
+      screenScraperTestResult = await pluginEngine.testPluginConnection("metadata-screenscraper", screenscraperConfig);
     } catch (e) {
-      pluginActionMsg = `Error: ${errorMessage(e)}`;
+      screenScraperTestResult = { success: false, message: errorMessage(e) };
+    } finally {
+      testingScreenScraper = false;
+    }
+  }
+
+  async function testIgdb() {
+    testingIgdb = true;
+    igdbTestResult = null;
+    try {
+      igdbTestResult = await pluginEngine.testPluginConnection("metadata-igdb", igdbConfig);
+    } catch (e) {
+      igdbTestResult = { success: false, message: errorMessage(e) };
+    } finally {
+      testingIgdb = false;
+    }
+  }
+
+  async function testSteamGrid() {
+    testingSteamGrid = true;
+    steamGridTestResult = null;
+    try {
+      steamGridTestResult = await pluginEngine.testPluginConnection("metadata-steamgriddb", steamgriddbConfig);
+    } catch (e) {
+      steamGridTestResult = { success: false, message: errorMessage(e) };
+    } finally {
+      testingSteamGrid = false;
     }
   }
 
@@ -176,17 +221,19 @@
     activeTab = tab;
     const url = new URL(window.location.href);
     url.searchParams.set("tab", tab);
-    window.history.replaceState({}, "", url.toString());
+    goto(url.pathname + url.search, { replaceState: true, noScroll: true, keepFocus: true });
   }
 
   onMount(async () => {
     try {
       const params = new URLSearchParams(window.location.search);
-      const tabParam = params.get("tab") as SettingsTab | null;
-      if (tabParam && ["general", "platforms", "plugins"].includes(tabParam)) {
-        activeTab = tabParam;
+      let tabParam = params.get("tab") as string | null;
+      if (tabParam === "platforms") tabParam = "providers";
+      if (tabParam && ["general", "providers", "api", "media", "storage"].includes(tabParam)) {
+        activeTab = tabParam as SettingsTab;
       }
-      loadPlugins();
+
+      await loadFeatureConfigs();
 
       const [loaded, detected, stats] = await Promise.all([
         api.getSettings(),
@@ -231,7 +278,10 @@
     }));
     busy = true;
     try {
-      const updated = await api.saveSettings(form);
+      const [updated] = await Promise.all([
+        api.saveSettings(form),
+        saveFeatureConfigs()
+      ]);
       settings.set(updated);
       form = { ...updated };
       if (updated.language) {
@@ -251,7 +301,7 @@
 <div class="row-between" style="margin-bottom:1rem">
   <div>
     <h1>{$t("settings.title")}</h1>
-    <p class="muted">{$t("settings.subtitle")}</p>
+    <p class="muted">Manage launcher preferences, providers, external APIs, and local storage.</p>
   </div>
   <div class="row" style="align-items:center;gap:0.75rem">
     {#if saved}<span class="pill pill-ok">{$t("common.saved")}</span>{/if}
@@ -261,28 +311,35 @@
   </div>
 </div>
 
-<!-- Section Navigation Tabs -->
+<!-- Section Navigation Tabs: Organized by Type -->
 <div class="settings-nav-tabs">
   <button class="tab-btn" class:active={activeTab === "general"} onclick={() => setTab("general")}>
     <span class="tab-icon">⚙️</span>
-    <span>{$t("settings.title")}</span>
+    <span>General</span>
   </button>
-  <button class="tab-btn" class:active={activeTab === "platforms"} onclick={() => setTab("platforms")}>
+  <button class="tab-btn" class:active={activeTab === "providers"} onclick={() => setTab("providers")}>
     <span class="tab-icon">⬡</span>
-    <span>{$t("nav.platforms")}</span>
+    <span>Providers</span>
   </button>
-  <button class="tab-btn" class:active={activeTab === "plugins"} onclick={() => { setTab("plugins"); loadPlugins(); }}>
-    <span class="tab-icon">🧩</span>
-    <span>Plugins &amp; Modules</span>
+  <button class="tab-btn" class:active={activeTab === "api"} onclick={() => setTab("api")}>
+    <span class="tab-icon">🔑</span>
+    <span>API &amp; Credentials</span>
+  </button>
+  <button class="tab-btn" class:active={activeTab === "media"} onclick={() => setTab("media")}>
+    <span class="tab-icon">🎬</span>
+    <span>Media &amp; Audio</span>
+  </button>
+  <button class="tab-btn" class:active={activeTab === "storage"} onclick={() => setTab("storage")}>
+    <span class="tab-icon">💾</span>
+    <span>Storage &amp; Cache</span>
   </button>
 </div>
 
 {#if form}
+  <!-- TYPE 1: GENERAL SETTINGS -->
   {#if activeTab === "general"}
     <div class="settings-columns">
-      <!-- Left Column -->
       <div class="settings-col">
-
         <!-- Steam Folder & Active Account -->
         <section class="glass-strong card">
           <div class="row-between" style="align-items:center;margin-bottom:0.75rem">
@@ -315,11 +372,222 @@
         </section>
       </div>
 
-      <!-- Right Column -->
+      <div class="settings-col">
+        <!-- Notifications & Feeds -->
+        <section class="glass-strong card">
+          <h2 class="section-title" style="margin-bottom:0.5rem">Notifications &amp; Alerts</h2>
+          <p class="muted-xs" style="margin-bottom:1rem">
+            Configure desktop notifications and feed updates for new deals and promotions.
+          </p>
+
+          <label class="row" style="gap: 0.6rem; align-items: center; margin-bottom: 0.85rem; cursor: pointer;">
+            <input type="checkbox" bind:checked={gamerpowerConfig.enableFreeGames} style="width: auto;" />
+            <div>
+              <strong style="font-size: 0.88rem; display: block;">100% Free Game Alerts</strong>
+              <span class="muted-xs">Monitor free game giveaways across Epic, Steam, GOG, and itch.io.</span>
+            </div>
+          </label>
+
+          <label class="row" style="gap: 0.6rem; align-items: center; margin-bottom: 0.85rem; cursor: pointer;">
+            <input type="checkbox" bind:checked={gamerpowerConfig.enableDeals} style="width: auto;" />
+            <div>
+              <strong style="font-size: 0.88rem; display: block;">Store Deals &amp; Discounts</strong>
+              <span class="muted-xs">Surface highlighted promotions and major price cuts in the store view.</span>
+            </div>
+          </label>
+
+          <label class="row" style="gap: 0.6rem; align-items: center; margin-bottom: 0.85rem; cursor: pointer;">
+            <input type="checkbox" bind:checked={gamerpowerConfig.notifyDesktop} style="width: auto;" />
+            <div>
+              <strong style="font-size: 0.88rem; display: block;">Desktop Push Notifications</strong>
+              <span class="muted-xs">Display native OS notifications when high-value free titles go live.</span>
+            </div>
+          </label>
+        </section>
+      </div>
+    </div>
+
+  <!-- TYPE 2: PROVIDERS -->
+  {:else if activeTab === "providers"}
+    <PlatformsSection
+      bind:sources
+      bind:freeGameNotifications={form.enableFreeGameNotifications}
+      {addRoot}
+      {removeRoot}
+      {setRoot}
+    />
+
+  <!-- TYPE 3: API & CREDENTIALS -->
+  {:else if activeTab === "api"}
+    <div class="settings-columns">
+      <div class="settings-col">
+        <!-- ScreenScraper -->
+        <section class="glass-strong card">
+          <div class="row-between" style="align-items: center; margin-bottom: 0.4rem;">
+            <h2 class="section-title">ScreenScraper.fr</h2>
+            <a href="https://www.screenscraper.fr" target="_blank" rel="noreferrer" class="muted-xs" style="color: var(--accent);">screenscraper.fr ↗</a>
+          </div>
+          <p class="muted-xs" style="margin-bottom: 1rem;">
+            Keyless retro gaming metadata and artwork provider. Entering your free website username enables faster multi-threaded scraping.
+          </p>
+          <div class="field">
+            <label for="ss-user">ScreenScraper Username</label>
+            <input id="ss-user" bind:value={screenscraperConfig.userId} placeholder="Your screenscraper.fr username" />
+          </div>
+          <div class="field">
+            <label for="ss-pass">ScreenScraper Password</label>
+            <input id="ss-pass" type="password" bind:value={screenscraperConfig.userPassword} placeholder="Your screenscraper.fr password" />
+          </div>
+          <div class="row" style="gap: 0.6rem; align-items: center; margin-top: 0.5rem;">
+            <button class="btn mini btn-ghost" onclick={testScreenScraper} disabled={testingScreenScraper || !screenscraperConfig.userId}>
+              {testingScreenScraper ? "Verifying…" : "Verify Account"}
+            </button>
+            {#if screenScraperTestResult}
+              <span class="muted-xs" style="color: {screenScraperTestResult.success ? '#51cf66' : '#ff8787'};">
+                {screenScraperTestResult.message}
+              </span>
+            {/if}
+          </div>
+        </section>
+
+        <!-- SteamGridDB -->
+        <section class="glass-strong card">
+          <div class="row-between" style="align-items: center; margin-bottom: 0.4rem;">
+            <h2 class="section-title">SteamGridDB</h2>
+            <a href="https://www.steamgriddb.com/profile/preferences/api" target="_blank" rel="noreferrer" class="muted-xs" style="color: var(--accent);">Get API Key ↗</a>
+          </div>
+          <p class="muted-xs" style="margin-bottom: 1rem;">
+            Community custom capsule covers, hero banners, and transparent logos.
+          </p>
+          <div class="field">
+            <label for="sgdb-key">SteamGridDB API Key</label>
+            <input id="sgdb-key" type="password" bind:value={steamgriddbConfig.apiKey} placeholder="Paste SteamGridDB API key" />
+          </div>
+          <div class="field">
+            <label for="sgdb-dim">Preferred Capsule Dimensions</label>
+            <select id="sgdb-dim" bind:value={steamgriddbConfig.dimensions}>
+              <option value="600x900">Vertical Posters (600x900)</option>
+              <option value="460x215">Legacy Grids (460x215)</option>
+            </select>
+          </div>
+          <label class="row" style="gap: 0.5rem; align-items: center; margin-bottom: 0.75rem; cursor: pointer;">
+            <input type="checkbox" bind:checked={steamgriddbConfig.allowNsfw} style="width: auto;" />
+            <span class="muted-sm">Allow Mature / NSFW Submissions</span>
+          </label>
+          <div class="row" style="gap: 0.6rem; align-items: center;">
+            <button class="btn mini btn-ghost" onclick={testSteamGrid} disabled={testingSteamGrid || !steamgriddbConfig.apiKey}>
+              {testingSteamGrid ? "Testing…" : "Test SteamGridDB Key"}
+            </button>
+            {#if steamGridTestResult}
+              <span class="muted-xs" style="color: {steamGridTestResult.success ? '#51cf66' : '#ff8787'};">
+                {steamGridTestResult.message}
+              </span>
+            {/if}
+          </div>
+        </section>
+      </div>
+
+      <div class="settings-col">
+        <!-- IGDB / Twitch -->
+        <section class="glass-strong card">
+          <div class="row-between" style="align-items: center; margin-bottom: 0.4rem;">
+            <h2 class="section-title">IGDB / Twitch Developer</h2>
+            <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noreferrer" class="muted-xs" style="color: var(--accent);">dev.twitch.tv ↗</a>
+          </div>
+          <p class="muted-xs" style="margin-bottom: 1rem;">
+            Comprehensive taxonomy, developer credits, franchises, and critic ratings via the IGDB API.
+          </p>
+          <div class="field">
+            <label for="igdb-client">Twitch / IGDB Client ID</label>
+            <input id="igdb-client" bind:value={igdbConfig.clientId} placeholder="Client ID from Twitch Console" />
+          </div>
+          <div class="field">
+            <label for="igdb-secret">Twitch / IGDB Client Secret</label>
+            <input id="igdb-secret" type="password" bind:value={igdbConfig.clientSecret} placeholder="Client Secret" />
+          </div>
+          <div class="row" style="gap: 0.6rem; align-items: center; margin-top: 0.5rem;">
+            <button class="btn mini btn-ghost" onclick={testIgdb} disabled={testingIgdb || !igdbConfig.clientId || !igdbConfig.clientSecret}>
+              {testingIgdb ? "Testing…" : "Test IGDB Connection"}
+            </button>
+            {#if igdbTestResult}
+              <span class="muted-xs" style="color: {igdbTestResult.success ? '#51cf66' : '#ff8787'};">
+                {igdbTestResult.message}
+              </span>
+            {/if}
+          </div>
+        </section>
+      </div>
+    </div>
+
+  <!-- TYPE 4: MEDIA & AUDIO -->
+  {:else if activeTab === "media"}
+    <div class="settings-columns">
+      <div class="settings-col">
+        <!-- Video Trailers -->
+        <section class="glass-strong card">
+          <h2 class="section-title" style="margin-bottom:0.5rem">Video Trailers</h2>
+          <p class="muted-xs" style="margin-bottom:1rem">
+            Configure embedded video trailer streaming in the game detail view.
+          </p>
+
+          <label class="row" style="gap: 0.6rem; align-items: center; margin-bottom: 0.85rem; cursor: pointer;">
+            <input type="checkbox" bind:checked={trailersConfig.autoPlay} style="width: auto;" />
+            <div>
+              <strong style="font-size: 0.88rem; display: block;">Autoplay Video Trailers</strong>
+              <span class="muted-xs">Automatically begin video streaming when opening game details.</span>
+            </div>
+          </label>
+
+          <label class="row" style="gap: 0.6rem; align-items: center; margin-bottom: 0.85rem; cursor: pointer;">
+            <input type="checkbox" bind:checked={trailersConfig.muted} style="width: auto;" />
+            <div>
+              <strong style="font-size: 0.88rem; display: block;">Mute Trailers by Default</strong>
+              <span class="muted-xs">Keep game trailers muted until unmuted manually.</span>
+            </div>
+          </label>
+        </section>
+      </div>
+
+      <div class="settings-col">
+        <!-- Audio & Soundtracks -->
+        <section class="glass-strong card">
+          <h2 class="section-title" style="margin-bottom:0.5rem">Ambient Soundtracks</h2>
+          <p class="muted-xs" style="margin-bottom:1rem">
+            Configure background soundtrack themes and audio playback.
+          </p>
+
+          <div style="margin-bottom: 1rem;">
+            <div class="row-between" style="align-items: center; margin-bottom: 0.35rem;">
+              <strong style="font-size: 0.88rem;">Master Soundtrack Volume</strong>
+              <span class="pill pill-dim" style="font-size: 0.72rem;">{ambientConfig.volume}%</span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              bind:value={ambientConfig.volume}
+              style="width: 100%; cursor: pointer;"
+            />
+          </div>
+
+          <label class="row" style="gap: 0.6rem; align-items: center; cursor: pointer;">
+            <input type="checkbox" bind:checked={ambientConfig.loopPlayback} style="width: auto;" />
+            <div>
+              <strong style="font-size: 0.88rem; display: block;">Loop Soundtrack Themes</strong>
+              <span class="muted-xs">Seamlessly repeat audio tracks while browsing title details.</span>
+            </div>
+          </label>
+        </section>
+      </div>
+    </div>
+
+  <!-- TYPE 5: STORAGE & CACHE -->
+  {:else if activeTab === "storage"}
+    <div class="settings-columns">
       <div class="settings-col">
         <!-- Preferences & Offline Cache -->
         <section class="glass-strong card">
-          <h2 class="section-title" style="margin-bottom:0.5rem">Local Storage &amp; Cache Architecture</h2>
+          <h2 class="section-title" style="margin-bottom:0.5rem">Local Fast-Tier Storage Architecture</h2>
           <p class="muted-sm" style="margin-bottom:1rem">
             Universal Game Launcher operates completely non-invasively. Native launcher files (Steam, Epic, GOG) are never modified. All collections, tags, custom art, and launcher preferences are safely persisted in your local fast-tier SQLite database and in-memory Redis KV cache.
           </p>
@@ -345,7 +613,22 @@
             <span>{cacheStats?.totalCachedArtworks ?? 0} files</span>
           </div>
 
-          <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.08);">
+          <label class="row" style="gap: 0.6rem; align-items: center; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.06); cursor: pointer;">
+            <input type="checkbox" bind:checked={storageConfig.backgroundSync} style="width: auto;" />
+            <div>
+              <strong style="font-size: 0.88rem; display: block;">Background Storage Analyzer</strong>
+              <span class="muted-xs">Inspect disk space and folder sizes asynchronously without UI hitches.</span>
+            </div>
+          </label>
+        </section>
+      </div>
+
+      <div class="settings-col">
+        <!-- Cache Maintenance Operations -->
+        <section class="glass-strong card">
+          <h2 class="section-title" style="margin-bottom:0.5rem">Cache Maintenance</h2>
+
+          <div>
             <div class="row-between" style="align-items: center; margin-bottom: 0.35rem;">
               <strong style="font-size: 0.95rem;">{$t("settings.refreshMetadata")}</strong>
               {#if syncingLibraryMeta}
@@ -406,124 +689,6 @@
           </div>
         </section>
       </div>
-    </div>
-  {:else if activeTab === "platforms"}
-    <PlatformsSection
-      bind:sources
-      bind:freeGameNotifications={form.enableFreeGameNotifications}
-      {addRoot}
-      {removeRoot}
-      {setRoot}
-    />
-  {:else if activeTab === "plugins"}
-    <div class="plugins-panel">
-      <!-- Header row with Plugin Settings & Refresh buttons -->
-      <div class="row-between" style="align-items: center; margin-bottom: 1.25rem;">
-        <div>
-          <h2 style="margin: 0; font-size: 1.2rem;">Plugins &amp; Modules</h2>
-          <p class="muted-sm" style="margin: 0.25rem 0 0 0;">
-            Platform integrations and metadata providers operate as dedicated, modular plugins with isolated capabilities.
-          </p>
-        </div>
-        <div class="row" style="gap: 0.5rem;">
-          <button class="btn mini btn-primary" onclick={() => { showPluginSettingsDialog = true; configuringPluginId = null; }}>
-            🧩 Plugin Settings
-          </button>
-          <button class="btn mini btn-ghost" onclick={loadPlugins} disabled={loadingPlugins} title="Refresh plugins list">
-            🔄 Refresh
-          </button>
-        </div>
-      </div>
-
-      {#if pluginActionMsg}
-        <div class="pill pill-accent" style="display: block; margin-bottom: 1rem; text-align: center;">
-          {pluginActionMsg}
-        </div>
-      {/if}
-
-      <!-- Plugins Filter Bar -->
-      <div class="row-between" style="align-items: center; margin-bottom: 1rem;">
-        <div class="row" style="gap: 0.35rem;">
-          {#each ["all", "platform", "metadata", "media", "utility"] as pType}
-            <button
-              class="btn mini"
-              class:btn-primary={pluginFilterType === pType}
-              class:btn-ghost={pluginFilterType !== pType}
-              onclick={() => (pluginFilterType = pType)}
-              style="text-transform: capitalize;"
-            >
-              {pType}
-            </button>
-          {/each}
-        </div>
-        <span class="muted-xs">{installedPlugins.length} total plugins installed</span>
-      </div>
-
-      <!-- Plugins Grid -->
-      <div class="plugins-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;">
-        {#each installedPlugins.filter(p => pluginFilterType === "all" || p.pluginType === pluginFilterType) as plugin (plugin.id)}
-          <div class="glass-strong card plugin-card" class:disabled={!plugin.enabled} style="display: flex; flex-direction: column; justify-content: space-between;">
-            <div>
-              <div class="row-between" style="align-items: flex-start; margin-bottom: 0.5rem;">
-                <div>
-                  <div class="row" style="align-items: center; gap: 0.5rem; flex-wrap: wrap;">
-                    <strong class="plugin-name">{plugin.name}</strong>
-                    <span class="pill pill-dim" style="font-size: 0.7rem;">v{plugin.version}</span>
-                    {#if plugin.builtin}
-                      <span class="pill pill-accent2" style="font-size: 0.65rem;">Built-in</span>
-                    {:else}
-                      <span class="pill pill-ok" style="font-size: 0.65rem;">Community</span>
-                    {/if}
-                  </div>
-                  <span class="muted-xs" style="display: block; margin-top: 0.2rem;">By {plugin.author}</span>
-                </div>
-                <div class="row" style="gap: 0.35rem; align-items: center;">
-                  {#if plugin.settings?.fields && plugin.settings.fields.length > 0}
-                    <button
-                      class="btn mini btn-ghost"
-                      onclick={() => { configuringPluginId = plugin.id; showPluginSettingsDialog = true; }}
-                      title="Configure plugin settings"
-                    >
-                      ⚙ Configure
-                    </button>
-                  {/if}
-                  <button
-                    class="btn mini"
-                    class:btn-primary={plugin.enabled}
-                    class:btn-ghost={!plugin.enabled}
-                    onclick={() => handleTogglePlugin(plugin)}
-                    title={plugin.enabled ? "Disable plugin" : "Enable plugin"}
-                  >
-                    {plugin.enabled ? "Enabled" : "Disabled"}
-                  </button>
-                </div>
-              </div>
-
-              <p class="muted-sm" style="margin: 0.5rem 0; font-size: 0.8rem; line-height: 1.4;">{plugin.description}</p>
-            </div>
-
-            <div class="row-between plugin-card-footer" style="margin-top: 0.75rem; padding-top: 0.5rem; border-top: 1px solid rgba(255, 255, 255, 0.06); align-items: center;">
-              <span class="pill pill-dim" style="font-size: 0.68rem; text-transform: uppercase;">
-                {plugin.pluginType}
-              </span>
-              {#if plugin.homepage}
-                <a href={plugin.homepage} target="_blank" rel="noreferrer" class="muted-xs" style="color: var(--accent);">
-                  Repository ↗
-                </a>
-              {:else}
-                <span class="muted-xs">Self-Contained</span>
-              {/if}
-            </div>
-          </div>
-        {/each}
-      </div>
-
-      {#if showPluginSettingsDialog}
-        <PluginSettingsDialog
-          initialPluginId={configuringPluginId}
-          onclose={() => { showPluginSettingsDialog = false; configuringPluginId = null; }}
-        />
-      {/if}
     </div>
   {/if}
 {:else}

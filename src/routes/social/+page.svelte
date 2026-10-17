@@ -4,6 +4,7 @@
   import { t } from "$lib/i18n";
   import { error, games, settings } from "$lib/stores";
   import { PLATFORM_PLUGINS } from "$lib/plugins";
+  import PlatformIcon from "$lib/components/PlatformIcon.svelte";
   import type { Platform, PlatformFriend } from "$lib/types";
 
   interface DisplayFriend extends PlatformFriend {
@@ -224,7 +225,7 @@
             onclick={() => handleOpenProviderSocial(key)}
             title="Open native {theme.label} friends and chat client"
           >
-            <span>{theme.icon}</span> {theme.label} ↗
+            <PlatformIcon platform={key} size={13} /> {theme.label} ↗
           </button>
         {/if}
       {/each}
@@ -296,7 +297,7 @@
             class:btn-ghost={selectedPlatform !== key}
             onclick={() => (selectedPlatform = key)}
           >
-            {theme.icon} {theme.label}
+            <PlatformIcon platform={key} size={12} /> {theme.label}
           </button>
         {/if}
       {/each}
@@ -321,7 +322,7 @@
                 <div>
                   <strong style="font-size:0.92rem;color:var(--text);display:block">{friend.name}</strong>
                   <span class="pill pill-dim" style="font-size:0.6rem;color:{friend.platformColor};border-color:{friend.platformColor}40">
-                    {friend.platformIcon} {friend.platformName}
+                    <PlatformIcon platform={friend.platform} size={11} /> {friend.platformName}
                   </span>
                 </div>
               </div>
@@ -366,7 +367,7 @@
               <div>
                 <strong style="font-size:0.88rem;color:var(--text);display:block">{friend.name}</strong>
                 <span class="muted-xs" style="color:{friend.platformColor}">
-                  {friend.platformIcon} {friend.platformName}
+                  <PlatformIcon platform={friend.platform} size={11} /> {friend.platformName}
                 </span>
               </div>
             </div>

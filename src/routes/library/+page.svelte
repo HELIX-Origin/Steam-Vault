@@ -5,7 +5,9 @@
   import { t, locale, activeLanguage } from "$lib/i18n";
   import { customNames, error, games, loading, selectedGameId, settings } from "$lib/stores";
   import { getPlatformMetadata, pluginEngine } from "$lib/plugins";
+  import PlatformIcon from "$lib/components/PlatformIcon.svelte";
   import AddGameModal from "$lib/components/library/AddGameModal.svelte";
+  import { convertFileSrc } from "@tauri-apps/api/core";
   import type { AppMeta, Game, MediaItem } from "$lib/types";
 
   // Per-game details state
@@ -20,11 +22,59 @@
   let isStandaloneEnabled = $state(true);
   let managingGame = $state<Game | null>(null);
   let actionFeedback = $state<string | null>(null);
+  let failedCoverAppId = $state<number | null>(null);
+
+  // Per-game customization modal fields
   let modalCustomName = $state("");
+  let modalShortDescription = $state("");
+  let modalDevelopers = $state("");
+  let modalPublishers = $state("");
+  let modalReleaseDate = $state("");
+  let modalGenres = $state("");
+  let modalCapsuleImage = $state("");
+  let modalHeroImage = $state("");
+  let modalLogoImage = $state("");
   let modalFeedback = $state<string | null>(null);
-  let selectedEnhanceProvider = $state("all");
-  let overrideExisting = $state(false);
-  let isEnhancing = $state(false);
+
+  // Media Showcase & Audio Tabs State
+  let activeMediaTab = $state<"screenshots" | "trailers" | "soundtracks">("screenshots");
+  let selectedTrailerIdx = $state(0);
+  let isTrailersAutoplay = $state(false);
+  let isTrailersMuted = $state(true);
+  let soundtrackAudioEl = $state<HTMLAudioElement | null>(null);
+  let isPlayingSoundtrack = $state(false);
+  let soundtrackVolume = $state(0.5);
+  let isSoundtrackLooping = $state(true);
+  let currentTrackIdx = $state(0);
+
+  function togglePlaySoundtrack() {
+    if (!soundtrackAudioEl) return;
+    if (isPlayingSoundtrack) {
+      soundtrackAudioEl.pause();
+      isPlayingSoundtrack = false;
+    } else {
+      soundtrackAudioEl.volume = soundtrackVolume;
+      soundtrackAudioEl.loop = isSoundtrackLooping;
+      soundtrackAudioEl.play().then(() => {
+        isPlayingSoundtrack = true;
+      }).catch((e) => console.warn("Soundtrack playback error:", e));
+    }
+  }
+
+  function handleVolumeChange(e: Event) {
+    const val = parseFloat((e.target as HTMLInputElement).value);
+    soundtrackVolume = val;
+    if (soundtrackAudioEl) {
+      soundtrackAudioEl.volume = val;
+    }
+  }
+
+  function toggleLoopSoundtrack() {
+    isSoundtrackLooping = !isSoundtrackLooping;
+    if (soundtrackAudioEl) {
+      soundtrackAudioEl.loop = isSoundtrackLooping;
+    }
+  }
 
   function getDisplayName(game: Game | null | undefined): string {
     if (!game) return "";
@@ -34,6 +84,7 @@
   function getLocalizedTitle(game: Game | null | undefined, meta?: AppMeta | null): string {
     if (!game) return "";
     if ($customNames[game.appId]) return $customNames[game.appId];
+    if (meta?.userEnhanced && meta?.name) return meta.name;
     if (meta?.locales) {
       const lang = $locale.toLowerCase();
       const steamLang = $activeLanguage.steamCode.toLowerCase();
@@ -45,6 +96,7 @@
 
   function getLocalizedDescription(meta?: AppMeta | null): string {
     if (!meta) return "";
+    if (meta.userEnhanced && meta.shortDescription) return meta.shortDescription;
     if (meta.locales) {
       const lang = $locale.toLowerCase();
       const steamLang = $activeLanguage.steamCode.toLowerCase();
@@ -80,23 +132,41 @@
     return `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/library_hero.jpg`;
   }
 
-  function getHeaderUrl(appId: number): string {
-    return `https://shared.cloudflare.steamstatic.com/store_item_assets/steam/apps/${appId}/header.jpg`;
+  function resolveArtworkSrc(raw?: string | null): string {
+    if (!raw || !raw.trim()) return "";
+    const trimmed = raw.trim();
+    if (
+      trimmed.startsWith("http://") ||
+      trimmed.startsWith("https://") ||
+      trimmed.startsWith("data:") ||
+      trimmed.startsWith("asset:")
+    ) {
+      return trimmed;
+    }
+    try {
+      return convertFileSrc(trimmed);
+    } catch {
+      return trimmed;
+    }
   }
 
-  function getGameCover(game: Game): string {
-    if (game.capsuleImage) return game.capsuleImage;
-    if (game.platform === "steam") return getCapsuleUrl(game.appId);
+  function getGameCover(game: Game, meta?: AppMeta | null): string {
+    if (meta?.capsuleImage) return resolveArtworkSrc(meta.capsuleImage);
+    if (game.capsuleImage) return resolveArtworkSrc(game.capsuleImage);
+    if (meta?.headerImage) return resolveArtworkSrc(meta.headerImage);
+    if (game.platform === "steam" && game.appId < 50_000_000) return getCapsuleUrl(game.appId);
     if (game.icon && (game.icon.startsWith("http") || game.icon.startsWith("data:") || game.icon.startsWith("asset:"))) {
       return game.icon;
     }
     return "";
   }
 
-  function getGameHero(game: Game): string {
-    if (game.heroImage) return game.heroImage;
-    if (game.platform === "steam") return getHeroUrl(game.appId);
-    if (game.capsuleImage) return game.capsuleImage;
+  function getGameHero(game: Game, meta?: AppMeta | null): string {
+    if (meta?.heroImage) return resolveArtworkSrc(meta.heroImage);
+    if (game.heroImage) return resolveArtworkSrc(game.heroImage);
+    if (game.platform === "steam" && game.appId < 50_000_000) return getHeroUrl(game.appId);
+    if (meta?.capsuleImage) return resolveArtworkSrc(meta.capsuleImage);
+    if (game.capsuleImage) return resolveArtworkSrc(game.capsuleImage);
     return "";
   }
 
@@ -118,12 +188,12 @@
     }
 
     const artworkCandidates: (string | undefined)[] = [];
-    if (game.heroImage) artworkCandidates.push(game.heroImage);
-    if (meta?.heroImage) artworkCandidates.push(meta.heroImage);
-    if (game.platform === "steam") artworkCandidates.push(getHeroUrl(game.appId));
-    if (game.capsuleImage) artworkCandidates.push(game.capsuleImage);
-    if (meta?.capsuleImage) artworkCandidates.push(meta.capsuleImage);
-    if (game.platform === "steam") artworkCandidates.push(getCapsuleUrl(game.appId));
+    if (meta?.heroImage) artworkCandidates.push(resolveArtworkSrc(meta.heroImage));
+    if (game.heroImage) artworkCandidates.push(resolveArtworkSrc(game.heroImage));
+    if (game.platform === "steam" && game.appId < 50_000_000) artworkCandidates.push(getHeroUrl(game.appId));
+    if (meta?.capsuleImage) artworkCandidates.push(resolveArtworkSrc(meta.capsuleImage));
+    if (game.capsuleImage) artworkCandidates.push(resolveArtworkSrc(game.capsuleImage));
+    if (game.platform === "steam" && game.appId < 50_000_000) artworkCandidates.push(getCapsuleUrl(game.appId));
 
     for (const art of artworkCandidates) {
       if (items.length >= 10) break;
@@ -139,121 +209,77 @@
     return items;
   }
 
+  function handleGalleryImageError(failedUrl: string) {
+    mediaItems = mediaItems.filter((item) => item.url !== failedUrl);
+    if (selectedGalleryIdx >= mediaItems.length) {
+      selectedGalleryIdx = Math.max(0, mediaItems.length - 1);
+    }
+  }
+
+  import { backgroundWorker, withTimeout } from "$lib/worker";
+
   async function loadGameDetails(game: Game) {
     selectedGame = game;
     selectedGalleryIdx = 0;
-    loadingMeta = true;
+    selectedTrailerIdx = 0;
+    currentTrackIdx = 0;
+    activeMediaTab = "screenshots";
+    failedCoverAppId = null;
+    if (soundtrackAudioEl) {
+      soundtrackAudioEl.pause();
+      isPlayingSoundtrack = false;
+    }
 
+    // 1. Load cached metadata immediately without blocking the UI
     try {
-      // 1. Check persistent KV cache first
-      let meta = await api.kvGetJson<AppMeta>(`game_meta:${game.appId}`);
+      let meta = await withTimeout(api.kvGetJson<AppMeta>(`game_meta:${game.appId}`), 2000, null);
       if (!meta) {
-        meta = await api.getCachedGameMetadata(game.appId, game.name, game.exe);
-      }
-
-      // 2. Default source per platform is the game provider:
-      // If no metadata or missing provider fields, query the native provider plugin
-      if (!meta || (!meta.shortDescription && !meta.developers?.length && !meta.heroImage)) {
-        const providerData = await pluginEngine.fetchProviderGameData(game);
-        if (providerData) {
-          meta = pluginEngine.mergeProviderData(meta, providerData, game, false);
-          await api.kvSetJson(`game_meta:${game.appId}`, meta);
-        }
+        meta = await withTimeout(
+          api.getCachedGameMetadata(game.appId, game.name, game.exe),
+          2000,
+          null
+        );
       }
 
       gameMeta = meta;
       mediaItems = buildMediaGallery(game, meta);
+      loadingMeta = false;
+
+      // 2. Automatic metadata & artwork enhancement via Universal Metadata Engine
+      const hasPlaceholderDesc =
+        meta?.shortDescription === "Local standalone executable game." ||
+        (meta?.shortDescription?.startsWith("Emulated title for ") ?? false);
+      const isMissingTrailersForSteam =
+        (game.platform === "steam" || game.kind === "steam") &&
+        (!meta?.movies || meta.movies.length === 0);
+      const needsAutoEnhance =
+        !meta ||
+        hasPlaceholderDesc ||
+        isMissingTrailersForSteam ||
+        !meta.shortDescription ||
+        !meta.heroImage ||
+        !meta.capsuleImage ||
+        !meta.developers?.length;
+
+      if (needsAutoEnhance) {
+        const targetId = game.appId;
+        backgroundWorker.dispatch(
+          `auto-meta:${targetId}`,
+          `Automatically enhancing metadata for ${game.name}…`,
+          async () => {
+            const { meta: enhanced } = await backgroundWorker.enhanceGameMetadata(game, meta, {
+              override: hasPlaceholderDesc,
+            });
+            if (enhanced && selectedGame?.appId === targetId) {
+              gameMeta = enhanced;
+              mediaItems = buildMediaGallery(game, enhanced);
+            }
+          }
+        );
+      }
     } catch {
       gameMeta = null;
       mediaItems = buildMediaGallery(game, null);
-    } finally {
-      loadingMeta = false;
-    }
-  }
-
-  async function refreshCurrentGameMetadata(game: Game, isReset = false) {
-    loadingMeta = true;
-    try {
-      let meta = gameMeta;
-      // 1. Fetch from native platform provider plugin
-      const providerData = await pluginEngine.fetchProviderGameData(game);
-
-      // 2. If it's a native Steam game, also query the backend Steam refresh
-      if (game.platform === "steam" || game.kind === "steam") {
-        try {
-          const steamMeta = await api.refreshGameMetadata(game.appId, isReset);
-          if (steamMeta) {
-            meta = steamMeta;
-          }
-        } catch {
-          // Non-fatal if backend steam call fails
-        }
-      }
-
-      if (providerData) {
-        meta = pluginEngine.mergeProviderData(meta, providerData, game, isReset);
-      }
-
-      if (meta) {
-        await api.kvSetJson(`game_meta:${game.appId}`, meta);
-      }
-
-      gameMeta = meta;
-      mediaItems = buildMediaGallery(game, meta);
-      actionFeedback = isReset
-        ? "Metadata cache reset to provider defaults!"
-        : "Metadata refreshed from provider source!";
-      setTimeout(() => (actionFeedback = null), 4000);
-    } catch (e) {
-      actionFeedback = `Metadata refresh failed: ${errorMessage(e)}`;
-    } finally {
-      loadingMeta = false;
-    }
-  }
-
-  async function handleEnhanceMetadata(
-    game: Game,
-    options?: { providerId?: string; override?: boolean }
-  ) {
-    isEnhancing = true;
-    try {
-      const targetProvider = options?.providerId && options.providerId !== "all"
-        ? options.providerId
-        : (selectedEnhanceProvider !== "all" ? selectedEnhanceProvider : undefined);
-
-      const { meta, enhancedBy } = await pluginEngine.enhanceGameMetadata(gameMeta, game, {
-        providerId: targetProvider,
-        override: options?.override ?? overrideExisting
-      });
-
-      gameMeta = meta;
-      mediaItems = buildMediaGallery(game, meta);
-      const provList = enhancedBy.length ? enhancedBy.join(", ") : "Metadata providers";
-      modalFeedback = `Enhanced details using: ${provList}`;
-      actionFeedback = `Enhanced metadata via ${provList}!`;
-      setTimeout(() => {
-        actionFeedback = null;
-        modalFeedback = null;
-      }, 5000);
-    } catch (e) {
-      const err = `Enhancement failed: ${errorMessage(e)}`;
-      modalFeedback = err;
-      actionFeedback = err;
-    } finally {
-      isEnhancing = false;
-    }
-  }
-
-  async function handleResetMetadataCache(game: Game) {
-    loadingMeta = true;
-    try {
-      await api.kvDelete(`game_meta:${game.appId}`);
-      await refreshCurrentGameMetadata(game, true);
-      modalFeedback = "Metadata cache reset to provider defaults.";
-      setTimeout(() => (modalFeedback = null), 4000);
-    } catch (e) {
-      modalFeedback = `Reset failed: ${errorMessage(e)}`;
-    } finally {
       loadingMeta = false;
     }
   }
@@ -321,29 +347,104 @@
 
   function openManageModal(game: Game) {
     managingGame = game;
-    modalCustomName = $customNames[game.appId] ?? game.name;
+    modalCustomName = $customNames[game.appId] ?? gameMeta?.name ?? game.name;
+    modalShortDescription = gameMeta?.shortDescription ?? "";
+    modalDevelopers = (gameMeta?.developers ?? []).join(", ");
+    modalPublishers = (gameMeta?.publishers ?? []).join(", ");
+    modalReleaseDate = gameMeta?.releaseDate ?? (gameMeta?.releaseYear ? String(gameMeta.releaseYear) : "");
+    modalGenres = (gameMeta?.genres ?? []).join(", ");
+    modalCapsuleImage = gameMeta?.capsuleImage ?? game.capsuleImage ?? "";
+    modalHeroImage = gameMeta?.heroImage ?? game.heroImage ?? "";
+    modalLogoImage = gameMeta?.logoImage ?? game.logoImage ?? "";
     modalFeedback = null;
     showManageModal = true;
   }
 
-  function saveCustomName() {
+  async function pickArtworkFile(slot: "capsule" | "hero" | "logo") {
+    try {
+      const picked = await api.pickGameImageFile();
+      if (!picked) return;
+      if (slot === "capsule") modalCapsuleImage = picked;
+      else if (slot === "hero") modalHeroImage = picked;
+      else if (slot === "logo") modalLogoImage = picked;
+    } catch (e) {
+      modalFeedback = `Could not pick image: ${errorMessage(e)}`;
+    }
+  }
+
+  async function saveGameCustomizations() {
     if (!managingGame) return;
-    const clean = modalCustomName.trim();
+    const cleanName = modalCustomName.trim() || managingGame.name;
+
     customNames.update((names) => {
       const copy = { ...names };
-      if (!clean || clean === managingGame?.name) {
+      if (!cleanName || cleanName === managingGame?.name) {
         delete copy[managingGame!.appId];
       } else {
-        copy[managingGame!.appId] = clean;
+        copy[managingGame!.appId] = cleanName;
       }
       return copy;
     });
-    modalFeedback = "Saved display name.";
-    setTimeout(() => {
-      showManageModal = false;
-      managingGame = null;
-      modalFeedback = null;
-    }, 800);
+
+    const splitList = (raw: string) =>
+      raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+    const yearMatch = modalReleaseDate.match(/\b(19\d{2}|20\d{2})\b/);
+    const parsedYear = yearMatch ? Number(yearMatch[1]) : (gameMeta?.releaseYear ?? null);
+
+    const updatedMeta: AppMeta = {
+      appId: managingGame.appId,
+      name: cleanName,
+      shortDescription: modalShortDescription.trim() || null,
+      developers: splitList(modalDevelopers),
+      publishers: splitList(modalPublishers),
+      releaseDate: modalReleaseDate.trim() || null,
+      releaseYear: parsedYear,
+      genres: splitList(modalGenres),
+      categories: gameMeta?.categories ?? [],
+      tags: gameMeta?.tags ?? [],
+      headerImage: gameMeta?.headerImage ?? null,
+      capsuleImage: modalCapsuleImage.trim() || null,
+      heroImage: modalHeroImage.trim() || null,
+      logoImage: modalLogoImage.trim() || null,
+      userScore: gameMeta?.userScore ?? null,
+      fetchedAt: Date.now(),
+      screenshots: gameMeta?.screenshots ?? [],
+      movies: gameMeta?.movies ?? [],
+      soundtracks: gameMeta?.soundtracks ?? [],
+      userEnhanced: true,
+      enhancedBy: Array.from(new Set([...(gameMeta?.enhancedBy ?? []), "User Customized"])),
+    };
+
+    try {
+      await api.kvSetJson(`game_meta:${managingGame.appId}`, updatedMeta);
+      if (selectedGame?.appId === managingGame.appId) {
+        gameMeta = updatedMeta;
+      }
+      games.update((list) =>
+        list.map((g) =>
+          g.appId === managingGame!.appId
+            ? {
+                ...g,
+                capsuleImage: updatedMeta.capsuleImage || g.capsuleImage,
+                heroImage: updatedMeta.heroImage || g.heroImage,
+                logoImage: updatedMeta.logoImage || g.logoImage,
+              }
+            : g
+        )
+      );
+      modalFeedback = "Saved game customizations.";
+      setTimeout(() => {
+        showManageModal = false;
+        managingGame = null;
+        modalFeedback = null;
+      }, 700);
+    } catch (e) {
+      modalFeedback = `Failed to save customizations: ${errorMessage(e)}`;
+    }
   }
 
   // Reactive synchronizer: When $selectedGameId changes or games are populated
@@ -363,8 +464,16 @@
   onMount(async () => {
     try {
       const plugins = await api.getInstalledPlugins();
-      const standalone = plugins.find((p) => p.id === "platform-standalone");
-      isStandaloneEnabled = standalone ? standalone.enabled : true;
+      const universalPlatform = plugins.find(
+        (p) => p.id === "platform-universal" || p.id === "platform-standalone"
+      );
+      isStandaloneEnabled = universalPlatform ? universalPlatform.enabled : true;
+
+      const mediaCfg = await pluginEngine.loadPluginConfig("media-universal");
+      isTrailersAutoplay = mediaCfg?.autoPlayTrailers === true;
+      isTrailersMuted = mediaCfg?.muteTrailers !== false;
+      soundtrackVolume = (mediaCfg?.ambientVolume ?? 50) / 100;
+      isSoundtrackLooping = mediaCfg?.loopAmbient !== false;
     } catch {
       isStandaloneEnabled = true;
     }
@@ -388,18 +497,26 @@
 
 <div class="library-container">
   {#if selectedGame}
-    {@const coverUrl = getGameCover(selectedGame)}
-    {@const heroUrl = getGameHero(selectedGame)}
+    {@const coverUrl = getGameCover(selectedGame, gameMeta)}
+    {@const heroUrl = getGameHero(selectedGame, gameMeta)}
 
     <!-- Top Action Bar -->
     <div class="details-topbar glass">
       <div class="topbar-title-block">
         <h2 class="topbar-game-name">{getLocalizedTitle(selectedGame, gameMeta)}</h2>
-        <span class="pill pill-accent2">{selectedGame.console || getPlatformMetadata(selectedGame.platform).label}</span>
+        <span class="pill pill-accent2" style="display:inline-flex;align-items:center;gap:0.35rem">
+          <PlatformIcon platform={selectedGame.platform} consoleName={selectedGame.console} size={13} />
+          {selectedGame.console || getPlatformMetadata(selectedGame.platform).label}
+        </span>
         {#if selectedGame.installed}
           <span class="pill pill-ok">Installed</span>
         {:else}
           <span class="pill pill-dim">Not Installed</span>
+        {/if}
+        {#if loadingMeta}
+          <span class="pill pill-dim" title="Automatically resolving metadata and artwork">
+            <span class="spin" style="display:inline-block;margin-right:0.25rem">⟳</span> Syncing Metadata…
+          </span>
         {/if}
       </div>
 
@@ -425,27 +542,7 @@
           </button>
         {/if}
 
-        <button
-          class="btn btn-ghost"
-          onclick={() => refreshCurrentGameMetadata(selectedGame!)}
-          title={$t("library.refreshMetadata")}
-          disabled={loadingMeta}
-        >
-          <span class:spin={loadingMeta}>🔄</span>
-          <span>{loadingMeta ? $t("library.refreshingMetadata") : $t("library.refreshMetadata")}</span>
-        </button>
-
-        <button
-          class="btn btn-ghost"
-          onclick={() => handleEnhanceMetadata(selectedGame!)}
-          title="Enhance game details and fill in missing metadata from metadata sources"
-          disabled={loadingMeta || isEnhancing}
-        >
-          <span class:spin={isEnhancing}>✨</span>
-          <span>{isEnhancing ? "Enhancing…" : "Enhance Metadata"}</span>
-        </button>
-
-        <button class="btn btn-ghost" onclick={() => openManageModal(selectedGame!)} title="Manage Game Options">
+        <button class="btn btn-ghost" onclick={() => openManageModal(selectedGame!)} title="Customize Game Details & Artwork">
           ⚙ Manage
         </button>
 
@@ -478,12 +575,21 @@
       ></div>
       <div class="hero-overlay"></div>
       <div class="hero-content">
-        {#if coverUrl}
-          <img class="hero-capsule" src={coverUrl} alt={selectedGame.name} />
+        {#if coverUrl && failedCoverAppId !== selectedGame.appId}
+          <img
+            class="hero-capsule"
+            src={coverUrl}
+            alt={selectedGame.name}
+            onerror={() => {
+              if (selectedGame) failedCoverAppId = selectedGame.appId;
+            }}
+          />
         {:else}
           <div class="hero-capsule hero-capsule-fallback platform-{selectedGame.platform}">
-            <span class="fallback-icon">{getPlatformMetadata(selectedGame.platform).icon}</span>
-            <span class="fallback-platform">{getPlatformMetadata(selectedGame.platform).label}</span>
+            <span class="fallback-icon">
+              <PlatformIcon platform={selectedGame.platform} consoleName={selectedGame.console} size={36} />
+            </span>
+            <span class="fallback-platform">{selectedGame.console || getPlatformMetadata(selectedGame.platform).label}</span>
           </div>
         {/if}
 
@@ -493,7 +599,10 @@
             <p class="hero-desc">{getLocalizedDescription(gameMeta)}</p>
           {/if}
           <div class="row hero-tags">
-            <span class="pill pill-accent">{getPlatformMetadata(selectedGame.platform).label}</span>
+            <span class="pill pill-accent" style="display:inline-flex;align-items:center;gap:0.35rem">
+              <PlatformIcon platform={selectedGame.platform} consoleName={selectedGame.console} size={13} />
+              {selectedGame.console || getPlatformMetadata(selectedGame.platform).label}
+            </span>
             <span class="pill pill-dim">App ID: {selectedGame.appId}</span>
             {#if selectedGame.playtimeMinutes}
               <span class="pill pill-dim">Playtime: {formatPlaytime(selectedGame.playtimeMinutes)}</span>
@@ -511,49 +620,199 @@
 
     <!-- Main Content Layout: Gallery + Info Cards -->
     <div class="details-grid">
-      <!-- Media Gallery -->
+      <!-- Unified Media Showcase (Tabs: Screenshots & Artwork, Video Trailers, Soundtracks) -->
       <section class="glass-strong card media-gallery-card">
-        <div class="row-between section-head">
-          <div>
-            <h3 class="section-title">Media Gallery</h3>
-            <p class="muted-sm">Up to 10 high-resolution screenshots and official artwork. Click to expand.</p>
+        <div class="row-between section-head" style="align-items:center;flex-wrap:wrap;gap:0.5rem">
+          <div class="row media-nav-tabs" style="gap:0.4rem;align-items:center">
+            <button
+              type="button"
+              class="tab-btn"
+              class:active={activeMediaTab === "screenshots"}
+              onclick={() => (activeMediaTab = "screenshots")}
+            >
+              🖼️ Screenshots &amp; Art ({mediaItems.length})
+            </button>
+
+            {#if (gameMeta?.movies ?? []).length > 0}
+              <button
+                type="button"
+                class="tab-btn"
+                class:active={activeMediaTab === "trailers"}
+                onclick={() => (activeMediaTab = "trailers")}
+              >
+                🎬 Trailers ({(gameMeta?.movies ?? []).length})
+              </button>
+            {/if}
+
+            {#if (gameMeta?.soundtracks ?? []).length > 0}
+              <button
+                type="button"
+                class="tab-btn"
+                class:active={activeMediaTab === "soundtracks"}
+                onclick={() => (activeMediaTab = "soundtracks")}
+              >
+                🎵 Soundtracks ({(gameMeta?.soundtracks ?? []).length})
+                {#if isPlayingSoundtrack}
+                  <span class="pulse-dot" style="display:inline-block;margin-left:4px"></span>
+                {/if}
+              </button>
+            {/if}
           </div>
-          {#if mediaItems.length > 0}
+
+          {#if activeMediaTab === "screenshots" && mediaItems.length > 0}
             <span class="muted-sm">{selectedGalleryIdx + 1} / {mediaItems.length}</span>
+          {:else if activeMediaTab === "trailers" && (gameMeta?.movies ?? []).length > 0}
+            <span class="muted-sm">{selectedTrailerIdx + 1} / {(gameMeta?.movies ?? []).length}</span>
+          {:else if activeMediaTab === "soundtracks" && isPlayingSoundtrack}
+            <span class="pill pill-ok audio-indicator">
+              <span class="pulse-dot"></span> Playing Audio
+            </span>
           {/if}
         </div>
 
-        {#if mediaItems.length > 0 && mediaItems[selectedGalleryIdx]}
-          {@const currentMedia = mediaItems[selectedGalleryIdx]}
-          <div class="featured-media">
-            <div
-              class="featured-image-wrapper"
-              role="button"
-              tabindex="0"
-              onclick={() => (activeLightboxMedia = currentMedia)}
-              onkeydown={(e) => e.key === "Enter" && (activeLightboxMedia = currentMedia)}
-            >
-              <img src={currentMedia.url} alt={currentMedia.title || "Game media"} />
-              <div class="media-zoom-hint">🔍 Expand to Fullscreen</div>
-            </div>
-          </div>
-
-          <div class="gallery-thumbnails">
-            {#each mediaItems as item, idx}
-              <button
-                class="thumb-btn"
-                class:active={selectedGalleryIdx === idx}
-                onclick={() => (selectedGalleryIdx = idx)}
-                title={item.title || `Image ${idx + 1}`}
+        {#if activeMediaTab === "screenshots"}
+          {#if mediaItems.length > 0 && mediaItems[selectedGalleryIdx]}
+            {@const currentMedia = mediaItems[selectedGalleryIdx]}
+            <div class="featured-media">
+              <div
+                class="featured-image-wrapper"
+                role="button"
+                tabindex="0"
+                onclick={() => (activeLightboxMedia = currentMedia)}
+                onkeydown={(e) => e.key === "Enter" && (activeLightboxMedia = currentMedia)}
               >
-                <img src={item.url} alt={item.title || `Thumbnail ${idx + 1}`} />
-              </button>
-            {/each}
-          </div>
-        {:else}
-          <div class="no-media-placeholder">
-            <span class="muted">No media preview available for this title.</span>
-          </div>
+                <img
+                  src={currentMedia.url}
+                  alt={currentMedia.title || "Game media"}
+                  onerror={() => handleGalleryImageError(currentMedia.url)}
+                />
+                <div class="media-zoom-hint">🔍 Expand to Fullscreen</div>
+              </div>
+            </div>
+
+            <div class="gallery-thumbnails">
+              {#each mediaItems as item, idx}
+                <button
+                  class="thumb-btn"
+                  class:active={selectedGalleryIdx === idx}
+                  onclick={() => (selectedGalleryIdx = idx)}
+                  title={item.title || `Image ${idx + 1}`}
+                >
+                  <img
+                    src={item.url}
+                    alt={item.title || `Thumbnail ${idx + 1}`}
+                    onerror={() => handleGalleryImageError(item.url)}
+                  />
+                </button>
+              {/each}
+            </div>
+          {:else}
+            <div class="no-media-placeholder">
+              <span class="muted">No media preview available for this title.</span>
+            </div>
+          {/if}
+        {:else if activeMediaTab === "trailers"}
+          {#if (gameMeta?.movies ?? []).length > 0}
+            {@const activeTrailerUrl = (gameMeta?.movies ?? [])[selectedTrailerIdx]}
+            <div class="trailer-player-container">
+              <video
+                src={activeTrailerUrl}
+                controls
+                playsinline
+                autoplay={isTrailersAutoplay}
+                muted={isTrailersMuted}
+                class="trailer-video"
+              >
+                <track kind="captions" />
+              </video>
+            </div>
+
+            {#if (gameMeta?.movies ?? []).length > 1}
+              <div class="trailer-selector-list">
+                {#each (gameMeta?.movies ?? []) as _movieUrl, idx}
+                  <button
+                    class="trailer-chip-btn"
+                    class:active={selectedTrailerIdx === idx}
+                    onclick={() => (selectedTrailerIdx = idx)}
+                  >
+                    <span class="chip-icon">▶</span> Trailer {idx + 1}
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          {:else}
+            <div class="no-media-placeholder">
+              <span class="muted">No video trailers found for this title.</span>
+            </div>
+          {/if}
+        {:else if activeMediaTab === "soundtracks"}
+          {#if (gameMeta?.soundtracks ?? []).length > 0}
+            {@const activeTrackUrl = (gameMeta?.soundtracks ?? [])[currentTrackIdx]}
+            <div class="soundtrack-player-box">
+              <audio
+                bind:this={soundtrackAudioEl}
+                src={activeTrackUrl}
+                onended={() => {
+                  if (!isSoundtrackLooping) isPlayingSoundtrack = false;
+                }}
+              ></audio>
+
+              <div class="audio-control-bar">
+                <button class="btn btn-primary play-audio-btn" onclick={togglePlaySoundtrack}>
+                  {isPlayingSoundtrack ? "⏸ Pause Theme" : "▶ Play Theme"}
+                </button>
+
+                <div class="audio-volume-control">
+                  <span class="volume-icon">🔊</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={soundtrackVolume}
+                    oninput={handleVolumeChange}
+                    class="volume-slider"
+                    title="Master Volume"
+                  />
+                  <span class="volume-pct">{Math.round(soundtrackVolume * 100)}%</span>
+                </div>
+
+                <button
+                  class="btn mini btn-ghost loop-toggle-btn"
+                  class:active={isSoundtrackLooping}
+                  onclick={toggleLoopSoundtrack}
+                  title="Seamless Loop"
+                >
+                  🔁 Loop
+                </button>
+              </div>
+
+              {#if (gameMeta?.soundtracks ?? []).length > 1}
+                <div class="soundtrack-tracklist" style="margin-top:0.75rem">
+                  {#each (gameMeta?.soundtracks ?? []) as trackUrl, idx}
+                    <button
+                      class="track-item-btn"
+                      class:active={currentTrackIdx === idx}
+                      onclick={() => {
+                        currentTrackIdx = idx;
+                        if (isPlayingSoundtrack && soundtrackAudioEl) {
+                          soundtrackAudioEl.src = trackUrl;
+                          soundtrackAudioEl.play();
+                        }
+                      }}
+                    >
+                      <span>Track {idx + 1}</span>
+                      <span class="muted-xs">{trackUrl.split("/").pop()}</span>
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          {:else}
+            <div class="no-media-placeholder">
+              <span class="muted">No soundtrack audio tracks loaded for this game.</span>
+            </div>
+          {/if}
         {/if}
       </section>
 
@@ -763,18 +1022,28 @@
   {/if}
 </div>
 
-<!-- Manage Game Modal (Display Name & Launch Options) -->
+<!-- Manage Game Modal (Per-Game Metadata & Artwork Customization) -->
 {#if showManageModal && managingGame}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div class="modal-backdrop" onclick={() => (showManageModal = false)} role="presentation">
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div class="modal-dialog glass-strong" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
+    <div
+      class="modal-dialog glass-strong"
+      style="max-width:620px;max-height:86vh;overflow-y:auto"
+      onclick={(e) => e.stopPropagation()}
+      role="dialog"
+      aria-modal="true"
+      tabindex="-1"
+    >
       <div class="row-between modal-header">
         <div class="modal-title-group">
-          <h2>Manage Game</h2>
-          <span class="muted-sm">{managingGame.name} (App ID: {managingGame.appId})</span>
+          <h2>Manage &amp; Customize Game</h2>
+          <span class="muted-sm" style="display:inline-flex;align-items:center;gap:0.35rem">
+            <PlatformIcon platform={managingGame.platform} consoleName={managingGame.console} size={13} />
+            {managingGame.name} (App ID: {managingGame.appId})
+          </span>
         </div>
         <button class="btn btn-ghost close-btn" onclick={() => (showManageModal = false)}>✕</button>
       </div>
@@ -785,98 +1054,141 @@
         </div>
       {/if}
 
-      <div class="modal-body">
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:0.85rem">
         <label class="form-group">
-          <span class="form-label">Local Display Name:</span>
+          <span class="form-label">Display Title:</span>
           <input
             type="text"
             class="input-text"
             bind:value={modalCustomName}
             placeholder={managingGame.name}
           />
-          <span class="muted-xs">Customizes the title shown in the sidebar and showcase.</span>
+          <span class="muted-xs">Customizes the title shown in the library sidebar, details view, and showcase.</span>
         </label>
 
-        <div class="form-group" style="margin-top:1rem">
-          <span class="form-label">Launch Details:</span>
-          <div class="code-val" style="word-break:break-all">
-            {managingGame.launchUri || managingGame.exe || "Platform default"}
+        <label class="form-group">
+          <span class="form-label">Short Description / Summary:</span>
+          <textarea
+            class="input-text"
+            rows="3"
+            style="resize:vertical;font-family:inherit"
+            bind:value={modalShortDescription}
+            placeholder="Enter a short summary or description for this game…"
+          ></textarea>
+        </label>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+          <label class="form-group">
+            <span class="form-label">Developers (comma-separated):</span>
+            <input
+              type="text"
+              class="input-text"
+              bind:value={modalDevelopers}
+              placeholder="e.g. Nintendo EAD, Valve"
+            />
+          </label>
+
+          <label class="form-group">
+            <span class="form-label">Publishers (comma-separated):</span>
+            <input
+              type="text"
+              class="input-text"
+              bind:value={modalPublishers}
+              placeholder="e.g. Nintendo, Devolver Digital"
+            />
+          </label>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem">
+          <label class="form-group">
+            <span class="form-label">Release Date / Year:</span>
+            <input
+              type="text"
+              class="input-text"
+              bind:value={modalReleaseDate}
+              placeholder="e.g. 2002-12-13 or 2002"
+            />
+          </label>
+
+          <label class="form-group">
+            <span class="form-label">Genres (comma-separated):</span>
+            <input
+              type="text"
+              class="input-text"
+              bind:value={modalGenres}
+              placeholder="e.g. Action, Adventure, RPG"
+            />
+          </label>
+        </div>
+
+        <div style="padding-top:0.75rem;border-top:1px solid rgba(255,255,255,0.08);display:flex;flex-direction:column;gap:0.75rem">
+          <span class="form-label">Custom Artwork (URL or Local Image File)</span>
+
+          <div class="form-group">
+            <span class="muted-xs">Portrait Cover / Boxart (2:3 Capsule):</span>
+            <div style="display:flex;gap:0.5rem;margin-top:0.25rem">
+              <input
+                type="text"
+                class="input-text"
+                style="flex:1"
+                bind:value={modalCapsuleImage}
+                placeholder="https://… or local file path"
+              />
+              <button type="button" class="btn btn-secondary" onclick={() => pickArtworkFile("capsule")}>
+                📂 Browse…
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <span class="muted-xs">Hero Backdrop Banner (16:9 Wide):</span>
+            <div style="display:flex;gap:0.5rem;margin-top:0.25rem">
+              <input
+                type="text"
+                class="input-text"
+                style="flex:1"
+                bind:value={modalHeroImage}
+                placeholder="https://… or local file path"
+              />
+              <button type="button" class="btn btn-secondary" onclick={() => pickArtworkFile("hero")}>
+                📂 Browse…
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <span class="muted-xs">Transparent Title Logo (PNG / SVG):</span>
+            <div style="display:flex;gap:0.5rem;margin-top:0.25rem">
+              <input
+                type="text"
+                class="input-text"
+                style="flex:1"
+                bind:value={modalLogoImage}
+                placeholder="https://… or local file path"
+              />
+              <button type="button" class="btn btn-secondary" onclick={() => pickArtworkFile("logo")}>
+                📂 Browse…
+              </button>
+            </div>
           </div>
         </div>
 
-        <div class="form-group" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.08)">
-          <span class="form-label">Metadata & Provider Management</span>
-          
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.5rem;font-size:0.85rem">
-            <span class="muted">Default Game Provider:</span>
-            <span class="pill pill-default">
-              {getPlatformMetadata(managingGame.platform).icon} {getPlatformMetadata(managingGame.platform).label}
+        <div style="padding-top:0.75rem;border-top:1px solid rgba(255,255,255,0.08)">
+          <span class="form-label">Platform &amp; Launch Target</span>
+          <div class="code-val" style="word-break:break-all;margin-top:0.35rem">
+            {managingGame.launchUri || managingGame.exe || "Platform default"}
+          </div>
+          {#if gameMeta?.enhancedBy && gameMeta.enhancedBy.length > 0}
+            <span class="muted-xs" style="display:block;margin-top:0.4rem">
+              Metadata sources: {gameMeta.enhancedBy.join(", ")}. Global metadata cache refresh and purge controls are located in Settings → Storage &amp; Cache.
             </span>
-          </div>
-
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.5rem;font-size:0.85rem">
-            <span class="muted">Enhancement Status:</span>
-            {#if gameMeta?.userEnhanced}
-              <span class="pill pill-accent" title="Enhanced from metadata providers">
-                ✨ Enhanced ({gameMeta.enhancedBy?.join(", ") || "Metadata Sources"})
-              </span>
-            {:else}
-              <span class="pill pill-default">Default Provider Data</span>
-            {/if}
-          </div>
-
-          <div style="margin-top:1rem">
-            <label for="manual-enhance-source" class="form-label" style="font-size:0.8rem">Manual Metadata Enhancement Source:</label>
-            <select id="manual-enhance-source" class="input-text" bind:value={selectedEnhanceProvider} style="width:100%;margin-top:0.25rem">
-              <option value="all">All Enabled Metadata Sources (Sequential Fallback)</option>
-              <option value="metadata-screenscraper">ScreenScraper (Arcade & Retro Consoles)</option>
-              <option value="metadata-thegamesdb">TheGamesDB (Community Game Database)</option>
-              <option value="metadata-igdb">IGDB (Twitch / Amazon Games Database)</option>
-              <option value="metadata-steamgriddb">SteamGridDB (High-Res Covers & Grids)</option>
-              <option value="metadata-hltb">HowLongToBeat (Playtime Statistics)</option>
-              <option value="metadata-pcgamingwiki">PCGamingWiki (Configuration & Fixes)</option>
-              <option value="metadata-protondb">ProtonDB (Linux & Deck Compatibility)</option>
-            </select>
-          </div>
-
-          <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.75rem;cursor:pointer;font-size:0.825rem">
-            <input type="checkbox" bind:checked={overrideExisting} />
-            <span>Override existing details with metadata provider</span>
-          </label>
-          <span class="muted-xs" style="display:block;margin-left:1.5rem">
-            When unchecked, metadata providers only fill in missing fields. When checked, provider metadata is replaced with the selected source.
-          </span>
-
-          <div style="display:flex;gap:0.5rem;margin-top:1rem;flex-wrap:wrap">
-            <button
-              type="button"
-              class="btn btn-secondary"
-              onclick={() => handleEnhanceMetadata(managingGame!)}
-              disabled={isEnhancing}
-            >
-              <span class:spin={isEnhancing}>✨</span>
-              <span>{isEnhancing ? "Scanning Metadata…" : "Enhance Metadata"}</span>
-            </button>
-
-            <button
-              type="button"
-              class="btn btn-ghost"
-              onclick={() => handleResetMetadataCache(managingGame!)}
-              title="Clears user/metadata-provider enhancements and restores default game provider data"
-              disabled={loadingMeta}
-            >
-              ↺ Reset Cache to Provider Defaults
-            </button>
-          </div>
-          <span class="muted-xs" style="margin-top:0.5rem;display:block">
-            Note: Game providers are only allowed to override metadata from metadata providers when you choose to reset the metadata cache.
-          </span>
+          {/if}
         </div>
       </div>
 
-      <div class="row modal-footer" style="justify-content:flex-end;gap:0.5rem;margin-top:1.5rem">
+      <div class="row modal-footer" style="justify-content:flex-end;gap:0.5rem;margin-top:1.25rem">
         <button class="btn btn-ghost" onclick={() => (showManageModal = false)}>Cancel</button>
-        <button class="btn btn-primary" onclick={saveCustomName}>Save Changes</button>
+        <button class="btn btn-primary" onclick={saveGameCustomizations}>Save Customizations</button>
       </div>
     </div>
   </div>

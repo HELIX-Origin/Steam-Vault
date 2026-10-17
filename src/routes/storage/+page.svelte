@@ -3,6 +3,7 @@
   import { api, errorMessage } from "$lib/api";
   import { t } from "$lib/i18n";
   import { error, games, settings, storageReport } from "$lib/stores";
+  import PlatformIcon from "$lib/components/PlatformIcon.svelte";
   import type { DiskInfo, Game, GamePlacement, Platform, StorageReport } from "$lib/types";
   import "$styles/storage.scss";
 
@@ -291,7 +292,7 @@
           <div class="platform-head">
             <div class="platform-meta">
               <span class="platform-icon-wrap" style="color:{stat.meta.color}">
-                {stat.meta.icon}
+                <PlatformIcon platform={stat.meta.id} size={16} />
               </span>
               <span class="platform-name">{stat.meta.label}</span>
             </div>
@@ -354,7 +355,7 @@
         <div class="glass card drive-card" style="grid-column: 1 / -1; padding: 1.5rem; text-align: center;">
           <p class="muted-sm" style="margin: 0;">
             {#if !isPluginEnabled("utility-storage")}
-              The <strong>Storage &amp; Drive Analyzer</strong> utility plugin is currently disabled in <a href="/settings?tab=plugins" style="color:var(--accent)">Plugins &amp; Modules</a>.
+              The <strong>Storage &amp; Drive Analyzer</strong> feature is currently disabled in <a href="/settings" style="color:var(--accent)">Settings</a>.
             {:else if busy}
               Analyzing drive capacities in background…
             {:else}
@@ -367,15 +368,15 @@
   </div>
 
   <!-- Installed Games Storage Breakdown Section -->
-  <div class="section-container">
-    <div class="section-head">
-      <div>
-        <h2 class="section-title">Installed Games Storage Explorer</h2>
-        <p class="muted-sm">Installed titles ranked by disk space usage across all storefront platforms.</p>
-      </div>
-      <span class="muted-sm">{filteredGames.length} matching titles</span>
+  <div class="section-head">
+    <div>
+      <h2 class="section-title">Installed Games Storage Explorer</h2>
+      <p class="muted-sm">Installed titles ranked by disk space usage across all storefront platforms.</p>
     </div>
+    <span class="muted-sm">{filteredGames.length} matching titles</span>
+  </div>
 
+  <div class="section-container">
     <div class="storage-explorer-card">
       <div class="storage-toolbar">
         <div class="toolbar-controls">
@@ -418,7 +419,7 @@
                 class:active={selectedPlatform === p.id}
                 onclick={() => (selectedPlatform = p.id)}
               >
-                {p.icon} {p.label} ({count})
+                <PlatformIcon platform={p.id} size={12} color={p.color} /> {p.label} ({count})
               </button>
             {/if}
           {/each}
@@ -444,7 +445,7 @@
 
               <div class="row-platform">
                 <span class="pill pill-dim" style="border-color:{pMeta.color}40;color:{pMeta.color}">
-                  {pMeta.icon} {pMeta.label}
+                  <PlatformIcon platform={pMeta.id} size={12} /> {pMeta.label}
                 </span>
               </div>
 

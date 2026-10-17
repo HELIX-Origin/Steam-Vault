@@ -24,43 +24,39 @@ Built on **Tauri v2** (Rust backend, SvelteKit + Svelte 5 frontend), Universal G
 
 ## 🧩 Features
 
-- **Steam & GOG Left Games List Sidebar** — Dedicated to the Library view, featuring instant real-time search, quick filter pills (All, Installed, ★ Favorites), platform scan trigger (`↻ Scan`), and collapsible platform accordions with live game counts.
+- **Steam & GOG Left Games List Sidebar** — Dedicated to the Library view, featuring instant real-time search, quick filter pills (All, Installed, ★ Favorites), platform scan trigger (`↻ Scan`), and collapsible platform and console accordions with live game counts.
+- **Authentic Vector SVG Platform & Console Icons** — Pixel-perfect vector SVGs for all PC storefronts and retro emulation consoles (`PlatformIcon.svelte`), eliminating generic glyphs.
 - **Dedicated Game Showcase View** — Rich selected game cockpit featuring high-resolution 16:9 hero wallpaper banner with dark vignette, portrait capsule, title typography, prominent PLAY NOW launch button, playtime metrics, and game details.
-- **10-Image Screenshot Media Gallery** — Interactive media carousel supporting up to 10 screenshots with a fullscreen lightbox viewer.
+- **Consolidated Unified Media Showcase** — Streamlined media section with dynamic tabs: **🖼️ Screenshots & Art** (with fullscreen lightbox), **🎬 Trailers** (streaming modern Steam Akamai MP4 videos), and **🎵 Soundtracks** (ambient theme playback).
+- **Per-Game Customization Modal (`⚙ Manage`)** — Full in-app customization of game Title, Short Description, Developers, Publishers, Release Date, Genres, and Custom Artwork (Capsule, Hero, Logo via URL or local file picker).
+- **Automatic Multi-Source Metadata Engine** — Background native Rust cascades across Local Inspector, Libretro Thumbnails CDN, Steam Store, GOG Catalog v1, Wikipedia/Wikidata MediaWiki API, PCGamingWiki Cargo API, and ProtonDB with zero dummy strings.
+- **Dedicated Universal Title Normalizer** — Resolves RPG Maker `System.json` titles (e.g. `relicts-auf-aeson` → `Relicts of Aeson`), concatenated lowercase slugs (`myfutafamily` → `My Futa Family`), and ROM dump tags.
 - **Native Launcher Delegation Architecture** — Installation, launching, updating, and uninstallation delegate directly to installed official client protocols (`steam://`, `com.epicgames.launcher://`, `goggalaxy://`, `uplay://`). Never handles user credentials while preserving official client overlays, cloud save sync, friend lists, playtime tracking, and achievement unlocks.
-- **Cross-Platform Free Games, Deals & Patch Notes Feed** — Real-time dashboard panel powered by GamerPower tracking verified 100% free game giveaways, store specials/discounts across major storefronts, and official game patch notes.
+- **Settings-Only Cache Controls** — Keeps the Library view clutter-free; cache refresh (`↻ Refresh Metadata Cache`) and cache purge (`🗑 Purge Data Cache`) live strictly in **Settings → Storage & Cache**.
+- **Cross-Platform Free Games, Deals & Patch Notes Feed** — Real-time dashboard panel tracking verified 100% free game giveaways, store specials/discounts across major storefronts, and official game patch notes.
 - **Multi-Drive Storage Footprint Analyzer** — Storage analytics cockpit with drive capacity/usage gauges and non-blocking background disk space calculation.
 - **Custom Collections & Smart Categories** — Build custom collections, tag favorites, and evaluate dynamic filter rules evaluated locally with 0ms in-memory cache synchronization.
-- **Custom Artwork Studio** — Inspect, customize, and fetch portrait capsules, hero banners, logos, and square icons across all games and manually added local titles via community providers and local image imports.
-- **Modular In-App Plugin Framework** — Decoupled architecture where all 12 platform integrations (Steam, Epic, GOG, Xbox, EA, Ubisoft, Battle.net, itch.io, Amazon Games, Rockstar Games, Standalone, EmulationStation) and 11 metadata providers operate as isolated, dedicated TypeScript modules.
-- **Tabbed Plugin Settings Dialog** — Decoupled configuration sub-window allowing per-plugin API keys (with password toggle), executable paths, and options with live credential connectivity testing.
+- **Universal Core Plugins Framework** — Decoupled architecture where platform integrations (`platform-universal`), metadata providers (`metadata-universal`), title normalizer (`utility-title-normalizer`), and media engines (`media-universal`) operate as unified core plugins paired with global helper modules.
 - **Hand-Rolled Reactive i18n Localization** — Native reactive UI translations supporting 30 languages with zero runtime localization dependencies and Arabic RTL layout support.
+- **Headless CLI Interface (`--cli`)** — Built-in command-line interface supporting `--cli scan`, `scan-roms`, `scaffold-roms`, and `normalize-title`.
 - **Animated Splash Screen & Obsidian Purple Theme** — High-contrast dark purple visual identity (`#080511` / `#140d28` / `#a855f7`) with hardware-accelerated transforms and zero `backdrop-filter: blur` performance overhead.
 
 ---
 
-## 🔌 Data Providers & Metadata Hierarchy
+## 🔌 Data Providers & Metadata Cascade
 
-Universal Game Launcher enforces an authoritative role hierarchy between game platforms and metadata providers:
-1. **Game Providers (Default Authoritative Source):** When games are detected, the platform provider plugin (Steam, Epic, GOG, itch, EA, EmulationStation, Standalone) fetches its own authoritative game details and artwork directly from its own source.
-2. **Metadata Providers (Manual On-Demand Enhancement):** Third-party metadata providers are run on-demand by the user via **✨ Enhance Metadata** in the showcase view to enrich games and fill missing fields.
-3. **Cache Reset Invariant:** Game providers are strictly prohibited from overwriting metadata contributed by metadata providers unless the user explicitly chooses to reset the metadata cache via **↺ Reset Cache to Provider Defaults**.
+Universal Game Launcher automatically enriches metadata via the **Universal Metadata Engine** (`metadata-universal`):
+1. **Local Inspector:** Inspects local game directories, RPG Maker `System.json` (`"gameTitle"`), itch.io receipt manifests, and `rom.ini` files.
+2. **Libretro CDN:** Downloads authentic retro console box art (`Named_Boxarts`), title screens (`Named_Titles`), snaps, and logos.
+3. **Steam Store API:** Official store details, reviews, 1080p screenshots, and modern Akamai CDN MP4 video trailers (`movie_max.mp4`).
+4. **GOG Catalog v1:** Official GOG covers, heroes, and DRM-free summaries.
+5. **Wikipedia & Wikidata API:** Encyclopedic synopses and metadata taxonomy properties (`P178`, `P123`, `P136`, `P577`).
+6. **PCGamingWiki Cargo API:** Engine info, architecture flags, FOV fixes, and save directory locations.
+7. **ProtonDB API:** Linux & Steam Deck compatibility ratings (`Native`, `Platinum`, `Gold`) and launch flags.
+8. **SteamGridDB (Optional):** Community vertical capsules (600×900), heroes, logos, and square icons.
+9. **IGDB (Optional):** Twitch IGDB game taxonomy, franchise links, developer studios, and critic ratings.
 
-| Provider | Category | Key Required | Purpose |
-| :--- | :---: | :---: | :--- |
-| **Steam Store** (`metadata-steam`) | Metadata | ❌ No | Official genres, developers, publishers, release dates, reviews, 1080p screenshots |
-| **GOG Catalog** (`metadata-gog`) | Metadata | ❌ No | Official GOG covers, heroes, game summaries, and DRM-free metadata |
-| **Epic Games Store** (`metadata-epic`) | Metadata | ❌ No | Official EGS catalog details, promotional keyart covers, and release dates |
-| **itch.io Store** (`metadata-itch`) | Metadata | ❌ No | Indie game descriptions, developer profiles, screenshots, and account sync |
-| **SteamGridDB** (`metadata-steamgriddb`) | Metadata | ✅ Yes (Optional) | Community-crafted vertical capsules (600×900), heroes, logos, and square icons |
-| **IGDB (Twitch)** (`metadata-igdb`) | Metadata | ✅ Yes (Optional) | Twitch IGDB game taxonomy, franchise links, developer studios, critic ratings |
-| **TheGamesDB** (`metadata-thegamesdb`) | Metadata | ❌ No | Retro console metadata, authentic box art, fanart heroes, and clear logos |
-| **ScreenScraper** (`metadata-screenscraper`) | Metadata | ❌ No | Multi-console ROM metadata, 2D/3D box art, wheel logos, and video snaps |
-| **HowLongToBeat** (`metadata-howlongtobeat`) | Metadata | ❌ No | Crowd-sourced Main Story, Main + Extra, and Completionist playtime averages |
-| **PCGamingWiki** (`metadata-pcgamingwiki`) | Metadata | ❌ No | Game engine, FOV/ultrawide fixes, controller flags, and save locations |
-| **ProtonDB** (`metadata-protondb`) | Metadata | ❌ No | Linux & Steam Deck compatibility tiers (Native, Platinum, Gold) and launch tweaks |
-
-> 💡 **Keyless Architecture**: Universal Game Launcher works fully out of the box without requiring API keys or user logins. External providers are used on-demand to enhance metadata and custom high-resolution artwork.
+> 💡 **Keyless Architecture**: Universal Game Launcher works fully out of the box without requiring API keys or user logins. Background cascades run automatically, and custom overrides persist locally in `database.sqlite`.
 
 ---
 
@@ -123,7 +119,9 @@ Both local development builds and release packages support opt-in code signing:
 
 ```bash
 npm run sign             # Signs discovered platform artifacts (.exe/.msi, .app/.dmg, .deb/.AppImage)
-npm run sign:local       # Alias for local signing
+npm run sign:windows     # Signs Windows artifacts (SignTool)
+npm run sign:linux       # Signs Linux packages (GPG)
+npm run sign:macos       # Signs macOS .app and .dmg bundles (codesign + notarize)
 npm run sign -- --dry-run
 ```
 

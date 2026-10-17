@@ -209,6 +209,7 @@ pub fn check_binary_installed(binaries: &[String], custom_path: Option<&str>) ->
     {
         let drives = drive_roots();
         for drive in &drives {
+            // 4a. Check top-level candidates and subdirectories in Program Files, Games, etc.
             for sub in [
                 "Program Files",
                 "Program Files (x86)",
@@ -230,11 +231,91 @@ pub fn check_binary_installed(binaries: &[String], custom_path: Option<&str>) ->
                             }
                         }
                     }
+
+                    // Check 1 level deep inside subdirectories
+                    if let Ok(entries) = std::fs::read_dir(&check_dir) {
+                        for entry in entries.flatten() {
+                            let sub_folder = entry.path();
+                            if sub_folder.is_dir() {
+                                for bin in binaries {
+                                    let cand = sub_folder.join(bin);
+                                    if cand.is_file() {
+                                        return Some(cand.display().to_string());
+                                    }
+                                    if !bin.ends_with(".exe") {
+                                        let cand_exe = sub_folder.join(format!("{bin}.exe"));
+                                        if cand_exe.is_file() {
+                                            return Some(cand_exe.display().to_string());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4b. Known nested launcher paths across any mounted drive
+            let known_nested = [
+                "Games/Epic Games/Launcher/Portal/Binaries/Win64/EpicGamesLauncher.exe",
+                "Program Files/Epic Games/Launcher/Portal/Binaries/Win64/EpicGamesLauncher.exe",
+                "Program Files (x86)/Epic Games/Launcher/Portal/Binaries/Win64/EpicGamesLauncher.exe",
+                "Games/Epic Games/Legendary/legendary.exe",
+                "Games/GOG Galaxy/GalaxyClient.exe",
+                "Program Files (x86)/GOG Galaxy/GalaxyClient.exe",
+                "Program Files/GOG Galaxy/GalaxyClient.exe",
+                "Games/ES-DE/ES-DE.exe",
+                "ES-DE/ES-DE.exe",
+                "Games/Ubisoft/Ubisoft Game Launcher/UbisoftConnect.exe",
+                "Program Files (x86)/Ubisoft/Ubisoft Game Launcher/UbisoftConnect.exe",
+                "Program Files/Ubisoft/Ubisoft Game Launcher/UbisoftConnect.exe",
+                "Program Files/Electronic Arts/EA Desktop/EA Desktop/EALauncher.exe",
+                "Program Files/Electronic Arts/EA Desktop/EA Desktop/EADesktop.exe",
+                "Program Files (x86)/Electronic Arts/EA Desktop/EA Desktop/EALauncher.exe",
+                "Program Files (x86)/Origin/Origin.exe",
+                "Games/EA Games/EA Desktop/EALauncher.exe",
+                "Program Files (x86)/Battle.net/Battle.net.exe",
+                "Program Files/Battle.net/Battle.net.exe",
+                "Games/itch/itch-setup.exe",
+                "Games/itch/itch.exe",
+                "Games/Dolphin/Dolphin.exe",
+            ];
+            for rel in known_nested {
+                let p = drive.join(rel);
+                if p.is_file() {
+                    let file_name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    for bin in binaries {
+                        if file_name.eq_ignore_ascii_case(bin)
+                            || (!bin.ends_with(".exe") && format!("{bin}.exe").eq_ignore_ascii_case(file_name))
+                        {
+                            return Some(p.display().to_string());
+                        }
+                    }
                 }
             }
         }
 
+        // 4c. Check User AppData directories (e.g. itch, Amazon Games)
         if let Some(local_app_data) = dirs::data_local_dir() {
+            let user_candidates = [
+                local_app_data.join("itch").join("itch-setup.exe"),
+                local_app_data.join("itch").join("itch.exe"),
+                local_app_data.join("Programs").join("itch").join("itch.exe"),
+                local_app_data.join("Amazon Games").join("App").join("Amazon Games.exe"),
+            ];
+            for cand in user_candidates {
+                if cand.is_file() {
+                    let file_name = cand.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    for bin in binaries {
+                        if file_name.eq_ignore_ascii_case(bin)
+                            || (!bin.ends_with(".exe") && format!("{bin}.exe").eq_ignore_ascii_case(file_name))
+                        {
+                            return Some(cand.display().to_string());
+                        }
+                    }
+                }
+            }
+
             for bin in binaries {
                 let candidate = local_app_data.join("Programs").join(bin);
                 if candidate.is_file() {
@@ -353,6 +434,8 @@ pub struct LauncherStatus {
     pub alternative_label: Option<String>,
     pub supports_silent_install: bool,
     pub winget_package_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch_args: Option<String>,
 }
 
 /// Fallback detection for all platform launchers using binary discovery.
@@ -362,13 +445,14 @@ pub fn detect_all_launchers() -> Vec<LauncherStatus> {
         ("steam", "Steam", vec!["steam.exe", "steam"], "https://store.steampowered.com/about/", Some("Valve.Steam")),
         ("epic", "Epic Games", vec!["EpicGamesLauncher.exe", "legendary.exe", "legendary"], "https://store.epicgames.com/download", Some("EpicGames.EpicGamesLauncher")),
         ("gog", "GOG Galaxy", vec!["GalaxyClient.exe", "GalaxyCommunication.exe"], "https://www.gog.com/galaxy", Some("GOG.Galaxy")),
-        ("ea", "EA App", vec!["EADesktop.exe", "Origin.exe"], "https://www.ea.com/ea-app", Some("ElectronicArts.EADesktop")),
+        ("ea", "EA App", vec!["EALauncher.exe", "EADesktop.exe", "Origin.exe"], "https://www.ea.com/ea-app", Some("ElectronicArts.EADesktop")),
         ("ubisoft", "Ubisoft Connect", vec!["UbisoftConnect.exe", "upc.exe"], "https://ubisoftconnect.com/", Some("Ubisoft.Connect")),
         ("battlenet", "Battle.net", vec!["Battle.net.exe"], "https://www.battle.net/download/getInstaller", Some("Blizzard.BattleNet")),
-        ("itch", "itch.io", vec!["itch.exe", "itch", "butler.exe", "butler"], "https://itch.io/app", Some("itchio.itch")),
+        ("itch", "itch.io", vec!["itch-setup.exe", "itch.exe", "itch", "butler.exe", "butler"], "https://itch.io/app", Some("itchio.itch")),
         ("amazon", "Amazon Games", vec!["Amazon Games.exe", "AmazonGames.exe", "nile.exe", "nile"], "https://gaming.amazon.com/amazon-games-app", Some("Amazon.Games")),
         ("rockstar", "Rockstar Games Launcher", vec!["Launcher.exe", "RockstarService.exe"], "https://socialclub.rockstargames.com/rockstar-games-launcher", Some("RockstarGames.RockstarGamesLauncher")),
         ("xbox", "Xbox App", vec!["XboxApp.exe", "XboxPcApp.exe"], "https://www.xbox.com/apps/xbox-app-for-pc", Some("Microsoft.GamingApp")),
+        ("emulationstation", "EmulationStation (ES-DE)", vec!["ES-DE.exe", "emulationstation.exe", "EmulationStation.exe"], "https://es-de.org", None),
         ("other", "Other Studios", vec![], "", None),
     ];
 
@@ -385,6 +469,7 @@ pub fn detect_all_launchers() -> Vec<LauncherStatus> {
                 alternative_label: None,
                 supports_silent_install: false,
                 winget_package_id: None,
+                launch_args: None,
             };
         }
         let string_bins: Vec<String> = bins.into_iter().map(String::from).collect();
@@ -392,6 +477,11 @@ pub fn detect_all_launchers() -> Vec<LauncherStatus> {
         let installed = exe.is_some();
         let alt = if id == "epic" && check_binary_installed(&["legendary.exe".into(), "legendary".into()], None).is_some() {
             Some("Legendary CLI & EOS Service".to_string())
+        } else {
+            None
+        };
+        let launch_args = if id == "itch" && exe.as_deref().map_or(false, |p| p.to_lowercase().ends_with("itch-setup.exe")) {
+            Some("--prefer-launch --appname itch".to_string())
         } else {
             None
         };
@@ -406,6 +496,7 @@ pub fn detect_all_launchers() -> Vec<LauncherStatus> {
             alternative_label: if id == "epic" { Some("Download Legendary CLI ↗".to_string()) } else { None },
             supports_silent_install: winget_ready && winget_id.is_some(),
             winget_package_id: winget_id.map(String::from),
+            launch_args,
         }
     }).collect()
 }

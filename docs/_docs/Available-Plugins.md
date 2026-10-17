@@ -1,434 +1,166 @@
 ---
 layout: docs
 title: Available Plugins Catalog
-summary: Exhaustive reference of all 27 built-in platform, metadata, utility, and media plugins with features and settings
+summary: Exhaustive reference of Universal Core platform, metadata, utility, and media plugins with global helpers and configurations
 parent: Documentation Home
 nav_order: 5
 ---
 
 # Available Plugins Catalog
 
-Universal Game Launcher features a modular, in-app plugin framework (`src/lib/plugins/`). All plugins operate as first-class native TypeScript modules compiled directly into the application, guaranteeing zero network CDN vulnerabilities, 100% offline capability, instant loading, and clean decoupling.
+Universal Game Launcher implements a high-performance **Universal Core Plugins architecture** (`src/lib/plugins/`). Rather than fragmenting platform and metadata features into dozen of fragile, uncoordinated modules, Universal Game Launcher consolidates core functionality into unified, domain-specific **Universal Core Plugins** paired with **Global Helper Modules**.
 
-Plugins are categorized into four dedicated subdirectories:
-- **Platform Plugins (`platforms/`)** — 12 storefront integrations & local launcher engines
-- **Metadata Plugins (`metadata/`)** — 11 rich metadata, box art, and compatibility providers
-- **Utility Plugins (`utility/`)** — 2 background alert feeds and storage analytics tools
-- **Media Plugins (`media/`)** — 2 video trailer and ambient audio enhancement engines
+All plugins operate as native TypeScript modules compiled directly into the application, guaranteeing zero network CDN vulnerabilities, 100% offline capability, instant loading, and clean architectural decoupling.
 
 ---
 
-## 🕹️ Platform Plugins (`platforms/`)
+## 🏛️ Universal Core Plugins Overview
 
-Platform plugins manage game discovery, launch protocol delegation, social rosters, achievement tracking, and native metadata fetching for specific storefronts and launcher ecosystems.
+```
+src/lib/plugins/
+├── framework.ts                  # Core UniversalPlugin TypeScript interfaces and contracts
+├── engine.ts                     # In-memory registry, KV persistence, and metadata helpers
+├── catalog.ts                    # Master registry exporting all active Universal Core plugins
+├── index.ts                      # Public barrel exports
+├── platforms/
+│   └── universal.ts              # platform-universal (12 platform specs + global helpers)
+├── metadata/
+│   └── universal.ts              # metadata-universal (automatic multi-source cascade)
+├── utility/
+│   ├── title-normalizer.ts       # utility-title-normalizer (clean titles, RPG Maker & ROM normalizer)
+│   ├── deals.ts                  # utility-deals (100% free giveaways & store deals)
+│   ├── patchnotes.ts             # utility-patchnotes (developer game update feeds)
+│   └── storage.ts                # utility-storage (non-blocking drive footprint analyzer)
+└── media/
+    └── universal.ts              # media-universal (Steam CDN MP4 trailer streaming & soundtracks)
+```
 
-### 1. Steam Platform Integration (`platform-steam`)
-- **Plugin ID**: `platform-steam`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Discovers and launches games from Steam libraries, `appmanifest_*.acf` files, and custom library folders across all mounted drives.
-- **Declared Features**: `discovery`, `launch`, `library_vdf`, `cloud_saves`, `store_cdn`, `social`, `achievements`
+---
+
+## 🕹️ 1. Universal Platform Discovery & Launcher Engine (`platform-universal`)
+
+- **Plugin ID**: `platform-universal`
+- **Version**: `1.4.0` · **Author**: `HELIX Origin`
+- **Description**: Unified platform engine managing discovery, launch protocol delegation, social rosters, and achievement hooks across all 12 supported PC storefronts and console emulation systems.
+- **Declared Features**: `discovery`, `launch`, `client_delegation`, `legendary_cli`, `cloud_saves`, `social`, `achievements`, `store_cdn`, `multi_drive_scaffolding`
+
+### Supported Platforms & Target Specifications
+
+| Platform ID | Display Label | Detection Mechanism | Launch Delegation Protocol | Social & Achievements |
+| :--- | :--- | :--- | :--- | :---: |
+| `steam` | **Steam** | Parses `libraryfolders.vdf` and `appmanifest_*.acf` across mounted drives | `steam://rungameid/{appId}` | Yes |
+| `epic` | **Epic Games** | Local `.item` manifests in `%ProgramData%\Epic\EpicGamesLauncher\Data\Manifests\` | `com.epicgames.launcher://apps/{appId}?action=launch&silent=true` (Official) or `legendary launch <appName>` (CLI) | Yes |
+| `gog` | **GOG Galaxy** | Local Galaxy SQLite database (`galaxy-2.0.db`) & Windows Registry | `goggalaxy://openGameView/{gameId}` or direct executable launch | Yes |
+| `xbox` | **Xbox / Microsoft Store** | `XboxGames` library volumes, `MicrosoftGame.config`, and `appxmanifest.xml` | `shell:AppsFolder\{PackageFamilyName}!App` | Yes |
+| `ea` | **EA Desktop** | Local EA installer registry entries and directory structures | `origin2://game/launch?offerIds={appId}` | Yes |
+| `ubisoft` | **Ubisoft Connect** | Local Ubisoft registry and launcher configurations | `uplay://launch/{gameId}/0` | Yes |
+| `battlenet` | **Battle.net** | Blizzard installation product databases and system registry | `battlenet://{appId}` | Yes |
+| `itch` | **itch.io** | The itch desktop app library (`%APPDATA%\itch\apps`) and receipt manifests | `itch://games/{gameId}` or direct executable launch | No |
+| `amazon` | **Amazon Games** | Amazon Games library SQLite manifests and install folders | `amazon-games://play/{appId}` | No |
+| `rockstar` | **Rockstar Games** | Rockstar Games Launcher registry and manifests | `rockstar://launch/{appId}` | No |
+| `standalone` | **Standalone Executables** | Manually added local executables, custom arguments, and working directories | Native process execution | No |
+| `emulation` | **EmulationStation** | Multi-console ROM directories organized via the ES-DE standard | Direct emulator binary delegation or launcher | No |
+
+### Global Platform Helper Modules
+
+Exported alongside `platformUniversalPlugin` in `src/lib/plugins/platforms/universal.ts`:
+
+- `getAllPlatformSpecs(): PlatformSpec[]` — Returns specifications, colors, protocols, and detection metadata for all 12 platforms.
+- `detectPlatformLauncher(platformId, config): Promise<LauncherDetectionResult>` — Detects whether the official platform client is installed locally.
+- `installPlatformLauncher(platformId): Promise<boolean>` — Opens the official client installation page or installer package.
+- `getPlatformLaunchSpec(platformId, game, config): PlatformLaunchSpec | null` — Derives the exact URI protocol or binary launch arguments for a game.
+- `getPlatformUris(platformId, game): { installUri?, uninstallUri?, storePageUri? }` — Formulates official client install, uninstall, and store URLs.
+
+---
+
+## 📚 2. Universal Multi-Source Metadata Engine (`metadata-universal`)
+
+- **Plugin ID**: `metadata-universal`
+- **Version**: `1.4.0` · **Author**: `HELIX Origin`
+- **Description**: Automatic multi-source metadata engine cascading across native and community data sources to enrich descriptions, release dates, reviews, and high-resolution artwork without requiring manual intervention.
+- **Declared Features**: `automatic_enrichment`, `multi_source_cascade`, `steam_store`, `gog_catalog`, `wikipedia_wikidata`, `libretro_cdn`, `pcgamingwiki`, `protondb`, `steamgriddb`, `igdb`
+
+### Automatic Enrichment Cascade
+
+When a game is imported or indexed, the Universal Metadata Engine queries sources in priority order:
+
+1. **Local Inspector**: Parses local game folders, RPG Maker `System.json` (`"gameTitle"`), itch.io receipt manifests, `rom.ini` overrides, and PE binary headers.
+2. **Libretro Thumbnails CDN**: Downloads authentic console box art (`Named_Boxarts`), title screens (`Named_Titles`), snaps, and logos for retro console ROMs.
+3. **Steam Store API**: Official Valve store details, genres, developer credits, publisher credits, user reviews, 1080p screenshots, and modern Akamai CDN MP4 video trailers.
+4. **GOG Catalog v1 API**: Official DRM-free store covers, hero wallpapers, and product descriptions.
+5. **Wikipedia & Wikidata MediaWiki API**: Encyclopedic game synopses and Wikidata taxonomy properties (`P178` Developer, `P123` Publisher, `P136` Genre, `P577` Release Date) for games without official store pages.
+6. **PCGamingWiki Cargo API**: Game engine detection, architecture flags, save game directory locations, and widescreen/FOV fixes.
+7. **ProtonDB API**: Linux and Steam Deck compatibility ratings (`Native`, `Platinum`, `Gold`, `Silver`, `Bronze`, `Borked`) and recommended launch arguments.
+8. **SteamGridDB (Optional)**: Community capsule covers (600×900), hero banners (1920×620), transparent logos, and square icons (requires free user API key).
+9. **IGDB / Twitch (Optional)**: Comprehensive global video game taxonomy and critic ratings (requires Twitch Developer credentials).
+
+---
+
+## 🔤 3. Universal Title Normalizer (`utility-title-normalizer`)
+
+- **Plugin ID**: `utility-title-normalizer`
+- **Version**: `1.4.0` · **Author**: `HELIX Origin`
+- **Description**: Dedicated title normalization engine operating across frontend TypeScript and backend Rust (`src-tauri/src/plugins/title_normalizer.rs`) to produce clean, authentic game titles across PC and console libraries.
 - **Capabilities**:
-  - Direct local VDF manifest discovery across all registered Steam library drives (`libraryfolders.vdf`).
-  - Native client launch protocol: `steam://rungameid/{appId}`.
-  - Native install & uninstall URIs: `steam://install/{appId}`, `steam://uninstall/{appId}`.
-  - Native friends list status protocol: `steam://friends/status`.
-  - Native achievements tracker hook: `steam://achievements/{appId}`.
-  - Native storefront metadata and CDN artwork query (`queryMetadata`, `queryArtwork`) via official Steam storefront endpoints.
-- **Settings Configuration**:
-  - `customSteamPath` (Text): Custom path to `steam.exe` if installed in a non-standard location.
+  - **RPG Maker Inspection**: Inspects 1-level child folders for `www/data/System.json` or `data/System.json` to extract authentic `gameTitle` (e.g. resolving `relicts-auf-aeson` to **`Relicts of Aeson`**).
+  - **Slug Separation**: Intelligently decomposes concatenated lowercase directory slugs (e.g. `myfutafamily` to **`My Futa Family`**).
+  - **Article Inversion**: Converts inverted library titles to standard reading format (e.g. `Legend of Zelda, The - The Wind Waker` to **`The Legend of Zelda: The Wind Waker`**).
+  - **ROM Dump Tag Stripping**: Strips dump tags `(USA)`, `[!]`, `(Rev 1)`, `(Track 01)`, and `.nkit` extensions.
+  - **Deduplication**: Generates canonical title keys to prevent duplicate entries in custom game listings.
 
 ---
 
-### 2. Epic Games Integration (`platform-epic`)
-- **Plugin ID**: `platform-epic`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Discovers and launches games from Epic Games `.item` manifests with integrated open-source Legendary CLI engine support.
-- **Declared Features**: `discovery`, `launch`, `legendary_cli`, `offline_auth`, `eos_overlay`, `social`, `achievements`
+## 🎬 4. Universal Ambient Audio & Media Engine (`media-universal`)
+
+- **Plugin ID**: `media-universal`
+- **Version**: `1.4.0` · **Author**: `HELIX Origin`
+- **Description**: Powers the consolidated media showcase in `/library` with streaming video trailers and ambient soundtrack playback.
 - **Capabilities**:
-  - Local manifest parsing from `%ProgramData%\Epic\EpicGamesLauncher\Data\Manifests\*.item`.
-  - Default launch protocol: `com.epicgames.launcher://apps/{appId}?action=launch&silent=true`.
-  - Alternate launch method: Open-source Legendary CLI headless execution (`legendary launch <appName>`).
-  - Native install & uninstall URIs: `com.epicgames.launcher://apps/{appId}?action=install`.
-  - Native storefront catalog metadata and keyart fetching (`queryMetadata`, `queryArtwork`).
-- **Settings Configuration**:
-  - `useLegendary` (Boolean, default: `false`): Enable open-source Legendary CLI as alternate provider backend.
-  - `customLegendaryPath` (Text): Full path to installed `legendary.exe` binary.
-  - `enableEosOverlay` (Boolean, default: `true`): Inject Epic Online Services overlay.
+  - **Modern Steam CDN Trailer Streaming**: Parses Steam Store `movies` arrays to extract high-definition Akamai MP4 video streams (`https://cdn.akamai.steamstatic.com/steam/apps/{movie_id}/movie_max.mp4`) rendered via native HTML5 video with full player controls.
+  - **Ambient Game Audio**: Plays official game soundtrack themes and ambient music in the background while viewing titles in the showcase.
+  - **Dynamic Tab Rendering**: Media tabs dynamically adapt: `🖼️ Screenshots & Art`, `🎬 Trailers` (displayed only when trailers are available), and `🎵 Soundtracks` (rendered dynamically when audio is present).
 
 ---
 
-### 3. GOG Galaxy Integration (`platform-gog`)
-- **Plugin ID**: `platform-gog`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Discovers and launches games from GOG Galaxy registry entries, local index databases, and DRM-free installations.
-- **Declared Features**: `discovery`, `launch`, `drm_free`, `galaxy_client`, `social`, `achievements`
+## 🎁 5. Free Games & Store Deals (`utility-deals`)
+
+- **Plugin ID**: `utility-deals`
+- **Version**: `1.4.0` · **Author**: `HELIX Origin`
+- **Description**: Delivers real-time notifications and browser feeds for 100% free game promotions and major store sales across Steam, Epic Games, GOG, and Humble Bundle.
 - **Capabilities**:
-  - Queries local Galaxy SQLite database (`galaxy-2.0.db`) and Windows Registry for authentic install locations.
-  - Launch protocol: `goggalaxy://openGameView/{gameId}`.
-  - Friends list protocol: `goggalaxy://openFriends`.
-  - Native metadata and CDN crop artwork queries (`queryMetadata`, `queryArtwork`).
-- **Settings Configuration**:
-  - `preferDirectExe` (Boolean, default: `false`): Launch standalone GOG executable directly without opening the Galaxy client.
-  - `customGalaxyPath` (Text): Custom path to `GalaxyClient.exe`.
+  - Live giveaway tracking powered by GamerPower feeds.
+  - Highlights limited-time 100% discount promotions.
+  - Direct store delegation to claim giveaways safely in your browser or official client.
 
 ---
 
-### 4. itch.io Platform Integration (`platform-itch`)
-- **Plugin ID**: `platform-itch`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Discovers and launches games installed via the itch.io desktop client and standalone receipt manifests.
-- **Declared Features**: `discovery`, `launch`, `indie_installations`, `butler_cli`
+## 📰 6. Patch Notes & News Feed (`utility-patchnotes`)
+
+- **Plugin ID**: `utility-patchnotes`
+- **Version**: `1.4.0` · **Author**: `HELIX Origin`
+- **Description**: Aggregates developer patch notes, update announcements, and community news for installed games in your library.
 - **Capabilities**:
-  - Discovers installed games in `%APPDATA%\itch\apps` and receipt files.
-  - Launch protocol: `itch://games/{gameId}` or direct executable launch.
-  - Query metadata and cover art directly from itch catalog endpoints (`queryMetadata`, `queryArtwork`).
-- **Settings Configuration**:
-  - `customItchAppsDir` (Text): Custom path to itch games installation directory.
+  - Automatically queries official client news feeds for installed titles.
+  - Displays formatted update changelogs and version release notes directly on the Dashboard.
 
 ---
 
-### 5. Xbox & Microsoft Store Integration (`platform-xbox`)
-- **Plugin ID**: `platform-xbox`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Discovers and launches games from Xbox Game Pass, Microsoft Store packages, and WindowsApps folders.
-- **Declared Features**: `discovery`, `launch`, `game_pass`, `uwp_packages`, `social`, `achievements`
-- **Capabilities**:
-  - Inspects `XboxGames` library volumes, `MicrosoftGame.config`, and package manifests.
-  - Launch protocol: `shell:AppsFolder\{PackageFamilyName}!App` or `ms-gamepass://launch?titleId={id}`.
-  - Native Xbox app social and achievements integration.
-- **Settings Configuration**:
-  - `scanMountedDrives` (Boolean, default: `true`): Automatically scan all connected drive letters for `XboxGames` root folders.
+## 💾 7. Storage & Drive Footprint Analyzer (`utility-storage`)
 
----
-
-### 6. EA Desktop Integration (`platform-ea`)
-- **Plugin ID**: `platform-ea`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Discovers and launches games from Electronic Arts (EA Desktop & Origin) local installations.
-- **Declared Features**: `discovery`, `launch`, `origin_protocol`, `social`, `achievements`
-- **Capabilities**:
-  - Inspects local EA installer registry entries and configured game folders.
-  - Launch protocol: `origin2://game/launch?offerIds={appId}`.
-  - Query metadata and category artwork via EA catalog titles (`queryMetadata`, `queryArtwork`).
-- **Settings Configuration**:
-  - `customEaAppPath` (Text): Custom path to `EADesktop.exe`.
-
----
-
-### 7. Ubisoft Connect Integration (`platform-ubisoft`)
-- **Plugin ID**: `platform-ubisoft`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Discovers and launches games from Ubisoft Connect registry entries and configurations.
-- **Declared Features**: `discovery`, `launch`, `uplay_protocol`, `social`, `achievements`
-- **Capabilities**:
-  - Inspects Ubisoft registry configurations and installed product directories.
-  - Launch protocol: `uplay://launch/{gameId}/0`.
-  - Friends list and club achievements integration.
-- **Settings Configuration**:
-  - `customUbisoftPath` (Text): Custom path to `UbisoftConnect.exe`.
-
----
-
-### 8. Battle.net Integration (`platform-battlenet`)
-- **Plugin ID**: `platform-battlenet`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Discovers and launches games from Blizzard Battle.net installations and `battle.net://` URI protocol.
-- **Declared Features**: `discovery`, `launch`, `battlenet_protocol`, `social`, `achievements`
-- **Capabilities**:
-  - Inspects Blizzard installation product databases and system registry.
-  - Launch protocol: `battlenet://{appId}` (e.g. `Pro`, `WoW`, `D4`).
-- **Settings Configuration**:
-  - `customBattleNetPath` (Text): Custom path to `Battle.net.exe`.
-
----
-
-### 9. Amazon Games Integration (`platform-amazon`)
-- **Plugin ID**: `platform-amazon`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Discovers and launches games from Amazon Games client installations and direct game binaries.
-- **Declared Features**: `discovery`, `launch`, `amazon_games_protocol`, `nile_cli`
-- **Capabilities**:
-  - Reads Amazon Games library SQLite manifests and install folders.
-  - Launch protocol: `amazon-games://play/{appId}`.
-- **Settings Configuration**:
-  - `customAmazonGamesDir` (Text): Custom library folder for Amazon Games.
-
----
-
-### 10. Rockstar Games Integration (`platform-rockstar`)
-- **Plugin ID**: `platform-rockstar`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Discovers and launches games from Rockstar Games Launcher installations and `rockstar://` URI scheme.
-- **Declared Features**: `discovery`, `launch`, `rockstar_protocol`
-- **Capabilities**:
-  - Inspects Rockstar Games Launcher manifests and installation folders.
-  - Launch protocol: `rockstar://launch/{appId}`.
-- **Settings Configuration**:
-  - `customLauncherPath` (Text): Custom path to `Launcher.exe`.
-
----
-
-### 11. Standalone & Local Executables (`platform-standalone`)
-- **Plugin ID**: `platform-standalone`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Enables importing and launching arbitrary local games, DRM-free titles, emulators, and custom executables.
-- **Declared Features**: `discovery`, `launch`, `custom_executables`, `emulators`, `drm_free`, `manual_import`
-- **Capabilities**:
-  - Powers the **+ Add Game** modal in the Library sidebar.
-  - Direct execution with custom working directory and arguments.
-  - Native PE header title derivation and executable inspection (`queryMetadata`, `queryArtwork`).
-- **Settings Configuration**:
-  - `defaultWorkingDir` (Text): Default directory for standalone game launches.
-
----
-
-### 12. EmulationStation Integration (`platform-emulationstation`)
-- **Plugin ID**: `platform-emulationstation`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Discovers and launches emulated games and ROMs organized via the ES-DE directory standard with automated folder scaffolding and intelligent title normalization.
-- **Declared Features**: `rom_scanning`, `folder_scaffolding`, `title_normalization`, `multi_console`
-- **Capabilities**:
-  - Automatically scans ROM files across all console subdirectories (`nes`, `snes`, `n64`, `gc`, `wii`, `psx`, `ps2`, etc.).
-  - Backend directory scaffolding command (`scaffold_emulation_folders`) creating standard folder structures with `systeminfo.txt`.
-  - Intelligent ROM title normalization engine stripping dump tags `(USA)`, `[!]`, `(Rev 1)`, GoodTools codes, and NKit extensions.
-  - Direct emulation launcher delegation via EmulationStation or configured emulator binaries.
-- **Settings Configuration**:
-  - `romsPath` (Text, default: `~/ROMs`): Root directory containing console ROM subfolders.
-  - `esExecutablePath` (Text): Optional path to EmulationStation / ES-DE executable.
-  - `autoScaffold` (Boolean, default: `true`): Automatically scaffold missing console directories.
-
----
-
-## 📚 Metadata Plugins (`metadata/`)
-
-Metadata plugins enrich titles with descriptions, genres, release dates, user ratings, and CDN artwork. They are run manually on-demand by the user via the **✨ Enhance Metadata** action in the showcase view and the Manage Game modal to fill missing fields.
-
-### 1. Steam Store & Web API Provider (`metadata-steam`)
-- **Plugin ID**: `metadata-steam`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Official Steam Storefront metadata, CDN artwork, reviews, achievements, and Steam Web API synchronization.
-- **Declared Features**: `store_metadata`, `cdn_artwork`, `achievements`, `owned_library`, `web_api`
-- **Requires API Key**: Optional (`requiresApiKey: false`)
-- **Capabilities**:
-  - Keyless store details query via `store.steampowered.com/api/appdetails`.
-  - High-resolution Cloudflare CDN covers and 1080p screenshots.
-  - Optional Steam Web API integration for owned games list and playtime sync.
-- **Settings Configuration**:
-  - `steamWebApiKey` (Password): Optional Steam Web API Key from `steamcommunity.com/dev/apikey`.
-  - `steamId64` (Text): 17-digit SteamID64 for player library synchronization.
-
----
-
-### 2. SteamGridDB Community Artwork Provider (`metadata-steamgriddb`)
-- **Plugin ID**: `metadata-steamgriddb`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Provides access to community-crafted custom capsule covers, hero banners, and logos via the SteamGridDB API.
-- **Declared Features**: `custom_artwork`, `community_grids`, `heroes`, `logos`, `icons`
-- **Requires API Key**: Yes (`requiresApiKey: true`)
-- **Capabilities**:
-  - Queries `www.steamgriddb.com/api/v2` for 600×900 vertical capsules, 1920×620 heroes, transparent logos, and square icons.
-  - Direct in-memory connection testing (`testConnection`).
-- **Settings Configuration**:
-  - `apiKey` (Password, Required): API key from `steamgriddb.com/profile/preferences/api`.
-  - `allowNsfw` (Boolean, default: `false`): Allow NSFW-tagged community artwork.
-  - `allowHumor` (Boolean, default: `true`): Include humorous community parody artwork.
-
----
-
-### 3. IGDB Comprehensive Gaming Metadata Provider (`metadata-igdb`)
-- **Plugin ID**: `metadata-igdb`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Queries the Internet Game Database (IGDB) by Twitch for global taxonomy, developer lists, themes, and critic ratings.
-- **Declared Features**: `game_taxonomy`, `critic_reviews`, `developer_credits`, `franchises`
-- **Requires API Key**: Yes (`requiresApiKey: true`)
-- **Capabilities**:
-  - Queries `api.igdb.com/v4/games` using Twitch OAuth Client Credentials.
-  - Complete game taxonomy, franchise links, developer studios, and aggregated critic ratings.
-  - Direct connection verification.
-- **Settings Configuration**:
-  - `clientId` (Text, Required): Twitch Application Client ID from `dev.twitch.tv/console`.
-  - `clientSecret` (Password, Required): Twitch Application Client Secret.
-
----
-
-### 4. TheGamesDB Retro Metadata Provider (`metadata-thegamesdb`)
-- **Plugin ID**: `metadata-thegamesdb`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Comprehensive community video game database specializing in retro console ROMs, box art, fanart heroes, clear logos, and release taxonomy.
-- **Declared Features**: `retro_metadata`, `boxart`, `fanart`, `clearlogos`, `taxonomy`, `screenshots`
-- **Requires API Key**: No (`requiresApiKey: false`)
-- **Capabilities**:
-  - Queries `api.thegamesdb.net/v1/` for authentic retro console releases across NES, SNES, N64, Genesis, PSX, and handhelds.
-  - 2D/3D box art, fanart wallpaper banners, clear logos, and developer credits.
-- **Settings Configuration**:
-  - `apiKey` (Password): Optional developer API key for higher rate limits.
-
----
-
-### 5. ScreenScraper Multi-Console ROM Provider (`metadata-screenscraper`)
-- **Plugin ID**: `metadata-screenscraper`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Keyless retro gaming metadata and artwork provider supporting 2D/3D box art, wheel logos, screenshot titles, and video snaps from screenscraper.fr.
-- **Declared Features**: `retro_metadata`, `boxart_2d_3d`, `wheel_logos`, `video_snaps`, `screenshots`, `multi_language`
-- **Requires API Key**: No (`requiresApiKey: false`)
-- **Capabilities**:
-  - Queries screenscraper.fr endpoints matching ROM file hashes or normalized titles.
-  - 2D and 3D authentic box art, arcade wheel logos, screenshot titles, and video clips.
-- **Settings Configuration**:
-  - `devId` (Text): Optional developer identifier.
-  - `devPassword` (Password): Optional developer password.
-  - `preferredRegion` (Select: `us`, `eu`, `jp`, `wor`): Preferred regional box art.
-
----
-
-### 6. GOG Catalog Metadata & CDN Artwork (`metadata-gog`)
-- **Plugin ID**: `metadata-gog`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Official GOG catalog endpoints for store artwork, game summaries, DRM-free releases, and system requirements.
-- **Declared Features**: `store_artwork`, `drm_free_meta`, `system_requirements`
-- **Requires API Key**: No (`requiresApiKey: false`)
-- **Capabilities**:
-  - Queries `embed.gog.com` for official vertical covers, crop wallpapers, and DRM-free descriptions.
-- **Settings Configuration**:
-  - `language` (Select, default: `en`): Preferred catalog language.
-
----
-
-### 7. Epic Games Store Catalog & Artwork (`metadata-epic`)
-- **Plugin ID**: `metadata-epic`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Fetches Epic Games Store catalog manifests, promotional artwork covers, and release dates.
-- **Declared Features**: `promotional_artwork`, `catalog_manifests`
-- **Requires API Key**: No (`requiresApiKey: false`)
-- **Capabilities**:
-  - Queries `store-content.ak.epicgames.com` for official catalog manifests, wide keyart, and publisher descriptions.
-- **Settings Configuration**:
-  - `country` (Text, default: `US`): Two-letter country code for regional store catalog.
-
----
-
-### 8. itch.io Indie Games Provider (`metadata-itch`)
-- **Plugin ID**: `metadata-itch`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Discovers indie game titles, developer profiles, screenshots, and account library synchronization from itch.io.
-- **Declared Features**: `indie_meta`, `screenshots`, `developer_credits`, `library_sync`
-- **Requires API Key**: No (`requiresApiKey: false`)
-- **Capabilities**:
-  - Queries `itch.io/api/1` for indie creator profiles, screenshots, and game descriptions.
-- **Settings Configuration**:
-  - `apiKey` (Password): Optional itch.io API key for syncing owned purchases.
-
----
-
-### 9. HowLongToBeat Completion Times (`metadata-howlongtobeat`)
-- **Plugin ID**: `metadata-howlongtobeat`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Crowd-sourced gameplay completion metrics (Main Story, Main + Extra, Completionist) from HowLongToBeat.
-- **Declared Features**: `gameplay_length`, `completionist_stats`, `speedrun_times`
-- **Requires API Key**: No (`requiresApiKey: false`)
-- **Capabilities**:
-  - Queries HowLongToBeat search API for average gameplay hours.
-  - Adds playtime metrics directly to the game showcase overview.
-- **Settings Configuration**:
-  - None required; works immediately keyless.
-
----
-
-### 10. PCGamingWiki Fixes & Compatibility (`metadata-pcgamingwiki`)
-- **Plugin ID**: `metadata-pcgamingwiki`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Supplies controller support flags, ultra-wide FOV fixes, cloud save locations, and community fixes from PCGamingWiki.
-- **Declared Features**: `compatibility`, `fov_fixes`, `controller_support`, `save_locations`
-- **Requires API Key**: No (`requiresApiKey: false`)
-- **Capabilities**:
-  - Queries `www.pcgamingwiki.com/w/api.php` for game engine, save paths, configuration directories, and widescreen fixes.
-- **Settings Configuration**:
-  - None required; works immediately keyless.
-
----
-
-### 11. ProtonDB Linux & Steam Deck Tiers (`metadata-protondb`)
-- **Plugin ID**: `metadata-protondb`
-- **Version**: `1.0.0` · **Author**: `HELIX Origin`
-- **Description**: Community compatibility ratings (Native, Platinum, Gold, Silver, Bronze, Borked) and recommended launch commands.
-- **Declared Features**: `deck_verified`, `proton_tier`, `launch_tweaks`
-- **Requires API Key**: No (`requiresApiKey: false`)
-- **Capabilities**:
-  - Queries `www.protondb.com/api/v1` for Proton tier ratings and Steam Deck verified status.
-- **Settings Configuration**:
-  - None required; works immediately keyless.
-
----
-
-## 🛠️ Utility Plugins (`utility/`)
-
-Utility plugins provide background services, live notifications, free game giveaways, store specials, and drive capacity calculations.
-
-### 1. GamerPower Universal Feeds & Alerts (`utility-gamerpower`)
-- **Plugin ID**: `utility-gamerpower`
-- **Version**: `1.0.0` · **Author**: `HELIX-Origin`
-- **Description**: Universal aggregator for 100% free game giveaways, verified store promotions & deals, and game patch notes across Steam, Epic Games, GOG, itch.io, Xbox, and more via the official GamerPower API.
-- **Declared Features**: `notifications`, `giveaways`, `free_games`, `store_deals`, `promotions`, `patch_notes`, `game_updates`
-- **Requires API Key**: No (`requiresApiKey: false`)
-- **Capabilities**:
-  - Live 100% free giveaway alerts on the Dashboard.
-  - Store promotion and discount bargains with minimum percentage threshold filtering.
-  - Developer update notes and patch logs for installed library titles.
-  - Desktop push notifications for newly announced giveaways.
-- **Settings Configuration**:
-  - `enableFreeGames` (Boolean, default: `true`): Monitor and display 100% free game giveaways.
-  - `enableDeals` (Boolean, default: `true`): Display store promotions and sales.
-  - `enablePatchNotes` (Boolean, default: `true`): Fetch patch notes for installed games.
-  - `minDiscountPercent` (Number, default: `50`): Minimum discount percentage required for deal alerts.
-  - `enableNotifications` (Boolean, default: `true`): Show system notifications for newly announced deals.
-
----
-
-### 2. Storage & Drive Analyzer (`utility-storage`)
 - **Plugin ID**: `utility-storage`
-- **Version**: `1.0.0` · **Author**: `HELIX-Origin`
-- **Description**: Calculates disk footprint across all platform directories and library drives using non-blocking background workers.
-- **Declared Features**: `disk_analysis`, `drive_reporting`, `non_blocking_worker`
-- **Requires API Key**: No (`requiresApiKey: false`)
+- **Version**: `1.4.0` · **Author**: `HELIX Origin`
+- **Description**: Non-blocking disk storage analytics engine inspecting drive capacities and installed game footprints.
 - **Capabilities**:
-  - Powers the `/storage` view with drive capacity visualization and per-game disk space analysis.
-  - Offloaded to `tauri::async_runtime::spawn_blocking` for 0ms UI blocking.
-- **Settings Configuration**:
-  - `includeTemporaryFiles` (Boolean, default: `false`): Include temporary shader caches in storage calculation.
-
----
-
-## 🎞️ Media Plugins (`media/`)
-
-Media plugins enhance the game showcase with dynamic multimedia playback.
-
-### 1. Video Trailer Player (`media-trailers`)
-- **Plugin ID**: `media-trailers`
-- **Version**: `1.0.0` · **Author**: `HELIX-Origin`
-- **Description**: Streams and previews official video trailers in the game detail hero banner.
-- **Declared Features**: `video_playback`, `trailers`
-- **Capabilities**:
-  - Plays official webm/mp4 video trailers directly inside the showcase hero section.
-- **Settings Configuration**:
-  - `autoPlay` (Boolean, default: `false`): Automatically play trailers on selection.
-  - `muteAudio` (Boolean, default: `true`): Mute audio during trailer playback.
-
----
-
-### 2. Game Audio & Soundtracks (`media-ambient`)
-- **Plugin ID**: `media-ambient`
-- **Version**: `1.0.0` · **Author**: `HELIX-Origin`
-- **Description**: Plays ambient background themes and official game soundtracks on selection.
-- **Declared Features**: `audio_playback`, `ambiance`
-- **Capabilities**:
-  - Streams ambient background music when browsing game details.
-- **Settings Configuration**:
-  - `volume` (Number, default: `0.3`): Ambient playback volume (0.0 to 1.0).
+  - Offloaded to native background thread workers (`spawn_blocking`) for 0ms UI freezing.
+  - Computes per-drive capacity gauges and per-platform game storage consumption.
+  - Powers the **Storage** view (`/storage`) and the **Settings → Storage & Cache** controls.
 
 ---
 
 ## ➡️ Next Steps
 
-- [Plugin Development Guide](Plugin-Development.md) — How to build and contribute new plugins
-- [Metadata Providers Guide](Metadata-Providers.md) — Role hierarchy and metadata enhancement
-- [Settings & Plugin Configuration](Settings-and-API-Keys.md) — Configuring credentials
+- [Metadata Providers Architecture](Metadata-Providers.md) — multi-source automatic cascade details.
+- [Organizing Your Library](Organizing-Your-Library.md) — the Library showcase, unified media tabs, and game management.
+- [Artwork Management](Artwork-Management.md) — custom artwork studio and slots.
+- [Settings & Plugin Configuration](Settings-and-API-Keys.md) — configuring optional API keys.
+- [Plugin Development Guide]({{ '/wiki/Plugin-Developer-Guide/' | relative_url }}) — authoring new plugins.

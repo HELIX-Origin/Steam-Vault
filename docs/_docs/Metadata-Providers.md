@@ -1,89 +1,104 @@
 ---
 layout: docs
 title: Metadata Providers
-summary: Authoritative metadata role hierarchy, manual enhancement plugins, and provider reference
+summary: Automatic multi-source metadata resolution engine, provider cascade hierarchy, and per-game customization
 parent: Documentation Home
 nav_order: 6
 ---
 
 # Metadata Providers & Architecture
 
-Universal Game Launcher implements an intelligent, multi-tier metadata resolution framework. Rather than forcing third-party web scrapers onto every title, the architecture establishes a clean, authoritative role hierarchy between **Native Game Providers** and **Metadata Providers**.
+Universal Game Launcher implements an intelligent, automatic multi-source metadata resolution framework (`metadata-universal`). Rather than requiring tedious manual scraping or relying on fragile single-source APIs, the architecture automatically cascades across native platform endpoints, encyclopedic APIs, and community repositories in the background.
 
 ---
 
-## 🏛️ Authoritative Role Hierarchy & Invariants
+## 🏛️ Automatic Resolution Architecture
 
 ```
 ┌────────────────────────────────────────────────────────┐
-│              Authoritative Game Providers              │
-│  Steam, Epic Games, GOG, itch.io, EA, EmulationStation │
-│  (Default source for game titles, installs & artwork)  │
+│               Game Discovered or Imported              │
+│       Steam · Epic · GOG · itch · Local · Consoles     │
 └───────────────────────────┬────────────────────────────┘
-                            │ Authoritative Initial Data
+                            │
                             ▼
 ┌────────────────────────────────────────────────────────┐
-│           Local Library & In-Memory KV Cache           │
-│         database.sqlite  ·  mem_kv (AppMeta)           │
+│       Universal Metadata Engine (metadata-universal)   │
+│                                                        │
+│  1. Local Inspector  (System.json, itch, rom.ini)     │
+│  2. Libretro CDN     (Retro console box art & snaps)  │
+│  3. Steam Store API  (Details, reviews, MP4 trailers) │
+│  4. GOG Catalog v1   (Vertical covers, summaries)     │
+│  5. Wikipedia/Wikidata (Synopses, devs, pubs, dates)  │
+│  6. PCGamingWiki     (Engines, save locations, fixes) │
+│  7. ProtonDB         (Linux/Steam Deck compatibility) │
+│  8. SteamGridDB/IGDB (Optional user-authenticated)    │
 └───────────────────────────┬────────────────────────────┘
-                            │ Manual User Enhancement
+                            │ Field-by-field merge
                             ▼
 ┌────────────────────────────────────────────────────────┐
-│             Third-Party Metadata Providers             │
-│   TheGamesDB, ScreenScraper, IGDB, SteamGridDB, etc.   │
-│   (On-demand: fills missing fields or overrides)       │
-│              [userEnhanced: true]                      │
+│            Local SQLite & In-Memory KV Cache           │
+│        database.sqlite  ·  mem_kv (game_meta:<appId>)  │
+└───────────────────────────┬────────────────────────────┘
+                            │
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│        Per-Game Customization Modal (⚙ Manage)         │
+│   User edits Title, Description, Devs, Pubs, Art       │
+│               [Saved locally with 0ms lag]             │
 └────────────────────────────────────────────────────────┘
 ```
 
-### 1. Game Providers are the Authoritative Default
-When your library is scanned or games are imported, the native platform provider plugin (such as `platform-steam`, `platform-epic`, `platform-gog`, `platform-itch`, `platform-ea`, `platform-emulationstation`, or `platform-standalone`) queries its own authoritative storefront or local files:
-- **Steam**: Valve store details API and Cloudflare CDN artwork.
-- **GOG Galaxy**: Official GOG product endpoints and Galaxy client database.
-- **Epic Games**: Official `.item` catalog manifests and promotional keyart.
-- **itch.io**: itch catalog metadata and cover images.
-- **EmulationStation**: Normalized ROM titles and system taxonomy.
-- **Standalone**: Local PE version headers and executable inspection.
+---
 
-This ensures zero external dependencies and fast, accurate defaults for all official games.
+## ⚡ Key Architectural Invariants
 
-### 2. Metadata Providers are Manual Enhancement Tools
-Third-party metadata providers (such as **TheGamesDB**, **ScreenScraper**, **IGDB**, **SteamGridDB**, **HowLongToBeat**, **PCGamingWiki**, and **ProtonDB**) are intended to **enhance** your library on demand. They are run manually when you choose:
-- Click **✨ Enhance Metadata** in the game showcase view or open **Manage Game → Metadata & Provider Management**.
-- Select specific providers to query, or query all enabled metadata plugins simultaneously.
-- Choose whether to **Fill Missing Fields Only** (the safe default, which leaves existing information intact and fills in blank descriptions, missing genres, or absent release years) or **Override Existing Metadata**.
+### 1. Automatic Background Resolution
+When games are imported or detected, the metadata engine automatically resolves missing fields across all supported data sources in the background. Games populate with rich descriptions, release dates, developer credits, high-resolution capsules, hero banners, and video trailers without requiring user intervention.
 
-### 3. The Cache Reset Invariant
-To prevent external sync tasks or platform re-scans from blowing away your custom enhancements:
-- Whenever a game is enhanced by a metadata provider, it is tagged with `userEnhanced: true` and recorded with `enhancedBy: [...]` in the persistent cache.
-- **Native game providers are strictly prohibited from overwriting metadata contributed by metadata providers during normal background scans.**
-- A game provider may only overwrite user-enhanced metadata if the user explicitly triggers **↺ Reset Cache to Provider Defaults** in the Manage Game modal.
+### 2. Modern Steam CDN Video Trailers
+For Steam titles, the engine extracts high-definition Akamai MP4 trailer URLs directly from the Steam Store `movies` array:
+```plaintext
+https://cdn.akamai.steamstatic.com/steam/apps/{movie_id}/movie_max.mp4
+```
+Trailers are streamed on demand via native HTML5 video inside the **🎬 Trailers** tab of the consolidated media showcase.
+
+### 3. Per-Game Customization Modal (`⚙ Manage` in `/library`)
+Every game provides a dedicated **⚙ Manage** modal in the Library showcase view where users can directly customize:
+- **Title (Display Name)**: Override auto-derived or platform titles.
+- **Short Description**: Custom overview text displayed on the showcase.
+- **Developers & Publishers**: Studio credits and publishing labels.
+- **Release Date**: Formatted release year or date string.
+- **Genres**: Custom category tag pills.
+- **Custom Artwork**: Set Portrait Capsule Cover, Hero Wallpaper Banner, and Transparent Logo via either direct image URL or local file picker (`Browse...`).
+
+All overrides persist locally in SQLite KV (`game_meta:<appId>`) and are protected from background scan overwrites.
+
+### 4. Settings-Only Cache Controls
+To maintain an ergonomic, clutter-free Library view, manual cache actions are isolated exclusively in **Settings → Storage & Cache**:
+- **↻ Refresh Metadata Cache**: Re-runs the multi-source enrichment cascade for all games without discarding custom user overrides.
+- **🗑 Purge Data Cache**: Clears temporary cached images and in-memory KV records to rebuild from scratch.
 
 ---
 
-## 🔌 Built-In Metadata Provider Reference
+## 🔌 Built-In Data Sources Reference
 
-Universal Game Launcher includes 11 dedicated, native metadata plugins under `src/lib/plugins/metadata/`:
-
-| Provider Plugin | Key Required | Source Endpoint | Primary Information & Assets Provided |
-| :--- | :---: | :--- | :--- |
-| **Steam Store** (`metadata-steam`) | No | `store.steampowered.com/api/appdetails` | Genres, developers, publishers, release dates, reviews, 1080p screenshots. |
-| **GOG Catalog** (`metadata-gog`) | No | `embed.gog.com` | Official GOG vertical covers, hero wallpapers, summaries, DRM-free releases. |
-| **Epic Games Store** (`metadata-epic`) | No | `store-content.ak.epicgames.com` | Catalog details, promotional keyart covers, release dates, publisher info. |
-| **itch.io Store** (`metadata-itch`) | No | `itch.io/api/1` | Indie titles, developer profiles, screenshots, library sync. |
-| **SteamGridDB** (`metadata-steamgriddb`) | User Key | `www.steamgriddb.com/api/v2` | Community capsule covers (600×900), hero banners (1920×620), transparent logos, square icons. |
-| **IGDB (Twitch)** (`metadata-igdb`) | User Key | `api.igdb.com/v4/games` | Global taxonomy, developer studios, franchise links, aggregated critic scores. |
-| **TheGamesDB** (`metadata-thegamesdb`) | No | `api.thegamesdb.net/v1/` | Retro console metadata, authentic box art, fanart heroes, clear logos, release taxonomy. |
-| **ScreenScraper** (`metadata-screenscraper`) | No | `screenscraper.fr` | Multi-console ROM metadata, 2D/3D box art, wheel logos, video snaps, screenshot titles. |
-| **HowLongToBeat** (`metadata-howlongtobeat`) | No | `howlongtobeat.com/api/search` | Main Story, Main + Extra, and Completionist playtime averages. |
-| **PCGamingWiki** (`metadata-pcgamingwiki`) | No | `www.pcgamingwiki.com/w/api.php` | Game engine, FOV/ultrawide fixes, controller flags, save and config locations. |
-| **ProtonDB** (`metadata-protondb`) | No | `www.protondb.com/api/v1` | Linux / Steam Deck compatibility tiers (Native, Platinum, Gold) and launch tweaks. |
+| Provider Source | Category | Key Required | Primary Information & Assets Provided |
+| :--- | :---: | :---: | :--- |
+| **Local Inspector** | Local Manifest | No | RPG Maker `System.json` `gameTitle`, itch.io receipt manifests, `rom.ini` configs, binary PE headers. |
+| **Libretro CDN** | Metadata & Art | No | Authentic console box art (`Named_Boxarts`), title screens (`Named_Titles`), snaps, and logos for retro console ROMs. |
+| **Steam Store** | Metadata & Media | No | Genres, developers, publishers, release dates, reviews, 1080p screenshots, and modern Akamai CDN MP4 video trailers. |
+| **GOG Catalog v1** | Metadata | No | Official vertical covers, hero wallpapers, summaries, DRM-free releases. |
+| **Wikipedia & Wikidata** | Metadata | No | Encyclopedic game synopses and Wikidata taxonomy properties (`P178` Developer, `P123` Publisher, `P136` Genre, `P577` Release Date). |
+| **PCGamingWiki Cargo** | Metadata | No | Game engine, architecture, save file locations, and widescreen/FOV fixes. |
+| **ProtonDB** | Metadata | No | Linux and Steam Deck compatibility ratings (`Native`, `Platinum`, `Gold`, `Silver`, `Bronze`, `Borked`) and launch flags. |
+| **SteamGridDB** | Metadata & Art | Yes (Optional) | Community capsule covers (600×900), hero banners (1920×620), transparent logos, and square icons. |
+| **IGDB (Twitch)** | Metadata | Yes (Optional) | Global video game taxonomy, studio links, and aggregated critic scores. |
 
 ---
 
 ## 🔑 Authentication & API Key Configuration
 
-Only two metadata providers require user-supplied credentials:
+Only two metadata sources require user-supplied credentials:
 - **SteamGridDB**: Enter your free API key from your SteamGridDB account preferences (`steamgriddb.com/profile/preferences/api`).
 - **IGDB**: Enter your Twitch Application Client ID and Client Secret from the Twitch Developer Console (`dev.twitch.tv/console`). Universal Game Launcher automatically manages OAuth token acquisition and renewal.
 
@@ -99,6 +114,6 @@ All fetched metadata is stored locally in `database.sqlite` and indexed in the i
 
 ## ➡️ Next Steps
 
-- [Available Plugins Catalog](Available-Plugins.md) — complete catalog of all 27 plugins.
-- [Plugin Development Guide](Plugin-Development.md) — build custom metadata plugins.
-- [Artwork Management](Artwork-Management.md) — customize covers, heroes, logos, and icons.
+- [Organizing Your Library](Organizing-Your-Library.md) — the Library showcase, unified media tabs, and per-game management.
+- [Artwork Management](Artwork-Management.md) — customizing artwork slots across games.
+- [Settings & Plugin Configuration](Settings-and-API-Keys.md) — configuring optional API keys and cache settings.

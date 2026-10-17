@@ -23,28 +23,33 @@ Universal Game Launcher uses **native client protocol delegation**:
 - Standalone titles and emulator plugins execute their respective local binaries directly.
 This preserves official game overlays, cloud synchronization, playtime tracking, friend lists, and achievement unlocks without ever touching or storing your credentials.
 
-## How does metadata resolution work between game providers and metadata providers?
+## How does metadata resolution work between game platforms and metadata providers?
 
-Universal Game Launcher enforces an authoritative role hierarchy:
-1. **Game Providers (Default Authoritative Source):** When games are detected, the platform provider plugin (Steam, Epic, GOG, itch, EA, EmulationStation, Standalone) fetches its own authoritative game details and artwork directly from its own source.
-2. **Metadata Providers (Manual Enhancement):** Third-party metadata providers (TheGamesDB, ScreenScraper, IGDB, SteamGridDB, HowLongToBeat, PCGamingWiki, ProtonDB) are run on demand by the user via **✨ Enhance Metadata** in the showcase view to enrich games and fill in missing fields.
-3. **Cache Reset Invariant:** Game providers are strictly prohibited from overwriting metadata contributed by metadata providers unless the user explicitly chooses to reset the metadata cache via **↺ Reset Cache to Provider Defaults**.
+Universal Game Launcher features an **Automatic Multi-Source Metadata Engine** (`metadata-universal`):
+1. **Automatic Cascading:** When games are detected or imported, the engine cascades across Local Inspector, Libretro Thumbnails CDN, Steam Store, GOG Catalog v1, Wikipedia/Wikidata MediaWiki API, and PCGamingWiki Cargo API to automatically populate descriptions, release dates, reviews, and artwork.
+2. **Modern Video Trailers:** For Steam games, modern Akamai CDN MP4 trailer streams (`movie_max.mp4`) are automatically extracted and playable in the **🎬 Trailers** tab.
+3. **Per-Game Customization:** Users can edit any game's Title, Short Description, Developers, Publishers, Release Date, Genres, and Custom Artwork via the **⚙ Manage** modal in `/library`.
+4. **Settings-Only Cache Maintenance:** Manual cache refresh and purge actions live cleanly in **Settings → Storage & Cache** (`↻ Refresh Metadata Cache`, `🗑 Purge Data Cache`).
+
+## Where do platform icons come from?
+
+Universal Game Launcher uses **Authentic Vector SVG Platform & Console Icons** (`PlatformIcon.svelte`) rather than generic Unicode shapes or low-resolution bitmaps. Every PC storefront and retro console is rendered with its authentic vector brand geometry.
 
 ## Does it upload my data or collect telemetry?
 
-No. Universal Game Launcher is **100% on-device and privacy-first**. There is no account requirement, no user tracking, and zero telemetry. Network communication is strictly limited to user-requested metadata and artwork lookups to providers you explicitly enable.
+No. Universal Game Launcher is **100% on-device and privacy-first**. There is no account requirement, no user tracking, and zero telemetry. Network communication is strictly limited to metadata lookups to providers you have enabled.
 
 ## Do I need API keys to use it?
 
-No. All primary platform integrations and core storefront metadata operate completely keyless out-of-the-box. Optional API keys (SteamGridDB for community artwork, IGDB for Twitch taxonomy) can be configured per-plugin in the **Plugin Settings** sub-window to enrich high-resolution artwork and community metadata.
-
-## How does the plugin architecture work?
-
-The core application provides the UI, storage statistics, persistence, and launcher engine. All external features — platform integrations, emulation/ROM systems, metadata scrapers, free game alerts, deals, and patch notes — are provided via native in-app modular plugins under `src/lib/plugins/`.
+No. All primary platform integrations and core storefront metadata operate completely keyless out-of-the-box. Optional API keys (SteamGridDB for community artwork, IGDB for Twitch taxonomy) can be configured per-plugin in the **Plugin Settings** dialog to enrich high-resolution artwork and community metadata.
 
 ## Can I organize emulation and ROM libraries?
 
-Yes. The `platform-emulationstation` plugin automatically scans multi-console ROM directories conforming to the ES-DE directory standard, supports automatic folder scaffolding, and features an intelligent title normalization engine that strips dump tags `(USA)`, `[!]`, `(Rev 1)`, and NKit extensions.
+Yes. The Universal Platform Engine automatically scans multi-console ROM directories conforming to the ES-DE directory standard, supports automatic folder scaffolding (`systems.txt` + `systeminfo.txt`), extracts compressed ROM archives, creates isolated `rom.ini` per-game manifests, and features an intelligent title normalization engine that strips dump tags `(USA)`, `[!]`, `(Rev 1)`, and NKit extensions.
+
+## Is there a command-line interface for automation?
+
+Yes. Universal Game Launcher includes a headless CLI (`--cli scan`, `scan-roms`, `scaffold-roms`, `normalize-title`, and `launchers`) enabling automated library scanning, verification, and scriptable headless operation.
 
 ## Where do I report bugs or request features?
 

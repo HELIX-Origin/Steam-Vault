@@ -24,9 +24,9 @@ This technical wiki documents how Universal Game Launcher is built: the decouple
     How the core application is structured and decoupled from features:
   </p>
   <ul>
-    <li><a href="{{ '/wiki/Architecture/' | relative_url }}">Architecture</a> — core launcher responsibilities, in-app modular plugin boundaries, and module map.</li>
-    <li><a href="{{ '/wiki/Plugins-Architecture/' | relative_url }}">Plugins Architecture</a> — dedicated per-plugin files, `UniversalPlugin` TypeScript framework, client capabilities, and tabbed settings dialog.</li>
-    <li><a href="{{ '/wiki/Plugin-Developer-Guide/' | relative_url }}">Plugin Developer Guide</a> — comprehensive step-by-step developer tutorial with copy-pasteable TypeScript templates for Platform, Metadata, Utility, and Media plugins.</li>
+    <li><a href="{{ '/wiki/Architecture/' | relative_url }}">Architecture</a> — core launcher responsibilities, Universal Core plugins boundaries, and module map.</li>
+    <li><a href="{{ '/wiki/Plugins-Architecture/' | relative_url }}">Plugins Architecture</a> — Universal Core plugins framework, global helper modules, automatic multi-source metadata cascade, and tabbed settings dialog.</li>
+    <li><a href="{{ '/wiki/Plugin-Developer-Guide/' | relative_url }}">Plugin Developer Guide</a> — comprehensive step-by-step developer tutorial with TypeScript templates for Universal Core Platform, Metadata, Utility, and Media plugins.</li>
   </ul>
 </section>
 
@@ -39,8 +39,8 @@ This technical wiki documents how Universal Game Launcher is built: the decouple
     </div>
   </div>
   <ul>
-    <li><a href="{{ '/wiki/Backend-Rust/' | relative_url }}">Backend (Rust)</a> — the Tauri v2 command surface, in-memory KV tier (`mem_kv`), and SQLite persistence (`database.sqlite`).</li>
-    <li><a href="{{ '/wiki/Frontend-SvelteKit/' | relative_url }}">Frontend (SvelteKit)</a> — frameless titlebar navigation, Library-only sidebar games list, showcase view, and `PluginSettingsDialog`.</li>
+    <li><a href="{{ '/wiki/Backend-Rust/' | relative_url }}">Backend (Rust)</a> — the Tauri v2 command surface, multi-source metadata engine, title normalizer backend, in-memory KV tier (`mem_kv`), and SQLite persistence (`database.sqlite`).</li>
+    <li><a href="{{ '/wiki/Frontend-SvelteKit/' | relative_url }}">Frontend (SvelteKit)</a> — frameless titlebar navigation, Library-only sidebar games list with authentic vector SVG platform icons, unified media showcase, per-game customization modal, and `PluginSettingsDialog`.</li>
   </ul>
 </section>
 

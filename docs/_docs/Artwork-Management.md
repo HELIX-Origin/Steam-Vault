@@ -1,20 +1,20 @@
 ---
 layout: docs
 title: Artwork Management
-summary: Applying grid, hero, logo, and icon art across all games and manually added local titles
+summary: Standardized artwork slots, local asset caching, and customizing art via the Manage Game modal
 parent: Documentation Home
 nav_order: 13
 ---
 
 # Artwork Management
 
-The **Custom Artwork Studio** in Universal Game Launcher allows you to customize the visual assets displayed for any title in your library — across all supported storefront games, manually added local executables, and emulator ROMs. You can fetch high-resolution artwork from community providers such as **SteamGridDB**, extract official storefront assets, query retro box art from **TheGamesDB** and **ScreenScraper**, or apply your own local image files.
+Universal Game Launcher provides flexible artwork management across all supported storefront games, manually added local executables, and emulator ROMs. You can rely on automatic multi-source artwork resolution (Steam Store CDN, Libretro Thumbnails CDN, GOG), fetch high-resolution assets from community providers such as **SteamGridDB**, or apply your own local image files via the **⚙ Manage** modal.
 
 ---
 
 ## 🖼️ Standardized Artwork Slots
 
-Universal Game Launcher manages five standardized artwork slots for every title:
+Universal Game Launcher manages standardized artwork slots for every title:
 
 | Slot | File / Key Identifier | Recommended Dimensions | Format |
 | :--- | :--- | :--- | :--- |
@@ -41,34 +41,40 @@ Universal Game Launcher operates completely independently from external client f
 
 ---
 
-## 🌐 Sourcing Artwork Across Providers
+## ⚙️ Customizing Artwork via `⚙ Manage`
 
-1. Open the game in the **Library Showcase View** (`/library`) and scroll to the **Custom Artwork Studio** section (or click **Manage → Artwork**).
-2. Choose the artwork slot you want to configure: **Portrait Capsule**, **Hero Banner**, **Logo**, or **Icon**.
-3. Use the search input or provider tabs to query assets:
-   - **SteamGridDB**: Community-crafted vertical capsules, hero wallpapers, transparent logos, and square icons. (Requires free API key in **Settings → Plugin Settings**).
-   - **Steam Store**: Official store capsules, wide banners, and community backgrounds.
-   - **GOG Catalog**: Official vertical covers and wide galaxy banners.
-   - **TheGamesDB**: Authentic retro box art, clear logos, and fanart banners for console ROMs.
-   - **ScreenScraper**: 2D/3D retro box art, arcade wheel logos, and screenshot titles.
-   - **IGDB**: High-resolution box art from Twitch's video game database.
-   - **PCGamingWiki**: Original physical box covers and community artwork.
-   - **Local File Import**: Select any local PNG, JPG, or JPEG file from your computer.
-4. Click any artwork card to apply it immediately. The showcase view and sidebar update reactively with zero reload lag.
+To assign custom artwork to any title:
+
+1. Open the game in the **Library Showcase View** (`/library`) and click the **⚙ Manage** button in the showcase action header.
+2. In the **Manage Game** modal, navigate to the artwork input sections:
+   - **Portrait Capsule Cover (600×900)**: Enter an image URL or click **Browse...** to select a local `.png` or `.jpg` file.
+   - **Hero Wallpaper Banner (16:9)**: Enter an image URL or click **Browse...** to pick a wide banner image.
+   - **Transparent Logo**: Enter an image URL or click **Browse...** to pick a transparent PNG title logo.
+3. Click **Save Changes**. The showcase view and sidebar update reactively with zero reload lag.
+
+---
+
+## 🤖 Automatic Multi-Source Artwork Resolution
+
+For games without manual overrides:
+- **PC Games**: The Steam Store API and GOG Catalog v1 automatically populate vertical capsules, wide hero wallpapers, and official screenshots.
+- **Console ROMs**: The Libretro Thumbnails CDN automatically resolves authentic 2D/3D box art (`Named_Boxarts`), title screens (`Named_Titles`), and logos based on the normalized ROM title.
+- **Optional Community Art**: If a free **SteamGridDB** API key is configured in **Settings → Plugin Settings**, the launcher can query community-crafted capsules, animated heroes, and clear logos.
 
 ---
 
 ## 🛡️ Cache Invariant & Provider Overwrites
 
-When you assign custom artwork or enhance artwork via metadata providers:
-- The artwork mapping is preserved locally in `database.sqlite`.
+When you assign custom artwork:
+- The artwork mapping is preserved locally in `database.sqlite` under `game_meta:<appId>`.
 - Background platform scans and provider syncs **will never overwrite** your selected custom artwork.
-- If you wish to revert to official storefront defaults, click **↺ Reset Cache to Provider Defaults** in the game's Manage modal.
+- To refresh official storefront assets without losing custom overrides, use **↻ Refresh Metadata Cache** in **Settings → Storage & Cache**.
+- To purge all cached images and rebuild from scratch, use **🗑 Purge Data Cache** in **Settings → Storage & Cache**.
 
 ---
 
 ## ➡️ Next Steps
 
-- [Metadata Providers](Metadata-Providers.md) — role hierarchy and metadata enhancement.
-- [Available Plugins Catalog](Available-Plugins.md) — complete catalog of all 27 plugins.
-- [Organizing Your Library](Organizing-Your-Library.md) — customizing library views.
+- [Organizing Your Library](Organizing-Your-Library.md) — showcase layout and unified media tabs.
+- [Metadata Providers](Metadata-Providers.md) — automatic multi-source metadata engine.
+- [Settings & Plugin Configuration](Settings-and-API-Keys.md) — storage & cache controls.

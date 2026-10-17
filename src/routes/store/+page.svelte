@@ -4,6 +4,7 @@
   import { t } from "$lib/i18n";
   import { error, settings } from "$lib/stores";
   import { getAllPlatformMetadata, getPlatformMetadata } from "$lib/plugins";
+  import PlatformIcon from "$lib/components/PlatformIcon.svelte";
   import type { FeaturedStoreItem, FreeGamePromotion, Platform, StoreDeal } from "$lib/types";
   import "$styles/store.scss";
 
@@ -333,7 +334,7 @@
             onclick={() => handleOpenStorefront(key)}
             title="Browse official {info.label} homepage in browser"
           >
-            {info.icon} {info.label} ↗
+            <PlatformIcon platform={key} size={13} /> {info.label} ↗
           </button>
         {/if}
       {/each}
@@ -371,7 +372,7 @@
           <h2 class="carousel-game-title">{currentHero.title}</h2>
           <div class="carousel-meta-row">
             <span class="pill pill-dim" style="border-color:{currentHero.platformColor}60;color:{currentHero.platformColor}">
-              {currentHero.platformIcon} {currentHero.platformName}
+              <PlatformIcon platform={currentHero.platform} size={13} /> {currentHero.platformName}
             </span>
             <div class="row" style="gap:0.35rem">
               {#each currentHero.tags.slice(0, 3) as tag}
@@ -475,8 +476,8 @@
               {#if deal.imageUrl}
                 <img src={deal.imageUrl} alt={deal.title} loading="lazy" onerror={handleImageError} />
               {:else}
-                <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2.5rem">
-                  {deal.platformIcon}
+                <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:{deal.platformColor}">
+                  <PlatformIcon platform={deal.platform} size={36} />
                 </div>
               {/if}
 
@@ -487,7 +488,7 @@
               {/if}
 
               <span class="provider-tag" style="border-left:3px solid {deal.platformColor};color:#fff">
-                {deal.platformIcon} {deal.platformName}
+                <PlatformIcon platform={deal.platform} size={12} color={deal.platformColor} /> {deal.platformName}
               </span>
             </div>
 
@@ -547,7 +548,7 @@
         {#each Object.entries(allPlatformMeta) as [key, info]}
           {#if isPlatformPluginEnabled(key)}
             <label class="filter-option-row">
-              <span style="color:{info.color}">{info.icon} {info.label}</span>
+              <span style="color:{info.color};display:inline-flex;align-items:center;gap:0.35rem"><PlatformIcon platform={key} size={13} /> {info.label}</span>
               <input
                 type="radio"
                 name="platform-filter"
@@ -705,8 +706,8 @@
                 {#if item.imageUrl}
                   <img src={item.imageUrl} alt={item.title} loading="lazy" onerror={handleImageError} />
                 {:else}
-                  <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2.5rem">
-                    {item.platformIcon}
+                  <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:2.5rem;color:{item.platformColor}">
+                    <PlatformIcon platform={item.platform} size={36} />
                   </div>
                 {/if}
 
@@ -717,7 +718,7 @@
                 {/if}
 
                 <span class="provider-tag" style="border-left:3px solid {item.platformColor};color:#fff">
-                  {item.platformIcon} {item.platformName}
+                  <PlatformIcon platform={item.platform} size={12} color={item.platformColor} /> {item.platformName}
                 </span>
               </div>
 
@@ -779,7 +780,7 @@
                   </strong>
                   <div class="row" style="gap:0.35rem;align-items:center;margin-top:0.15rem">
                     <span class="muted-xs" style="color:{item.platformColor}">
-                      {item.platformIcon} {item.platformName}
+                      <PlatformIcon platform={item.platform} size={11} /> {item.platformName}
                     </span>
                     {#each item.tags.slice(0, 3) as tag}
                       <span class="pill pill-dim" style="font-size:0.58rem">{tag}</span>

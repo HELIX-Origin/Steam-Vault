@@ -1,11 +1,8 @@
 import type { UniversalPlugin } from "../framework";
-import { trailersPlayerPlugin } from "./trailers";
-import { ambientSoundtracksPlugin } from "./ambient";
+import { mediaUniversalPlugin } from "./universal";
 
-export * from "./trailers";
-export * from "./ambient";
+export * from "./universal";
 
 export const MEDIA_PLUGINS: UniversalPlugin[] = [
-  trailersPlayerPlugin,
-  ambientSoundtracksPlugin
+  mediaUniversalPlugin
 ];

@@ -17,12 +17,12 @@ Universal Game Launcher uses an **in-app native modular plugin architecture** (`
 ## 🏗️ The Plugin Framework Overview
 
 All plugins reside in `src/lib/plugins/` under four categorical subdirectories:
-- `src/lib/plugins/platforms/` — Game storefronts, client launchers, local executables, and emulator platforms.
-- `src/lib/plugins/metadata/` — Third-party metadata, community box art, and compatibility providers.
-- `src/lib/plugins/utility/` — Background notification feeds, giveaway scrapers, and disk storage analyzers.
-- `src/lib/plugins/media/` — Video trailer streams, hero background animations, and ambient game soundtracks.
+- `src/lib/plugins/platforms/` — `platform-universal`: Universal platform discovery and launcher engine managing all 12 platform targets paired with global platform helpers.
+- `src/lib/plugins/metadata/` — `metadata-universal`: Automatic multi-source metadata engine cascading across Local Inspector, Libretro, Steam Store, GOG, Wikipedia/Wikidata, and PCGamingWiki.
+- `src/lib/plugins/utility/` — `utility-title-normalizer`, `utility-deals`, `utility-patchnotes`, and `utility-storage`.
+- `src/lib/plugins/media/` — `media-universal`: Modern Steam CDN MP4 trailer extraction (`movie_max.mp4`) and ambient soundtrack player.
 
-Every plugin exports a constant implementing the `UniversalPlugin` interface defined in `src/lib/plugins/framework.ts`.
+Every plugin exports a constant implementing the `UniversalPlugin` interface defined in `src/lib/plugins/framework.ts`. Universal Core plugins also export strongly typed global helper functions for cross-view reusability.
 
 ---
 
@@ -506,5 +506,5 @@ cargo check --manifest-path src-tauri/Cargo.toml
 ## ➡️ Next Steps
 
 - [Plugins Architecture & Ecosystem](Plugins-Architecture.md) — architectural deep-dive into non-blocking workers and KV caching.
-- [Available Plugins Catalog]({{ '/docs/Available-Plugins/' | relative_url }}) — explore the 27 built-in plugins.
-- [Metadata Providers]({{ '/docs/Metadata-Providers/' | relative_url }}) — role hierarchy and cache reset invariant.
+- [Available Plugins Catalog]({{ '/docs/Available-Plugins/' | relative_url }}) — explore the Universal Core plugins and global helpers.
+- [Metadata Providers]({{ '/docs/Metadata-Providers/' | relative_url }}) — automatic multi-source metadata cascade.

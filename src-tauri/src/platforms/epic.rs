@@ -260,6 +260,7 @@ pub async fn install_legendary_cli() -> AppResult<crate::platforms::tools::Launc
         alternative_label: Some("Download Legendary CLI ↗".to_string()),
         supports_silent_install: true,
         winget_package_id: Some("EpicGames.EpicGamesLauncher".to_string()),
+        launch_args: None,
     })
 }
 

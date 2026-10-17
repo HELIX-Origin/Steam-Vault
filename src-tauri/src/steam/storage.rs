@@ -352,7 +352,7 @@ fn dir_size(path: &Path, max_depth: usize) -> u64 {
 
 /// Build the full storage report for a Steam root, including both Steam games
 /// and non-Steam game shortcuts with their disk footprints and platforms.
-pub fn report(root: &Path, account: Option<&str>) -> AppResult<StorageReport> {
+pub fn report(root: &Path, _account: Option<&str>) -> AppResult<StorageReport> {
     let root_str = root.display().to_string();
     let disks = disks_snapshot();
     let libraries = paths::read_library_folders(root);
@@ -396,72 +396,7 @@ pub fn report(root: &Path, account: Option<&str>) -> AppResult<StorageReport> {
         });
     }
 
-    // 2. Non-Steam shortcuts for the selected or active accounts
-    let accounts: Vec<String> = if let Some(id3) = account {
-        vec![id3.to_string()]
-    } else {
-        let userdata = root.join("userdata");
-        if let Ok(user_entries) = std::fs::read_dir(&userdata) {
-            user_entries
-                .flatten()
-                .filter(|e| e.path().is_dir())
-                .filter_map(|e| e.file_name().to_str().map(str::to_string))
-                .filter(|name| name.chars().all(|c| c.is_ascii_digit()))
-                .collect()
-        } else {
-            Vec::new()
-        }
-    };
-
-    let mut seen_shortcut_ids = std::collections::BTreeSet::new();
-    for id3 in &accounts {
-        if let Ok(shortcuts) = crate::steam::shortcuts::load_shortcuts(root, id3) {
-            for sc in shortcuts {
-                if !seen_shortcut_ids.insert(sc.app_id) {
-                    continue;
-                }
-                let install_path = sc
-                    .install_dir
-                    .as_deref()
-                    .filter(|s| !s.is_empty())
-                    .map(PathBuf::from)
-                    .or_else(|| {
-                        sc.exe
-                            .as_deref()
-                            .and_then(|e| Path::new(e).parent().map(|p| p.to_path_buf()))
-                    });
-
-                let (size_on_disk, folder_exists, installed) = if let Some(ref dir) = install_path {
-                    let exists = dir.is_dir();
-                    let size = if exists { dir_size(dir, 4) } else { 0 };
-                    let has_exe = sc
-                        .exe
-                        .as_deref()
-                        .map(|e| Path::new(e).is_file())
-                        .unwrap_or(false);
-                    (size, exists, exists || has_exe)
-                } else {
-                    (0, false, false)
-                };
-
-                let library_path = install_path
-                    .as_ref()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|| "External".into());
-
-                games.push(GamePlacement {
-                    app_id: sc.app_id,
-                    name: sc.name,
-                    library_path,
-                    install_dir: install_path.map(|p| p.display().to_string()),
-                    size_on_disk,
-                    installed,
-                    folder_exists,
-                    platform: Some(sc.platform),
-                });
-            }
-        }
-    }
+    // Steam storage only tracks Steam games; non-Steam/external games are tracked by platform providers
 
     games.sort_by_key(|a| std::cmp::Reverse(a.size_on_disk));
 

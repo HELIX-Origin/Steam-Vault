@@ -106,7 +106,7 @@ pub fn is_steam_running() -> bool {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn load_library(
+pub async fn load_library(
     account_id3: Option<String>,
     force_reload: Option<bool>,
     state: State<'_, AppState>,
@@ -120,9 +120,29 @@ pub fn load_library(
     }
 
     let root_opt = steam_root(&state).ok();
-    let root = root_opt.as_deref().unwrap_or_else(|| Path::new("."));
-    let account = resolve_account(root, &state, account_id3);
-    let games = collect_library(root, account.as_deref(), &state)?;
+    let root = root_opt.unwrap_or_else(|| PathBuf::from("."));
+    let account = resolve_account(&root, &state, account_id3);
+
+    // Load Steam VDF manifests and play stats on a background blocking thread so IPC never blocks
+    let root_clone = root.clone();
+    let account_clone = account.clone();
+    let mut games = tauri::async_runtime::spawn_blocking(move || -> AppResult<Vec<Game>> {
+        let mut loaded = library::load_games(&root_clone).unwrap_or_default();
+        if let Some(ref id3) = account_clone {
+            let stats = library::load_app_stats(&root_clone, id3);
+            for game in loaded.iter_mut() {
+                if let Some((last_played, playtime)) = stats.get(&game.app_id) {
+                    game.last_played = *last_played;
+                    game.playtime_minutes = *playtime;
+                }
+            }
+        }
+        Ok(loaded)
+    })
+    .await
+    .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))??;
+
+    finalize_library(&mut games, &state);
 
     {
         let cache = state.cache.lock().expect("cache lock poisoned");
@@ -134,11 +154,6 @@ pub fn load_library(
 }
 
 /// Assemble the full library for organization.
-///
-/// This is intentionally **not** limited to installed games: the entire owned
-/// Steam library (cached from the Steam Web API) is merged in, so most of a
-/// large library can still be organized even when it is not installed locally.
-/// Custom imported games and resolved collection membership are included too.
 fn collect_library(root: &Path, account: Option<&str>, state: &AppState) -> AppResult<Vec<Game>> {
     let mut games = library::load_games(root).unwrap_or_default();
 
@@ -150,17 +165,134 @@ fn collect_library(root: &Path, account: Option<&str>, state: &AppState) -> AppR
                 game.playtime_minutes = *playtime;
             }
         }
-
-        if let Ok(non_steam) = shortcuts::load_shortcuts(root, id3) {
-            games.extend(non_steam);
-        }
     }
 
-    // Merge custom imported platform games persisted in local SQLite app_kv
+    finalize_library(&mut games, state);
+    Ok(games)
+}
+
+fn finalize_library(games: &mut Vec<Game>, state: &AppState) {
+    // Merge custom imported platform games persisted in local SQLite app_kv,
+    // automatically pruning any launcher clients that were previously imported by mistake,
+    // inspecting local manifests (e.g. RPG Maker System.json / itch receipt),
+    // normalizing game titles across all platforms, and deduplicating by path & canonical title.
     {
         let cache = state.cache.lock().expect("cache lock poisoned");
-        if let Some(custom_games) = cache.get_kv_json::<Vec<Game>>("library:custom_games") {
+        if let Some(mut custom_games) = cache.get_kv_json::<Vec<Game>>("library:custom_games") {
+            let orig_len = custom_games.len();
+            let mut modified = false;
+
+            custom_games.retain_mut(|cg| {
+                let n = cg.name.trim().to_lowercase();
+                let is_launcher = [
+                    "ubisoft game launcher",
+                    "ubisoft connect",
+                    "gog galaxy",
+                    "ea desktop",
+                    "origin",
+                    "epic games launcher",
+                    "launcher",
+                    "legendary",
+                    "games",
+                    "broth",
+                    "rockstar games launcher",
+                    "rockstar games social club",
+                    "battle.net",
+                ]
+                .contains(&n.as_str());
+                if is_launcher {
+                    return false;
+                }
+
+                // Also prune if install_dir or exe points to Launcher / Legendary / itch/games parent
+                if let Some(ref dir_str) = cg.install_dir {
+                    let dl = dir_str.replace('/', "\\").to_lowercase();
+                    if dl.ends_with("\\epic games\\launcher")
+                        || dl.ends_with("\\epic games\\legendary")
+                        || dl.ends_with("\\itch\\games")
+                    {
+                        return false;
+                    }
+                }
+                if let Some(ref exe_str) = cg.exe {
+                    let el = exe_str.replace('/', "\\").to_lowercase();
+                    if el.ends_with("\\legendary.exe")
+                        || el.ends_with("\\epiconlineservicesinstaller.exe")
+                    {
+                        return false;
+                    }
+                }
+
+                // If non-emulated game has an install_dir, check if local manifest has a cleaner title
+                // (e.g. relicts-auf-aeson -> Relicts of Aeson from RPG Maker System.json)
+                if cg.platform != Platform::EmulationStation && cg.console.is_none() {
+                    let dir_path = cg.install_dir.as_deref().map(Path::new);
+                    let exe_path = cg.exe.as_deref().map(Path::new);
+                    if let Some(local_meta) =
+                        crate::metadata::local::inspect_local_game(dir_path, exe_path)
+                    {
+                        if let Some(local_title) = local_meta.name.filter(|t| !t.trim().is_empty()) {
+                            if local_title != cg.name {
+                                cg.name = local_title;
+                                modified = true;
+                            }
+                        }
+                    }
+                }
+
+                let normalized = crate::platforms::normalize_game_title(&cg.name);
+                if !normalized.is_empty() && normalized != cg.name {
+                    cg.name = normalized;
+                    modified = true;
+                }
+                true
+            });
+
+            // Heal legacy uninstalled games that stored cmd.exe / xdg-open as exe
+            for cg in &mut custom_games {
+                if !cg.installed && cg.exe.as_deref().map_or(false, |e| e.ends_with("cmd.exe") || e.ends_with("xdg-open")) {
+                    cg.exe = None;
+                    cg.install_dir = None;
+                    modified = true;
+                }
+            }
+
+            // Sort custom_games so installed games come before uninstalled games during deduplication
+            custom_games.sort_by_key(|g| (!g.installed, g.name.clone()));
+
+            // Deduplicate custom_games by install_dir/exe and by (platform, console, canonical_title_key)
+            let mut deduped: Vec<Game> = Vec::with_capacity(custom_games.len());
+            let mut seen_paths = BTreeSet::new();
+            let mut seen_titles = BTreeSet::new();
             for cg in custom_games {
+                let path_key = cg
+                    .exe
+                    .as_deref()
+                    .or(cg.install_dir.as_deref())
+                    .unwrap_or("")
+                    .replace('/', "\\")
+                    .to_lowercase();
+                if !path_key.is_empty() && !seen_paths.insert(path_key) {
+                    modified = true;
+                    continue;
+                }
+                let title_key = format!(
+                    "{}:{}:{}",
+                    cg.platform.id(),
+                    cg.console.as_deref().unwrap_or("").to_lowercase(),
+                    crate::plugins::title_normalizer::canonical_title_key(&cg.name)
+                );
+                if !seen_titles.insert(title_key) {
+                    modified = true;
+                    continue;
+                }
+                deduped.push(cg);
+            }
+
+            if deduped.len() != orig_len || modified {
+                let _ = cache.set_kv_json("library:custom_games", &deduped, None);
+            }
+            for cg in deduped {
                 if !games.iter().any(|g| g.app_id == cg.app_id) {
                     games.push(cg);
                 }
@@ -168,35 +300,42 @@ fn collect_library(root: &Path, account: Option<&str>, state: &AppState) -> AppR
         }
     }
 
-    merge_owned(&mut games, &owned::load());
+    merge_owned(games, &owned::load());
+
+    // Normalize titles across all games in the library
+    for game in games.iter_mut() {
+        let normalized = crate::platforms::normalize_game_title(&game.name);
+        if !normalized.is_empty() {
+            game.name = normalized;
+        }
+    }
 
     // Apply collection membership from local SQLite collections
     {
         let cache = state.cache.lock().expect("cache lock poisoned");
         let cols = cache.load_collections_from_db();
-        apply_membership(&mut games, &cols);
+        apply_membership(games, &cols);
     }
 
     // Populate cached store artwork URLs (capsule cover, hero banner, logo)
     {
         let cache = state.cache.lock().expect("cache lock poisoned");
 
-        for game in &mut games {
-            if game.capsule_image.is_none() {
-                let meta = cache
-                    .get("shortcut-meta", game.app_id, None)
-                    .or_else(|| cache.get("steam-store", game.app_id, None));
-                if let Some(m) = meta {
-                    game.capsule_image = m.header_image.or(m.capsule_image);
-                    if game.hero_image.is_none() {
-                        game.hero_image = m.hero_image;
-                    }
+        for game in games.iter_mut() {
+            let meta = cache
+                .get_kv_json::<AppMeta>(&format!("game_meta:{}", game.app_id))
+                .or_else(|| cache.get("shortcut-meta", game.app_id, None))
+                .or_else(|| cache.get("steam-store", game.app_id, None));
+            if let Some(m) = meta {
+                if game.capsule_image.is_none() {
+                    game.capsule_image = m.capsule_image.or(m.header_image);
+                }
+                if game.hero_image.is_none() {
+                    game.hero_image = m.hero_image;
                 }
             }
         }
     }
-
-    Ok(games)
 }
 
 /// Fold the cached owned library into the local game list. Games already known
@@ -518,6 +657,15 @@ pub async fn ensure_steam_metadata(
                 let mut cache = state.cache.lock().expect("cache lock poisoned");
                 for (app_id, meta) in &map {
                     cache.put("steam-store", *app_id, meta);
+                    let kv_key = format!("game_meta:{}", app_id);
+                    let existing_kv = cache.get_kv_json::<AppMeta>(&kv_key);
+                    if force
+                        || existing_kv.as_ref().map_or(true, |m| {
+                            m.user_enhanced != Some(true) || is_placeholder_meta(m)
+                        })
+                    {
+                        let _ = cache.set_kv_json(&kv_key, meta, None);
+                    }
                 }
                 fetched += map.len();
             }
@@ -580,9 +728,6 @@ pub async fn ensure_game_metadata(
     want_tags: bool,
     force: bool,
 ) -> MetadataSyncResult {
-    let settings = state.settings_snapshot();
-    let client = metadata::http_client();
-
     let steam_ids: Vec<u32> = games
         .iter()
         .filter(|game| game.kind == GameKind::Steam && game.app_id != 0)
@@ -592,7 +737,10 @@ pub async fn ensure_game_metadata(
     let mut result = ensure_steam_metadata(state, &steam_ids, want_tags, force).await;
 
 
-    // Resolve non-Steam shortcuts across multiple providers
+    // Resolve non-Steam shortcuts across universal metadata providers
+    let client = metadata::http_client();
+    let settings = state.settings_snapshot();
+
     for game in games {
         if game.kind != GameKind::Shortcut {
             continue;
@@ -604,6 +752,7 @@ pub async fn ensure_game_metadata(
             let cache = state.cache.lock().expect("cache lock poisoned");
             cache
                 .get("shortcut-meta", game.app_id, Some(CACHE_MAX_AGE_SECS))
+                .filter(|m| !is_placeholder_meta(m))
                 .is_some()
         };
 
@@ -613,71 +762,70 @@ pub async fn ensure_game_metadata(
         }
 
         result.requested += 1;
-        let mut resolved: Option<AppMeta> = None;
-
-        // 1. Local engine inspection (itch receipt, RPG Maker, Ren'Py, PE VersionInfo)
-        if resolved.is_none() {
-            let dir = game.install_dir.as_deref().map(Path::new);
-            let exe = game.exe.as_deref().map(Path::new);
-            if let Some(local_meta) = metadata::local::inspect_local_game(dir, exe) {
-                resolved = Some(local_meta);
-            }
-        }
-
-        // 3. Steam Store Search (check if title exists on Steam Store)
-        if resolved
-            .as_ref()
-            .map_or(true, |m| m.developers.is_empty() || m.publishers.is_empty())
-        {
-            if let Ok(Some(steam_id)) = metadata::steam_search::find_steam_app_id(
-                &client,
-                &game.name,
-                &settings.country_code,
-                &settings.language,
-            )
-            .await
-            {
-                if let Ok(map) = metadata::steam_store::fetch_app_details(
-                    &client,
-                    &[steam_id],
-                    &settings.country_code,
-                    &settings.language,
-                )
-                .await
-                {
-                    if let Some(store_meta) = map.get(&steam_id) {
-                        resolved = Some(store_meta.clone());
-                    }
-                }
-            }
-        }
-
-        // 4. Fallback publisher attribution from platform if still empty
-        let mut final_meta = resolved.unwrap_or_else(|| AppMeta {
-            name: Some(game.name.clone()),
-            ..Default::default()
-        });
-
-        if final_meta.publishers.is_empty()
-            && game.platform != Platform::Steam
-            && game.platform != Platform::Other
-        {
-            final_meta.publishers = vec![game.platform.label().to_string()];
-        }
-        if final_meta.developers.is_empty() && !final_meta.publishers.is_empty() {
-            final_meta.developers = final_meta.publishers.clone();
-        }
-
-        final_meta.app_id = game.app_id;
-        final_meta.fetched_at = Some(chrono::Utc::now().timestamp());
+        let final_meta = metadata::universal::resolve_game_metadata(
+            &client,
+            game,
+            &settings.country_code,
+            &settings.language,
+        )
+        .await;
 
         let mut cache = state.cache.lock().expect("cache lock poisoned");
         cache.put("shortcut-meta", game.app_id, &final_meta);
         cache.put("steam-store", game.app_id, &final_meta);
+        // Also populate game_meta:<appId> if not user-enhanced
+        let kv_key = format!("game_meta:{}", game.app_id);
+        let existing_kv = cache.get_kv_json::<AppMeta>(&kv_key);
+        if force
+            || existing_kv.as_ref().map_or(true, |m| {
+                m.user_enhanced != Some(true) || is_placeholder_meta(m)
+            })
+        {
+            let _ = cache.set_kv_json(&kv_key, &final_meta, None);
+        }
         result.fetched += 1;
     }
 
     result
+}
+
+fn is_placeholder_meta(m: &AppMeta) -> bool {
+    m.short_description.as_deref().map_or(false, |d| {
+        d.starts_with("Emulated title for ") || d == "Local standalone executable game."
+    })
+}
+
+async fn get_library_fast(account_id3: Option<String>, state: &AppState) -> AppResult<Vec<Game>> {
+    let cache_key = format!("library:{}", account_id3.as_deref().unwrap_or("default"));
+    {
+        let cache = state.cache.lock().expect("cache lock poisoned");
+        if let Some(cached) = cache.get_kv_json::<Vec<Game>>(&cache_key) {
+            return Ok(cached);
+        }
+    }
+
+    let root = steam_root(state).unwrap_or_else(|_| PathBuf::from("."));
+    let account = resolve_account(&root, state, account_id3);
+    let root_clone = root.clone();
+    let account_clone = account.clone();
+    let mut games = tauri::async_runtime::spawn_blocking(move || -> AppResult<Vec<Game>> {
+        let mut loaded = library::load_games(&root_clone).unwrap_or_default();
+        if let Some(ref id3) = account_clone {
+            let stats = library::load_app_stats(&root_clone, id3);
+            for game in loaded.iter_mut() {
+                if let Some((last_played, playtime)) = stats.get(&game.app_id) {
+                    game.last_played = *last_played;
+                    game.playtime_minutes = *playtime;
+                }
+            }
+        }
+        Ok(loaded)
+    })
+    .await
+    .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))??;
+
+    finalize_library(&mut games, state);
+    Ok(games)
 }
 
 /// Warm (or refresh) store metadata for the whole local library across all supported providers.
@@ -688,9 +836,7 @@ pub async fn sync_library_metadata(
     _auto_artwork: Option<bool>,
     state: State<'_, AppState>,
 ) -> AppResult<MetadataSyncResult> {
-    let root = steam_root(&state)?;
-    let account = resolve_account(&root, &state, account_id3);
-    let games = collect_library(&root, account.as_deref(), &state)?;
+    let games = get_library_fast(account_id3, &state).await?;
     let refs: Vec<&Game> = games.iter().collect();
     let is_force = force.unwrap_or(false);
     let result = ensure_game_metadata(&state, &refs, false, is_force).await;
@@ -698,7 +844,7 @@ pub async fn sync_library_metadata(
     Ok(result)
 }
 
-/// Refresh metadata and artwork references for an individual game on demand.
+/// Refresh metadata and artwork references for an individual game across universal metadata providers.
 #[tauri::command]
 pub async fn refresh_game_metadata(
     app_id: u32,
@@ -706,170 +852,85 @@ pub async fn refresh_game_metadata(
     account_id3: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<Option<AppMeta>> {
-    let root = steam_root(&state)?;
-    let account = resolve_account(&root, &state, account_id3);
-    let games = collect_library(&root, account.as_deref(), &state)?;
+    let games = get_library_fast(account_id3, &state).await?;
     let Some(game) = games.into_iter().find(|g| g.app_id == app_id) else {
         return Ok(None);
     };
 
     let client = metadata::http_client();
     let settings = state.settings_snapshot();
-    let mut resolved: Option<AppMeta> = None;
-
-    // 1. Primary Storefront / Platform Provider (Authoritative Origin)
-    if game.kind == GameKind::Steam && game.app_id != 0 {
-        if let Ok(map) = metadata::steam_store::fetch_app_details(
-            &client,
-            &[game.app_id],
-            &settings.country_code,
-            &settings.language,
-        )
-        .await
-        {
-            if let Some(meta) = map.get(&game.app_id) {
-                resolved = Some(meta.clone());
-            }
-        }
-    }
-
-    // 2. Local directory engine / receipt inspection
-    if let Some(ref exe_path) = game.exe {
-        let p = std::path::Path::new(exe_path);
-        let dir = p.parent();
-        if let Some(local_meta) = metadata::local::inspect_local_game(dir, Some(p)) {
-            if let Some(ref mut cur) = resolved {
-                if cur.developers.is_empty() {
-                    cur.developers = local_meta.developers;
-                }
-                if cur.publishers.is_empty() {
-                    cur.publishers = local_meta.publishers;
-                }
-                for t in local_meta.tags {
-                    if !cur.tags.contains(&t) {
-                        cur.tags.push(t);
-                    }
-                }
-            } else {
-                resolved = Some(local_meta);
-            }
-        }
-    }
-
-    // 3. Steam Search fallback (for non-Steam games that exist on Steam Store)
-    if resolved
-        .as_ref()
-        .map_or(true, |m| m.developers.is_empty() || m.publishers.is_empty())
-    {
-        if let Ok(Some(steam_id)) = metadata::steam_search::find_steam_app_id(
-            &client,
-            &game.name,
-            &settings.country_code,
-            &settings.language,
-        )
-        .await
-        {
-            if let Ok(map) = metadata::steam_store::fetch_app_details(
-                &client,
-                &[steam_id],
-                &settings.country_code,
-                &settings.language,
-            )
-            .await
-            {
-                if let Some(store_meta) = map.get(&steam_id) {
-                    if let Some(ref mut cur) = resolved {
-                        if cur.developers.is_empty() {
-                            cur.developers = store_meta.developers.clone();
-                        }
-                        if cur.publishers.is_empty() {
-                            cur.publishers = store_meta.publishers.clone();
-                        }
-                        if cur.release_year.is_none() {
-                            cur.release_year = store_meta.release_year;
-                        }
-                        if cur.short_description.is_none() {
-                            cur.short_description = store_meta.short_description.clone();
-                        }
-                        for g in &store_meta.genres {
-                            if !cur.genres.contains(g) {
-                                cur.genres.push(g.clone());
-                            }
-                        }
-                    } else {
-                        resolved = Some(store_meta.clone());
-                    }
-                }
-            }
-        }
-    }
+    let mut final_meta = metadata::universal::resolve_game_metadata(
+        &client,
+        &game,
+        &settings.country_code,
+        &settings.language,
+    )
+    .await;
 
     let existing_cached = {
         let cache = state.cache.lock().expect("cache lock poisoned");
-        cache.get("shortcut-meta", app_id, None)
+        cache
+            .get_kv_json::<AppMeta>(&format!("game_meta:{app_id}"))
+            .or_else(|| cache.get("shortcut-meta", app_id, None))
             .or_else(|| cache.get("steam-store", app_id, None))
+            .filter(|m| !is_placeholder_meta(m))
     };
 
-    let user_enhanced = existing_cached.as_ref().and_then(|m| m.user_enhanced).unwrap_or(false);
+    let user_enhanced = existing_cached
+        .as_ref()
+        .and_then(|m| m.user_enhanced)
+        .unwrap_or(false);
     let is_cache_reset = _force.unwrap_or(false);
 
-    if let Some(mut final_meta) = resolved {
-        final_meta.app_id = game.app_id;
-        final_meta.fetched_at = Some(chrono::Utc::now().timestamp());
-
-        // Invariant: Game providers should only be allowed to override the metadata
-        // from the metadata providers if the user chooses to reset the metadata cache.
-        if user_enhanced && !is_cache_reset {
-            if let Some(existing) = existing_cached {
-                if existing.short_description.is_some() {
-                    final_meta.short_description = existing.short_description;
-                }
-                if !existing.developers.is_empty() {
-                    final_meta.developers = existing.developers;
-                }
-                if !existing.publishers.is_empty() {
-                    final_meta.publishers = existing.publishers;
-                }
-                if !existing.genres.is_empty() {
-                    final_meta.genres = existing.genres;
-                }
-                if !existing.tags.is_empty() {
-                    final_meta.tags = existing.tags;
-                }
-                if existing.release_date.is_some() {
-                    final_meta.release_date = existing.release_date;
-                }
-                if existing.release_year.is_some() {
-                    final_meta.release_year = existing.release_year;
-                }
-                if existing.capsule_image.is_some() {
-                    final_meta.capsule_image = existing.capsule_image;
-                }
-                if existing.hero_image.is_some() {
-                    final_meta.hero_image = existing.hero_image;
-                }
-                if existing.logo_image.is_some() {
-                    final_meta.logo_image = existing.logo_image;
-                }
-                if existing.user_score.is_some() {
-                    final_meta.user_score = existing.user_score;
-                }
-                final_meta.user_enhanced = Some(true);
-                final_meta.enhanced_by = existing.enhanced_by;
+    // Invariant: Preserve user customizations (`user_enhanced: true`) unless resetting cache.
+    if user_enhanced && !is_cache_reset {
+        if let Some(existing) = existing_cached {
+            if existing.name.is_some() {
+                final_meta.name = existing.name;
             }
+            if existing.short_description.is_some() {
+                final_meta.short_description = existing.short_description;
+            }
+            if !existing.developers.is_empty() {
+                final_meta.developers = existing.developers;
+            }
+            if !existing.publishers.is_empty() {
+                final_meta.publishers = existing.publishers;
+            }
+            if !existing.genres.is_empty() {
+                final_meta.genres = existing.genres;
+            }
+            if !existing.tags.is_empty() {
+                final_meta.tags = existing.tags;
+            }
+            if existing.release_date.is_some() {
+                final_meta.release_date = existing.release_date;
+            }
+            if existing.release_year.is_some() {
+                final_meta.release_year = existing.release_year;
+            }
+            if existing.capsule_image.is_some() {
+                final_meta.capsule_image = existing.capsule_image;
+            }
+            if existing.hero_image.is_some() {
+                final_meta.hero_image = existing.hero_image;
+            }
+            if existing.logo_image.is_some() {
+                final_meta.logo_image = existing.logo_image;
+            }
+            if existing.user_score.is_some() {
+                final_meta.user_score = existing.user_score;
+            }
+            final_meta.user_enhanced = Some(true);
+            final_meta.enhanced_by = existing.enhanced_by;
         }
-
-        let mut cache = state.cache.lock().expect("cache lock poisoned");
-        if game.kind == GameKind::Steam {
-            cache.put("steam-store", game.app_id, &final_meta);
-        } else {
-            cache.put("shortcut-meta", game.app_id, &final_meta);
-            cache.put("steam-store", game.app_id, &final_meta);
-        }
-        Ok(Some(final_meta))
-    } else {
-        Ok(existing_cached)
     }
+
+    let mut cache = state.cache.lock().expect("cache lock poisoned");
+    cache.put("shortcut-meta", game.app_id, &final_meta);
+    cache.put("steam-store", game.app_id, &final_meta);
+    let _ = cache.set_kv_json(&format!("game_meta:{}", game.app_id), &final_meta, None);
+    Ok(Some(final_meta))
 }
 
 #[tauri::command]
@@ -919,11 +980,11 @@ pub struct ImportResult {
 
 /// Scan the machine for games installed across platforms.
 #[tauri::command]
-pub fn detect_platforms(
+pub async fn detect_platforms(
     include_other_drives: Option<bool>,
     state: State<'_, AppState>,
-) -> PlatformScan {
-    scan_all_platforms(include_other_drives, state)
+) -> AppResult<PlatformScan> {
+    scan_all_platforms(include_other_drives, state).await
 }
 
 /// Existing library folders for one platform, used to autofill Settings.
@@ -1036,21 +1097,56 @@ pub async fn import_platform_games(
             .or_else(|| game.install_dir.clone())
             .unwrap_or_default();
 
-        let final_name = game.name.clone();
+        let local_meta = metadata::local::inspect_local_game(
+            Some(Path::new(&start_dir)),
+            Some(Path::new(&exe)),
+        );
+
+        let raw_name = local_meta
+            .as_ref()
+            .and_then(|m| m.name.as_deref())
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or(&game.name);
+
+        let normalized = crate::platforms::normalize_game_title(raw_name);
+        let final_name = if normalized.is_empty() {
+            raw_name.to_string()
+        } else {
+            normalized
+        };
 
         let mut tags = Vec::new();
         if let Some(ref console) = game.console {
             tags.push(console.clone());
         }
 
-        let app_id = shortcuts::shortcut_app_id(&exe, &final_name);
+        let seed = if game.installed {
+            &exe
+        } else if let Some(ref pid) = game.platform_id {
+            pid
+        } else {
+            &exe
+        };
+        let app_id = shortcuts::shortcut_app_id(seed, &final_name);
+
+        if let Some(mut lm) = local_meta {
+            lm.app_id = app_id;
+            if lm.name.as_deref().unwrap_or("").trim().is_empty() {
+                lm.name = Some(final_name.clone());
+            }
+            let mut cache = state.cache.lock().expect("cache lock poisoned");
+            cache.put("shortcut-meta", app_id, &lm);
+        }
 
         added_games.push(Game {
             app_id,
             name: final_name,
-            exe: Some(exe),
-            install_dir: Some(start_dir),
-            launch_uri: game.launch_uri,
+            exe: if game.installed { Some(exe) } else { None },
+            install_dir: if game.installed && !start_dir.is_empty() { Some(start_dir) } else { None },
+            launch_uri: game.launch_uri.clone(),
+            install_uri: game.install_uri.clone().or_else(|| game.launch_uri.clone()),
+            uninstall_uri: game.uninstall_uri.clone(),
+            platform_id: game.platform_id.clone(),
             platform: game.platform,
             kind: GameKind::Shortcut,
             installed: game.installed,
@@ -1201,17 +1297,23 @@ pub fn toggle_plugin(id: String, enabled: bool, state: State<'_, AppState>) -> A
 }
 
 #[tauri::command]
-pub fn scan_all_platforms(
+pub async fn scan_all_platforms(
     include_other_drives: Option<bool>,
     state: State<'_, AppState>,
-) -> crate::platforms::PlatformScan {
+) -> AppResult<crate::platforms::PlatformScan> {
     let settings = state.settings_snapshot();
     let config = crate::platforms::ScanConfig {
         sources: settings.platform_sources,
-        include_other_drives: include_other_drives.unwrap_or(false),
+        include_other_drives: include_other_drives.unwrap_or(true),
     };
-    let plugins = state.plugins.lock().expect("plugins lock poisoned");
-    plugins.scan_platforms(&config, &settings.enabled_plugins)
+    let enabled_plugins = settings.enabled_plugins;
+    let plugins_engine = state.plugins.lock().expect("plugins lock poisoned").clone();
+
+    tauri::async_runtime::spawn_blocking(move || {
+        plugins_engine.scan_platforms(&config, &enabled_plugins)
+    })
+    .await
+    .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))
 }
 
 /// Statistics on the persistent SQLite metadata database, artwork cache, and serverless Redis KV layer.
@@ -1502,14 +1604,37 @@ pub fn launch_game(
         }
     }
 
-    // 3. Storefront official launcher URI (e.g. goggalaxy://, uplay://, battlenet://, shell:AppsFolder)
+    // 3. itch.io launcher support (handles itch-setup.exe with --prefer-launch --appname itch)
+    let is_itch = platform.as_deref() == Some("itch")
+        || launch_uri.as_ref().map_or(false, |u| u.starts_with("itch://"));
+    if is_itch {
+        if let Some(itch_bin) = crate::platforms::check_binary_installed(
+            &["itch-setup.exe".into(), "itch.exe".into(), "itch".into()],
+            None,
+        ) {
+            let mut cmd = std::process::Command::new(&itch_bin);
+            if itch_bin.to_lowercase().ends_with("itch-setup.exe") {
+                cmd.args(["--prefer-launch", "--appname", "itch"]);
+            }
+            if let Some(ref uri) = launch_uri {
+                if uri.starts_with("itch://") {
+                    cmd.arg(uri);
+                }
+            }
+            if cmd.spawn().is_ok() {
+                return Ok(true);
+            }
+        }
+    }
+
+    // 4. Storefront official launcher URI (e.g. goggalaxy://, uplay://, battlenet://, shell:AppsFolder)
     if let Some(uri) = launch_uri.filter(|u| !u.is_empty()) {
         if open_external_target(&uri).is_ok() {
             return Ok(true);
         }
     }
 
-    // 4. Steam protocol for native Steam games (never use steam:// for non-Steam shortcuts)
+    // 5. Steam protocol for native Steam games (never use steam:// for non-Steam shortcuts)
     if app_id > 0 && app_id < 0x80000000 {
         let uri = format!("steam://run/{app_id}");
         if open_external_target(&uri).is_ok() {
@@ -1530,20 +1655,47 @@ pub fn get_cached_game_metadata(
 ) -> AppResult<Option<AppMeta>> {
     let cache = state.cache.lock().expect("cache lock poisoned");
 
-    // 1. Check shortcut-meta
-    if let Some(mut meta) = cache.get("shortcut-meta", app_id, None) {
+    // 1. Check persistent KV store
+    if let Some(meta) = cache
+        .get_kv_json::<AppMeta>(&format!("game_meta:{app_id}"))
+        .filter(|m| !is_placeholder_meta(m))
+    {
+        return Ok(Some(meta));
+    }
+
+    // 2. Check shortcut-meta
+    if let Some(mut meta) = cache
+        .get("shortcut-meta", app_id, None)
+        .filter(|m| !is_placeholder_meta(m))
+    {
         if let Some(tags) = cache.get("steam-tags", app_id, None) {
             meta.tags = tags.tags;
         }
         return Ok(Some(meta));
     }
 
-    // 2. Check steam-store
-    if let Some(mut meta) = cache.get("steam-store", app_id, None) {
+    // 3. Check steam-store
+    if let Some(mut meta) = cache
+        .get("steam-store", app_id, None)
+        .filter(|m| !is_placeholder_meta(m))
+    {
         if let Some(tags) = cache.get("steam-tags", app_id, None) {
             meta.tags = tags.tags;
         }
         return Ok(Some(meta));
+    }
+
+    // 4. Primary internal fallback: Check developer hand-rolled metadata database
+    if let Some(ref name) = _name {
+        if let Some(mut meta) = crate::metadata::developers::backup_metadata_for_title(name) {
+            meta.app_id = app_id;
+            meta.user_enhanced = Some(true);
+            if meta.enhanced_by.is_empty() {
+                meta.enhanced_by = vec!["Developer Hand-Rolled Database".to_string()];
+            }
+            let _ = cache.set_kv_json(&format!("game_meta:{app_id}"), &meta, None);
+            return Ok(Some(meta));
+        }
     }
 
     Ok(None)
@@ -1633,17 +1785,24 @@ fn open_external_target(target: &str) -> AppResult<()> {
 
 /// Detect the installed status and download URLs of all external platform launchers.
 #[tauri::command]
-pub fn get_installed_launchers() -> AppResult<Vec<crate::platforms::LauncherStatus>> {
-    Ok(crate::platforms::detect_all_launchers())
+pub async fn get_installed_launchers() -> AppResult<Vec<crate::platforms::LauncherStatus>> {
+    tauri::async_runtime::spawn_blocking(crate::platforms::detect_all_launchers)
+        .await
+        .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))
 }
 
 /// Autodetect binary from PATH, custom path override, or managed directories.
 #[tauri::command]
-pub fn check_binary_installed(
+pub async fn check_binary_installed(
     binaries: Vec<String>,
     custom_path: Option<String>,
 ) -> Option<String> {
-    crate::platforms::check_binary_installed(&binaries, custom_path.as_deref())
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::platforms::check_binary_installed(&binaries, custom_path.as_deref())
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 /// Silently install a package via winget into a user-manageable folder.
@@ -2102,10 +2261,10 @@ pub async fn scan_emulation_roms(
     .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?
 }
 
-/// Normalizes a raw ROM filename by stripping region dump tags, brackets, and file extensions.
+/// Normalizes a raw game or ROM title across all platforms.
 #[tauri::command]
 pub fn normalize_rom_title_cmd(title: String) -> String {
-    crate::platforms::normalize_rom_title(&title)
+    crate::platforms::normalize_game_title(&title)
 }
 
 // ---------------------------------------------------------------------------
@@ -2148,6 +2307,37 @@ pub async fn pick_game_artwork() -> AppResult<Option<String>> {
 
     Ok(file.map(|f| f.path().display().to_string()))
 }
+
+/// Fetches a JSON payload from an external HTTPS endpoint using the native Rust HTTP client
+/// to avoid WebView2 CORS restrictions for in-app plugins.
+#[tauri::command]
+pub async fn fetch_external_json(
+    url: String,
+    headers: Option<std::collections::HashMap<String, String>>,
+) -> AppResult<serde_json::Value> {
+    let trimmed = url.trim().to_string();
+    if !trimmed.starts_with("https://") && !trimmed.starts_with("http://") {
+        return Err(AppError::msg("Invalid URL scheme; only HTTP/HTTPS is allowed."));
+    }
+    let client = metadata::http_client();
+    let mut req = client.get(&trimmed);
+    if let Some(hdrs) = headers {
+        for (k, v) in hdrs {
+            req = req.header(k, v);
+        }
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|e| AppError::msg(format!("HTTP request failed: {e}")))?;
+    if !resp.status().is_success() {
+        return Err(AppError::msg(format!("HTTP status {}", resp.status())));
+    }
+    resp.json::<serde_json::Value>()
+        .await
+        .map_err(|e| AppError::msg(format!("Invalid JSON payload: {e}")))
+}
+
 
 
 

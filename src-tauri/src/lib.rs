@@ -6,6 +6,7 @@
 
 mod backup;
 mod cache;
+pub mod cli;
 mod commands;
 mod error;
 mod metadata;
@@ -23,6 +24,11 @@ static IS_QUITTING: AtomicBool = AtomicBool::new(false);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Support headless internal CLI mode (`universal-game-launcher --cli <subcommand>`)
+    // for isolated worker subprocesses and instant terminal automation without opening WebView2.
+    if cli::try_run_cli() {
+        return;
+    }
     #[cfg(windows)]
     {
         // Suppress spurious Chromium / WebView2 class unregistration warnings and logging noise on Windows
@@ -196,6 +202,7 @@ pub fn run() {
             commands::pick_game_executable,
             commands::pick_game_directory,
             commands::pick_game_artwork,
+            commands::fetch_external_json,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

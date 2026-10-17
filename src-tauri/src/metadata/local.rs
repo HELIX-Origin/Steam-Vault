@@ -36,8 +36,14 @@ pub fn inspect_local_game(dir: Option<&Path>, exe: Option<&Path>) -> Option<AppM
             }
         }
 
-        // 3. RPG Maker project inspection
+        // 3. RPG Maker project inspection (also checks immediate child directories)
         if let Some(rpg_meta) = inspect_rpg_maker(dir) {
+            if let Some(ref rpg_title) = rpg_meta.name {
+                let clean = rpg_title.trim();
+                if !clean.is_empty() && !clean.eq_ignore_ascii_case("untitled") {
+                    meta.name = Some(clean.to_string());
+                }
+            }
             merge_meta(&mut meta, rpg_meta);
             detected = true;
         }
@@ -67,12 +73,17 @@ pub fn inspect_local_game(dir: Option<&Path>, exe: Option<&Path>) -> Option<AppM
         }
     }
 
-    // 4. Windows PE file header / version info string scanning
+    // 8. Windows PE file header / version info string scanning
     if let Some(exe) = exe {
         if let Some(pe_meta) = inspect_pe_exe(exe) {
             merge_meta(&mut meta, pe_meta);
             detected = true;
         }
+    }
+
+    if let Some(raw_name) = meta.name.take() {
+        let normalized = crate::plugins::title_normalizer::normalize_game_title(&raw_name);
+        meta.name = Some(if normalized.is_empty() { raw_name } else { normalized });
     }
 
     if detected {
@@ -126,19 +137,31 @@ fn inspect_itch_receipt(dir: &Path) -> Option<AppMeta> {
         .get("title")
         .and_then(Value::as_str)
         .map(str::to_string);
+    let short_description = game
+        .get("shortText")
+        .or_else(|| game.get("short_text"))
+        .and_then(Value::as_str)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
     let user = game.get("user");
     let developer = user
-        .and_then(|u| u.get("displayName").or_else(|| u.get("username")))
+        .and_then(|u| {
+            u.get("displayName")
+                .or_else(|| u.get("display_name"))
+                .or_else(|| u.get("username"))
+        })
         .and_then(Value::as_str)
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty());
 
     let cover_url = game
         .get("coverUrl")
+        .or_else(|| game.get("cover_url"))
         .and_then(Value::as_str)
         .map(str::to_string);
     let published_at = game
         .get("publishedAt")
+        .or_else(|| game.get("published_at"))
         .and_then(Value::as_str)
         .map(str::to_string);
     let release_year = published_at
@@ -151,6 +174,7 @@ fn inspect_itch_receipt(dir: &Path) -> Option<AppMeta> {
 
     Some(AppMeta {
         name: title,
+        short_description,
         developers,
         publishers,
         genres: vec!["Indie".to_string()],
@@ -182,62 +206,101 @@ fn is_renpy_game(dir: &Path) -> bool {
     false
 }
 
-/// Inspect RPG Maker projects across MV, MZ, VX Ace, XP, and 2000/2003.
+/// Inspect RPG Maker projects across MV, MZ, VX Ace, XP, and 2000/2003 (including 1-level child folders).
 fn inspect_rpg_maker(dir: &Path) -> Option<AppMeta> {
-    // RPG Maker MV / MZ: System.json
-    let mv_system = [
-        dir.join("data").join("System.json"),
-        dir.join("www").join("data").join("System.json"),
-    ];
-
-    for path in &mv_system {
-        if path.is_file() {
-            if let Ok(text) = std::fs::read_to_string(path) {
-                if let Ok(v) = serde_json::from_str::<Value>(&text) {
-                    let title = v
-                        .get("gameTitle")
-                        .and_then(Value::as_str)
-                        .map(str::to_string);
-                    return Some(AppMeta {
-                        name: title,
-                        genres: vec!["RPG".to_string()],
-                        tags: vec!["RPG Maker".to_string()],
-                        ..Default::default()
-                    });
+    let mut candidate_dirs = vec![dir.to_path_buf()];
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                let fname = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if !fname.starts_with('.') {
+                    candidate_dirs.push(p);
                 }
             }
         }
     }
 
-    // RPG Maker 2000/2003: RPG_RT.ini
-    let ini_path = dir.join("RPG_RT.ini");
-    if ini_path.is_file() {
-        if let Ok(text) = std::fs::read_to_string(&ini_path) {
-            let mut title = None;
-            for line in text.lines() {
-                if let Some(val) = line.strip_prefix("GameTitle=") {
-                    title = Some(val.trim().to_string());
-                    break;
+    for base in &candidate_dirs {
+        // RPG Maker MV / MZ: System.json
+        let mv_system = [
+            base.join("data").join("System.json"),
+            base.join("www").join("data").join("System.json"),
+        ];
+
+        for path in &mv_system {
+            if path.is_file() {
+                if let Ok(text) = std::fs::read_to_string(path) {
+                    if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                        let title = v
+                            .get("gameTitle")
+                            .and_then(Value::as_str)
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty());
+                        return Some(AppMeta {
+                            name: title,
+                            genres: vec!["RPG".to_string()],
+                            tags: vec!["RPG Maker".to_string()],
+                            ..Default::default()
+                        });
+                    }
                 }
             }
+        }
+
+        // NW.js package.json window.title fallback
+        let pkg_json = base.join("package.json");
+        if pkg_json.is_file() && (base.join("www").is_dir() || base.join("data").is_dir()) {
+            if let Ok(text) = std::fs::read_to_string(&pkg_json) {
+                if let Ok(v) = serde_json::from_str::<Value>(&text) {
+                    let title = v
+                        .get("window")
+                        .and_then(|w| w.get("title"))
+                        .and_then(Value::as_str)
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty() && !s.eq_ignore_ascii_case("Game"));
+                    if title.is_some() {
+                        return Some(AppMeta {
+                            name: title,
+                            genres: vec!["RPG".to_string()],
+                            tags: vec!["RPG Maker".to_string()],
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
+        }
+
+        // RPG Maker 2000/2003: RPG_RT.ini
+        let ini_path = base.join("RPG_RT.ini");
+        if ini_path.is_file() {
+            if let Ok(text) = std::fs::read_to_string(&ini_path) {
+                let mut title = None;
+                for line in text.lines() {
+                    if let Some(val) = line.strip_prefix("GameTitle=") {
+                        title = Some(val.trim().to_string());
+                        break;
+                    }
+                }
+                return Some(AppMeta {
+                    name: title,
+                    genres: vec!["RPG".to_string()],
+                    tags: vec!["RPG Maker".to_string()],
+                    ..Default::default()
+                });
+            }
+        }
+
+        // RPG Maker VX / Ace / XP signatures
+        if base.join("data").join("System.rvdata2").is_file()
+            || base.join("data").join("Scripts.rxdata").is_file()
+        {
             return Some(AppMeta {
-                name: title,
                 genres: vec!["RPG".to_string()],
                 tags: vec!["RPG Maker".to_string()],
                 ..Default::default()
             });
         }
-    }
-
-    // RPG Maker VX / Ace / XP signatures
-    if dir.join("data").join("System.rvdata2").is_file()
-        || dir.join("data").join("Scripts.rxdata").is_file()
-    {
-        return Some(AppMeta {
-            genres: vec!["RPG".to_string()],
-            tags: vec!["RPG Maker".to_string()],
-            ..Default::default()
-        });
     }
 
     None
@@ -246,6 +309,13 @@ fn inspect_rpg_maker(dir: &Path) -> Option<AppMeta> {
 /// Extract company and product names from Windows PE version info headers.
 fn inspect_pe_exe(exe: &Path) -> Option<AppMeta> {
     if !exe.is_file() {
+        return None;
+    }
+
+    // Never read multi-hundred-MB or multi-GB executables into memory!
+    // Version resources are inside small executables or near the end of normal (<16 MB) binaries.
+    let file_len = std::fs::metadata(exe).ok()?.len();
+    if file_len < 1024 || file_len > 16 * 1024 * 1024 {
         return None;
     }
 

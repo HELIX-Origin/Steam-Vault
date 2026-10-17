@@ -46,6 +46,7 @@ export interface PluginMetadataResult {
   iconImage?: string;
   screenshots?: string[];
   movies?: string[];
+  soundtracks?: string[];
   websiteUrl?: string;
   playtimeHours?: number;
   compatibilityTier?: string;

@@ -43,25 +43,25 @@ pub const SYSTEM_FOLDER_SPECS: &[SystemFolderSpec] = &[
     SystemFolderSpec {
         id: "gc",
         full_name: "Nintendo GameCube",
-        extensions: ".iso .ISO .ciso .CISO .gcm .GCM .gcz .GCZ .rvz .RVZ .wbfs .WBFS .m3u .M3U",
+        extensions: ".iso .ISO .ciso .CISO .gcm .GCM .gcz .GCZ .rvz .RVZ .wbfs .WBFS .m3u .M3U .zip .ZIP .7z .7Z",
         launch_hint: "dolphin-emu -b -e %ROM%",
     },
     SystemFolderSpec {
         id: "wii",
         full_name: "Nintendo Wii",
-        extensions: ".iso .ISO .wbfs .WBFS .rvz .RVZ .ciso .CISO .gcz .GCZ .m3u .M3U",
+        extensions: ".iso .ISO .wbfs .WBFS .rvz .RVZ .ciso .CISO .gcz .GCZ .m3u .M3U .zip .ZIP .7z .7Z",
         launch_hint: "dolphin-emu -b -e %ROM%",
     },
     SystemFolderSpec {
         id: "wiiu",
         full_name: "Nintendo Wii U",
-        extensions: ".wua .WUA .wud .WUD .wux .WUX .rpx .RPX .m3u .M3U",
+        extensions: ".wua .WUA .wud .WUD .wux .WUX .rpx .RPX .m3u .M3U .zip .ZIP .7z .7Z",
         launch_hint: "cemu -f -g %ROM%",
     },
     SystemFolderSpec {
         id: "switch",
         full_name: "Nintendo Switch",
-        extensions: ".nsp .NSP .xci .XCI .nro .NRO",
+        extensions: ".nsp .NSP .xci .XCI .nro .NRO .zip .ZIP .7z .7Z",
         launch_hint: "ryujinx %ROM%",
     },
     SystemFolderSpec {
@@ -91,37 +91,37 @@ pub const SYSTEM_FOLDER_SPECS: &[SystemFolderSpec] = &[
     SystemFolderSpec {
         id: "n3ds",
         full_name: "Nintendo 3DS",
-        extensions: ".3ds .3DS .3dsx .3DSX .cia .CIA .cci .CCI .cxi .CXI",
+        extensions: ".3ds .3DS .3dsx .3DSX .cia .CIA .cci .CCI .cxi .CXI .zip .ZIP .7z .7Z",
         launch_hint: "citra-qt %ROM%",
     },
     SystemFolderSpec {
         id: "psx",
         full_name: "Sony PlayStation 1",
-        extensions: ".chd .CHD .cue .CUE .iso .ISO .pbp .PBP .bin .BIN .m3u .M3U",
+        extensions: ".chd .CHD .cue .CUE .iso .ISO .pbp .PBP .bin .BIN .m3u .M3U .zip .ZIP .7z .7Z",
         launch_hint: "duckstation-qt -batch %ROM%",
     },
     SystemFolderSpec {
         id: "ps2",
         full_name: "Sony PlayStation 2",
-        extensions: ".iso .ISO .chd .CHD .cso .CSO .bin .BIN .gz .GZ .m3u .M3U",
+        extensions: ".iso .ISO .chd .CHD .cso .CSO .bin .BIN .gz .GZ .m3u .M3U .zip .ZIP .7z .7Z",
         launch_hint: "pcsx2-qt -nogui -fullscreen %ROM%",
     },
     SystemFolderSpec {
         id: "ps3",
         full_name: "Sony PlayStation 3",
-        extensions: ".iso .ISO .bin .BIN .m3u .M3U",
+        extensions: ".iso .ISO .bin .BIN .m3u .M3U .zip .ZIP .7z .7Z",
         launch_hint: "rpcs3 --no-gui %ROM%",
     },
     SystemFolderSpec {
         id: "psp",
         full_name: "Sony PlayStation Portable",
-        extensions: ".iso .ISO .cso .CSO .pbp .PBP .chd .CHD",
+        extensions: ".iso .ISO .cso .CSO .pbp .PBP .chd .CHD .zip .ZIP .7z .7Z",
         launch_hint: "PPSSPPWindows64 %ROM%",
     },
     SystemFolderSpec {
         id: "psvita",
         full_name: "Sony PlayStation Vita",
-        extensions: ".vpk .VPK .zip .ZIP",
+        extensions: ".vpk .VPK .zip .ZIP .7z .7Z",
         launch_hint: "Vita3K -r %ROM%",
     },
     SystemFolderSpec {
@@ -151,19 +151,19 @@ pub const SYSTEM_FOLDER_SPECS: &[SystemFolderSpec] = &[
     SystemFolderSpec {
         id: "saturn",
         full_name: "Sega Saturn",
-        extensions: ".chd .CHD .cue .CUE .iso .ISO .bin .BIN .m3u .M3U",
+        extensions: ".chd .CHD .cue .CUE .iso .ISO .bin .BIN .m3u .M3U .zip .ZIP .7z .7Z",
         launch_hint: "%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/mednafen_saturn_libretro.so %ROM%",
     },
     SystemFolderSpec {
         id: "dreamcast",
         full_name: "Sega Dreamcast",
-        extensions: ".cdi .CDI .gdi .GDI .chd .CHD .iso .ISO .m3u .M3U",
+        extensions: ".cdi .CDI .gdi .GDI .chd .CHD .iso .ISO .m3u .M3U .zip .ZIP .7z .7Z",
         launch_hint: "%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/flycast_libretro.so %ROM%",
     },
     SystemFolderSpec {
         id: "segacd",
         full_name: "Sega CD",
-        extensions: ".chd .CHD .cue .CUE .iso .ISO .bin .BIN .m3u .M3U",
+        extensions: ".chd .CHD .cue .CUE .iso .ISO .bin .BIN .m3u .M3U .zip .ZIP .7z .7Z",
         launch_hint: "%EMULATOR_RETROARCH% -L %CORE_RETROARCH%/genesis_plus_gx_libretro.so %ROM%",
     },
     SystemFolderSpec {
@@ -323,133 +323,10 @@ pub struct ScaffoldReport {
     pub message: String,
 }
 
-fn invert_article(title: &str) -> String {
-    let s = title.trim();
+pub use crate::plugins::title_normalizer::{
+    canonical_title_key, normalize_game_title, normalize_rom_title,
+};
 
-    // Check with separators: " - ", " – ", " — ", ": "
-    for sep in [" - ", " – ", " — ", ": "] {
-        for (article_suffix, article_prefix) in [
-            (", The", "The "),
-            (", the", "The "),
-            (", A", "A "),
-            (", a", "A "),
-            (", An", "An "),
-            (", an", "An "),
-        ] {
-            let pattern = format!("{article_suffix}{sep}");
-            if let Some(idx) = s.find(&pattern) {
-                let prefix = &s[..idx];
-                let suffix = &s[idx + pattern.len()..];
-                return format!("{article_prefix}{prefix}{sep}{suffix}");
-            }
-        }
-    }
-
-    // Check trailing suffix
-    if let Some(stripped) = s.strip_suffix(", The").or_else(|| s.strip_suffix(", the")) {
-        return format!("The {}", stripped.trim());
-    }
-    if let Some(stripped) = s.strip_suffix(", A").or_else(|| s.strip_suffix(", a")) {
-        return format!("A {}", stripped.trim());
-    }
-    if let Some(stripped) = s.strip_suffix(", An").or_else(|| s.strip_suffix(", an")) {
-        return format!("An {}", stripped.trim());
-    }
-
-    s.to_string()
-}
-
-/// Normalizes a raw ROM file or folder name into a clean, human-readable display title.
-///
-/// Strips dump/region tags like `(USA)`, `(Europe)`, `[!]`, `(Rev 1)`, `(Beta)`,
-/// preserves multi-disc markers like `(Disc 1)` as clean suffixes, inverts trailing "The"
-/// (`"Legend of Zelda, The"` -> `"The Legend of Zelda"`), replaces underscores with spaces,
-/// and strips file extensions.
-pub fn normalize_rom_title(filename: &str) -> String {
-    let mut title = filename.trim();
-
-    // 1. Strip known compound extensions (e.g., .nkit.gcz, .nkit.iso, .nkit.ciso, .nkit.rvz)
-    let nkit_suffixes = [
-        ".nkit.gcz", ".nkit.iso", ".nkit.ciso", ".nkit.rvz", ".nkit.wbfs", ".nkit.zip", ".nkit.7z",
-        ".NKIT.GCZ", ".NKIT.ISO", ".NKIT.CISO", ".NKIT.RVZ", ".NKIT.WBFS", ".NKIT.ZIP", ".NKIT.7Z"
-    ];
-    for suffix in &nkit_suffixes {
-        if title.ends_with(suffix) {
-            title = &title[..title.len() - suffix.len()];
-            break;
-        }
-    }
-
-    // 2. Strip single file extension if present
-    if let Some(pos) = title.rfind('.') {
-        if pos > 0 {
-            let ext = &title[pos..];
-            if ext.len() <= 5 && !ext.contains(' ') {
-                title = &title[..pos];
-            }
-        }
-    }
-
-    // 3. Strip trailing .nkit if left behind
-    if title.to_lowercase().ends_with(".nkit") {
-        title = &title[..title.len() - 5];
-    }
-
-    // 4. Replace underscores with spaces
-    let clean = title.replace('_', " ");
-
-    // 5. Extract and preserve multi-disc tag if present
-    let mut disc_tag: Option<String> = None;
-    let disc_patterns = ["(Disc 1)", "(Disc 2)", "(Disc 3)", "(Disc 4)", "(Disk 1)", "(Disk 2)", "(CD 1)", "(CD 2)"];
-    for pattern in &disc_patterns {
-        if clean.to_lowercase().contains(&pattern.to_lowercase()) {
-            disc_tag = Some((*pattern).to_string());
-            break;
-        }
-    }
-
-    // 6. Strip goodtools / no-intro / NKit / dump parenthesized tags & bracketed game IDs (e.g. [GM4E01])
-    let mut result = String::with_capacity(clean.len());
-    let mut in_paren = false;
-    let mut in_bracket = false;
-    let mut paren_buf = String::new();
-
-    for ch in clean.chars() {
-        if ch == '(' {
-            in_paren = true;
-            paren_buf.clear();
-        } else if ch == ')' && in_paren {
-            in_paren = false;
-            let tag = paren_buf.trim();
-            // If it's a disc tag or part number, retain it if we didn't extract it already
-            if (tag.to_lowercase().starts_with("disc ") || tag.to_lowercase().starts_with("disk ")) && disc_tag.is_none() {
-                disc_tag = Some(format!("({tag})"));
-            }
-            paren_buf.clear();
-        } else if ch == '[' {
-            in_bracket = true;
-        } else if ch == ']' {
-            in_bracket = false;
-        } else if in_paren {
-            paren_buf.push(ch);
-        } else if !in_bracket {
-            result.push(ch);
-        }
-    }
-
-    // 7. Invert trailing or separator-prefixed articles
-    let inverted = invert_article(result.trim());
-
-    // 8. Append preserved disc tag if present
-    let mut s = inverted;
-    if let Some(ref dt) = disc_tag {
-        s.push_str(&format!(" {dt}"));
-    }
-
-    // 9. Collapse multiple consecutive spaces and trim
-    let words: Vec<&str> = s.split_whitespace().collect();
-    words.join(" ")
-}
 
 /// Scaffolds EmulationStation standardized system directories and necessary `.txt` files
 /// inside the user-selected ROM directory.
@@ -537,73 +414,206 @@ pub fn scaffold_emulation_folders(roms_dir: &str) -> AppResult<ScaffoldReport> {
     })
 }
 
-/// Scans the user-selected ROM directory for games across all scaffolded console systems.
-/// Normalizes titles when `normalize` is enabled.
-pub fn scan_emulation_roms(roms_dir: &str, normalize: bool) -> AppResult<Vec<PlatformGame>> {
-    let base_path = PathBuf::from(roms_dir.trim());
-    if !base_path.is_dir() {
-        return Ok(Vec::new());
-    }
+/// Structured representation of a ROM index file (`rom.ini`) stored alongside an extracted ROM.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RomIni {
+    pub title: String,
+    pub file: String,
+    pub archive: Option<String>,
+    pub system: String,
+    pub console: String,
+    pub save_dir: String,
+}
 
-    let mut games = Vec::new();
+/// Sanitizes a title string so it can be safely used as a directory name on Windows/macOS/Linux.
+fn sanitize_folder_name(name: &str) -> String {
+    let invalid = ['<', '>', ':', '"', '/', '\\', '|', '?', '*'];
+    let cleaned: String = name
+        .chars()
+        .map(|c| if invalid.contains(&c) { '-' } else { c })
+        .collect();
+    cleaned.trim().trim_end_matches('.').trim().to_string()
+}
 
-    for spec in SYSTEM_FOLDER_SPECS {
-        let system_dir = base_path.join(spec.id);
-        if !system_dir.is_dir() {
+/// Reads and parses `rom.ini` from a ROM's dedicated subfolder.
+pub fn read_rom_ini(folder: &std::path::Path) -> Option<RomIni> {
+    let ini_path = folder.join("rom.ini");
+    let content = fs::read_to_string(ini_path).ok()?;
+    let mut title = String::new();
+    let mut file = String::new();
+    let mut archive = None;
+    let mut system = String::new();
+    let mut console = String::new();
+    let mut save_dir = "saves".to_string();
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('[') || trimmed.starts_with(';') || trimmed.starts_with('#') {
             continue;
         }
-
-        // Build list of valid lower-cased extensions for this system
-        let valid_extensions: Vec<String> = spec
-            .extensions
-            .split_whitespace()
-            .map(|ext| ext.trim_start_matches('.').to_lowercase())
-            .collect();
-
-        if let Ok(entries) = fs::read_dir(&system_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    // Skip system text files, hidden files, and save states
-                    if file_name.starts_with('.')
-                        || file_name.eq_ignore_ascii_case("systeminfo.txt")
-                        || file_name.eq_ignore_ascii_case("noload.txt")
-                        || file_name.ends_with(".sav")
-                        || file_name.ends_with(".srm")
-                        || file_name.ends_with(".state")
-                    {
-                        continue;
+        if let Some((k, v)) = trimmed.split_once('=') {
+            let key = k.trim().to_lowercase();
+            let val = v.trim().to_string();
+            match key.as_str() {
+                "title" => title = val,
+                "file" => file = val,
+                "archive" => {
+                    if !val.is_empty() {
+                        archive = Some(val);
                     }
+                }
+                "system" => system = val,
+                "console" => console = val,
+                "save_dir" => save_dir = val,
+                _ => {}
+            }
+        }
+    }
 
-                    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-                        let lower_ext = ext.to_lowercase();
-                        if valid_extensions.contains(&lower_ext) {
-                            let display_name = if normalize {
-                                normalize_rom_title(file_name)
-                            } else {
-                                path.file_stem()
-                                    .and_then(|s| s.to_str())
-                                    .unwrap_or(file_name)
-                                    .to_string()
-                            };
+    if title.is_empty() || file.is_empty() {
+        return None;
+    }
 
-                            let size_on_disk = entry.metadata().map(|m| m.len()).ok();
+    let clean_title = normalize_rom_title(&title);
 
-                            games.push(PlatformGame {
-                                name: display_name,
-                                platform: Platform::EmulationStation,
-                                platform_id: Some(format!("{}:{}", spec.id, file_name)),
-                                install_dir: Some(system_dir.display().to_string()),
-                                exe: Some(path.display().to_string()),
-                                size_on_disk,
-                                launch_uri: None,
-                                source: Some("EmulationStation".to_string()),
-                                console: Some(spec.full_name.to_string()),
-                                installed: true,
-                                install_uri: None,
-                                uninstall_uri: None,
-                            });
+    Some(RomIni {
+        title: if clean_title.is_empty() { title } else { clean_title },
+        file,
+        archive,
+        system,
+        console,
+        save_dir,
+    })
+}
+
+/// Writes `rom.ini` and creates the isolated `saves/` folder inside the ROM's dedicated directory.
+pub fn write_rom_ini(folder: &std::path::Path, ini: &RomIni) {
+    let saves_path = folder.join(&ini.save_dir);
+    let _ = fs::create_dir_all(&saves_path);
+
+    let ini_content = format!(
+        "[ROM]\r\n\
+         title={}\r\n\
+         file={}\r\n\
+         archive={}\r\n\
+         system={}\r\n\
+         console={}\r\n\
+         save_dir={}\r\n",
+        ini.title,
+        ini.file,
+        ini.archive.as_deref().unwrap_or(""),
+        ini.system,
+        ini.console,
+        ini.save_dir
+    );
+    let _ = fs::write(folder.join("rom.ini"), ini_content);
+}
+
+/// Extracts a `.zip` or `.7z` ROM archive into `target_dir`, flattens any nested single-folder wrapper,
+/// and returns the filename of the primary extracted ROM file.
+fn extract_rom_archive_to_folder(
+    archive_path: &std::path::Path,
+    target_dir: &std::path::Path,
+    valid_rom_extensions: &[String],
+) -> Option<PathBuf> {
+    let _ = fs::create_dir_all(target_dir);
+
+    let archive_str = archive_path.to_str()?;
+    let target_str = target_dir.to_str()?;
+
+    // Use system `tar -xf` (available natively on Windows 10/11, macOS, and Linux)
+    let mut cmd = std::process::Command::new("tar");
+    cmd.args(["-xf", archive_str, "-C", target_str]);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+
+    let status = cmd.status().ok();
+    let tar_ok = status.map(|s| s.success()).unwrap_or(false);
+
+    if !tar_ok {
+        // Fallback to PowerShell Expand-Archive on Windows for .zip
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            let mut ps = std::process::Command::new("powershell");
+            ps.args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                &format!(
+                    "Expand-Archive -LiteralPath '{}' -DestinationPath '{}' -Force",
+                    archive_str.replace('\'', "''"),
+                    target_str.replace('\'', "''")
+                ),
+            ]);
+            ps.creation_flags(0x08000000);
+            let _ = ps.status();
+        }
+    }
+
+    // Find the extracted ROM file inside target_dir (up to depth 2)
+    let found = find_rom_in_dir(target_dir, valid_rom_extensions, 0)?;
+
+    // If the extracted ROM was inside a nested child directory of target_dir, move it up to target_dir
+    if let Some(parent) = found.parent() {
+        if parent != target_dir {
+            if let Some(fname) = found.file_name() {
+                let dest = target_dir.join(fname);
+                if fs::rename(&found, &dest).is_ok() {
+                    let _ = fs::remove_dir_all(parent);
+                    return Some(dest);
+                }
+            }
+        }
+    }
+
+    Some(found)
+}
+
+/// Recursively finds the primary non-archive ROM file inside `dir` up to depth 2.
+fn find_rom_in_dir(
+    dir: &std::path::Path,
+    valid_extensions: &[String],
+    depth: usize,
+) -> Option<PathBuf> {
+    if depth > 2 || !dir.is_dir() {
+        return None;
+    }
+
+    let archive_exts = ["zip", "7z", "rar"];
+    let mut subdirs = Vec::new();
+    let mut fallback_archive = None;
+
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if !name.eq_ignore_ascii_case("saves") && !name.starts_with('.') {
+                    subdirs.push(path);
+                }
+            } else if path.is_file() {
+                let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if fname.starts_with('.')
+                    || fname.eq_ignore_ascii_case("rom.ini")
+                    || fname.eq_ignore_ascii_case("systeminfo.txt")
+                    || fname.eq_ignore_ascii_case("noload.txt")
+                    || fname.ends_with(".sav")
+                    || fname.ends_with(".srm")
+                    || fname.ends_with(".state")
+                {
+                    continue;
+                }
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    let lower = ext.to_lowercase();
+                    if valid_extensions.contains(&lower) {
+                        if archive_exts.contains(&lower.as_str()) {
+                            fallback_archive = Some(path);
+                        } else {
+                            return Some(path);
                         }
                     }
                 }
@@ -611,8 +621,317 @@ pub fn scan_emulation_roms(roms_dir: &str, normalize: bool) -> AppResult<Vec<Pla
         }
     }
 
+    for sub in subdirs {
+        if let Some(found) = find_rom_in_dir(&sub, valid_extensions, depth + 1) {
+            return Some(found);
+        }
+    }
+
+    fallback_archive
+}
+
+/// Auto-detects ROM root directories across all mounted drives and user directories.
+pub fn detect_rom_directories() -> Vec<String> {
+    let mut found = Vec::new();
+    let candidates = [
+        "Games\\ES-DE\\ROMs",
+        "ES-DE\\ROMs",
+        "Games\\ROMs",
+        "ROMs",
+        "Emulation\\ROMs",
+        "Emulators\\ROMs",
+    ];
+
+    for drive in crate::plugins::engine::drive_roots() {
+        for rel in &candidates {
+            let path = drive.join(rel);
+            if path.is_dir() {
+                let s = path.display().to_string();
+                if !found.contains(&s) {
+                    found.push(s);
+                }
+            }
+        }
+    }
+
+    if let Some(home) = dirs::home_dir() {
+        for rel in &["ROMs", "ES-DE\\ROMs", "Games\\ES-DE\\ROMs", "Emulation\\ROMs"] {
+            let path = home.join(rel);
+            if path.is_dir() {
+                let s = path.display().to_string();
+                if !found.contains(&s) {
+                    found.push(s);
+                }
+            }
+        }
+    }
+
+    found
+}
+
+/// Scans a single ROM root directory (and auto-extracts archives + generates `rom.ini` indices).
+fn scan_single_rom_root(base_path: &std::path::Path, normalize: bool) -> Vec<PlatformGame> {
+    let mut games = Vec::new();
+    if !base_path.is_dir() {
+        return games;
+    }
+
+    let archive_exts = ["zip", "7z", "rar"];
+
+    for spec in SYSTEM_FOLDER_SPECS {
+        let system_dir = base_path.join(spec.id);
+        if !system_dir.is_dir() {
+            continue;
+        }
+
+        let valid_extensions: Vec<String> = spec
+            .extensions
+            .split_whitespace()
+            .map(|ext| ext.trim_start_matches('.').to_lowercase())
+            .collect();
+
+        // PASS 1: Check for archives (.zip, .7z, .rar) in `system_dir` and auto-extract them
+        // into their own dedicated game folder with a `rom.ini` and `saves/` directory.
+        if let Ok(entries) = fs::read_dir(&system_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                let ext = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_lowercase();
+
+                if !archive_exts.contains(&ext.as_str()) {
+                    continue;
+                }
+
+                let normalized_name = normalize_rom_title(file_name);
+                let folder_name = sanitize_folder_name(if normalized_name.is_empty() {
+                    path.file_stem().and_then(|s| s.to_str()).unwrap_or("Game")
+                } else {
+                    &normalized_name
+                });
+
+                let game_folder = system_dir.join(&folder_name);
+
+                // Also check if a folder matching raw archive stem already exists
+                let raw_stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                let raw_folder = system_dir.join(raw_stem);
+                let target_folder = if raw_folder.is_dir() && raw_folder != system_dir {
+                    raw_folder
+                } else {
+                    game_folder
+                };
+
+                // Check if target_folder already has a valid rom.ini or extracted ROM
+                let already_extracted = if let Some(ini) = read_rom_ini(&target_folder) {
+                    target_folder.join(&ini.file).is_file()
+                } else {
+                    find_rom_in_dir(&target_folder, &valid_extensions, 0).is_some()
+                };
+
+                if !already_extracted {
+                    if let Some(extracted_rom) =
+                        extract_rom_archive_to_folder(&path, &target_folder, &valid_extensions)
+                    {
+                        let rom_fname = extracted_rom
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let display_title = if normalize {
+                            normalize_rom_title(&rom_fname)
+                        } else {
+                            normalized_name.clone()
+                        };
+                        let ini = RomIni {
+                            title: display_title,
+                            file: rom_fname,
+                            archive: Some(file_name.to_string()),
+                            system: spec.id.to_string(),
+                            console: spec.full_name.to_string(),
+                            save_dir: "saves".to_string(),
+                        };
+                        write_rom_ini(&target_folder, &ini);
+                    }
+                }
+            }
+        }
+
+        // PASS 2: Scan all dedicated game folders inside `system_dir` using `rom.ini` (or creating it if missing)
+        let mut seen_titles = std::collections::HashSet::new();
+
+        if let Ok(entries) = fs::read_dir(&system_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if dir_name.starts_with('.') || dir_name.eq_ignore_ascii_case("saves") || dir_name.eq_ignore_ascii_case("media") {
+                    continue;
+                }
+
+                // 1. Check if `rom.ini` exists
+                let resolved_ini = if let Some(ini) = read_rom_ini(&path) {
+                    if path.join(&ini.file).is_file() {
+                        Some((ini.clone(), path.join(&ini.file)))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+
+                let (ini, rom_file_path) = if let Some(pair) = resolved_ini {
+                    pair
+                } else if let Some(found_rom) = find_rom_in_dir(&path, &valid_extensions, 0) {
+                    let rom_fname = found_rom
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let display_title = if normalize {
+                        normalize_rom_title(&rom_fname)
+                    } else {
+                        dir_name.to_string()
+                    };
+                    // Relative path from `path` to `found_rom`
+                    let rel_file = found_rom
+                        .strip_prefix(&path)
+                        .unwrap_or(&found_rom)
+                        .display()
+                        .to_string();
+                    let new_ini = RomIni {
+                        title: display_title,
+                        file: rel_file,
+                        archive: None,
+                        system: spec.id.to_string(),
+                        console: spec.full_name.to_string(),
+                        save_dir: "saves".to_string(),
+                    };
+                    write_rom_ini(&path, &new_ini);
+                    (new_ini, found_rom)
+                } else {
+                    continue;
+                };
+
+                let size_on_disk = fs::metadata(&rom_file_path).map(|m| m.len()).ok();
+                seen_titles.insert(canonical_title_key(&ini.title));
+
+                games.push(PlatformGame {
+                    name: ini.title.clone(),
+                    platform: Platform::EmulationStation,
+                    platform_id: Some(format!("{}:{}", spec.id, ini.file)),
+                    install_dir: Some(path.display().to_string()),
+                    exe: Some(rom_file_path.display().to_string()),
+                    size_on_disk,
+                    launch_uri: None,
+                    source: Some("EmulationStation".to_string()),
+                    console: Some(spec.full_name.to_string()),
+                    installed: true,
+                    install_uri: None,
+                    uninstall_uri: None,
+                });
+            }
+        }
+
+        // PASS 3: Also pick up any loose ROM files directly in `system_dir` whose titles weren't already added via a subfolder
+        if let Ok(entries) = fs::read_dir(&system_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if file_name.starts_with('.')
+                    || file_name.eq_ignore_ascii_case("rom.ini")
+                    || file_name.eq_ignore_ascii_case("systeminfo.txt")
+                    || file_name.eq_ignore_ascii_case("noload.txt")
+                    || file_name.ends_with(".sav")
+                    || file_name.ends_with(".srm")
+                    || file_name.ends_with(".state")
+                {
+                    continue;
+                }
+
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    let lower_ext = ext.to_lowercase();
+                    if valid_extensions.contains(&lower_ext) {
+                        let display_name = if normalize {
+                            normalize_rom_title(file_name)
+                        } else {
+                            path.file_stem()
+                                .and_then(|s| s.to_str())
+                                .unwrap_or(file_name)
+                                .to_string()
+                        };
+
+                        let key = canonical_title_key(&display_name);
+                        if seen_titles.contains(&key) {
+                            continue;
+                        }
+                        seen_titles.insert(key);
+
+                        let size_on_disk = entry.metadata().map(|m| m.len()).ok();
+                        games.push(PlatformGame {
+                            name: display_name,
+                            platform: Platform::EmulationStation,
+                            platform_id: Some(format!("{}:{}", spec.id, file_name)),
+                            install_dir: Some(system_dir.display().to_string()),
+                            exe: Some(path.display().to_string()),
+                            size_on_disk,
+                            launch_uri: None,
+                            source: Some("EmulationStation".to_string()),
+                            console: Some(spec.full_name.to_string()),
+                            installed: true,
+                            install_uri: None,
+                            uninstall_uri: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    games
+}
+
+/// Scans the user-selected ROM directory (and all auto-detected ROM directories across drives)
+/// for games across all scaffolded console systems.
+/// Automatically extracts archived ROMs into dedicated subfolders with `rom.ini` and `saves/`.
+pub fn scan_emulation_roms(roms_dir: &str, normalize: bool) -> AppResult<Vec<PlatformGame>> {
+    let mut roots_to_scan = Vec::new();
+    let trimmed = roms_dir.trim();
+    if !trimmed.is_empty() && PathBuf::from(trimmed).is_dir() {
+        roots_to_scan.push(PathBuf::from(trimmed));
+    }
+
+    for detected in detect_rom_directories() {
+        let p = PathBuf::from(&detected);
+        if !roots_to_scan.contains(&p) {
+            roots_to_scan.push(p);
+        }
+    }
+
+    let mut all_games = Vec::new();
+    let mut seen_exes = std::collections::HashSet::new();
+
+    for root in roots_to_scan {
+        for game in scan_single_rom_root(&root, normalize) {
+            let key = game.exe.clone().unwrap_or_else(|| game.name.clone()).to_lowercase();
+            if seen_exes.insert(key) {
+                all_games.push(game);
+            }
+        }
+    }
+
     // Sort games primarily by platform/console, then alphabetically by title
-    games.sort_by(|a, b| {
+    all_games.sort_by(|a, b| {
         let console_a = a.console.as_deref().unwrap_or("");
         let console_b = b.console.as_deref().unwrap_or("");
         match console_a.cmp(console_b) {
@@ -621,7 +940,7 @@ pub fn scan_emulation_roms(roms_dir: &str, normalize: bool) -> AppResult<Vec<Pla
         }
     });
 
-    Ok(games)
+    Ok(all_games)
 }
 
 #[cfg(test)]
@@ -636,7 +955,7 @@ mod tests {
         );
         assert_eq!(
             normalize_rom_title("Legend of Zelda, The - Ocarina of Time (USA) (Rev 2).z64"),
-            "The Legend of Zelda - Ocarina of Time"
+            "The Legend of Zelda: Ocarina of Time"
         );
         assert_eq!(
             normalize_rom_title("Metal Gear Solid (USA) (Disc 1).chd"),

@@ -17,8 +17,8 @@ pub mod tools;
 
 #[allow(unused_imports)]
 pub use emulation::{
-    normalize_rom_title, scaffold_emulation_folders, scan_emulation_roms, ScaffoldReport,
-    SystemFolderSpec, SYSTEM_FOLDER_SPECS,
+    normalize_game_title, normalize_rom_title, scaffold_emulation_folders, scan_emulation_roms,
+    ScaffoldReport, SystemFolderSpec, SYSTEM_FOLDER_SPECS,
 };
 pub use epic::{
     get_eos_overlay_status, get_legendary_auth_status, install_eos_overlay,

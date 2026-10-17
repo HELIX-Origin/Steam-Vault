@@ -59,22 +59,42 @@ The core launcher provides the native user interface, window ergonomics, high-pe
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🧭</span>
 <h3>Frameless Title Bar Navigation</h3>
-<p>Clean top-level navigation seamlessly integrated into the custom titlebar: Dashboard, Library, Store, Social, Storage, Plugins, and Settings.</p>
+<p>Clean top-level navigation seamlessly integrated into the custom titlebar: Dashboard, Library, Store, Social, Storage, and Settings.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🎮</span>
 <h3>Steam &amp; GOG Left Games List Sidebar</h3>
-<p>Dedicated to the Library view, featuring instant name search, quick filter pills (All, Installed, ★ Favorites), background platform scan trigger (<code>↻ Scan</code>), and collapsible platform accordions.</p>
+<p>Dedicated strictly to the Library view, featuring instant name search, quick filter pills (All, Installed, ★ Favorites), background platform scan trigger (<code>↻ Scan</code>), and collapsible platform and console accordions.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🎯</span>
+<h3>Authentic Vector SVG Platform &amp; Console Icons</h3>
+<p>Replaces generic Unicode shapes with authentic vector SVG variants for all PC game providers (Steam, Epic, GOG, Xbox, EA, Ubisoft, Battle.net, itch.io, Amazon, Rockstar, Standalone) and retro emulation consoles.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🖼️</span>
 <h3>Dedicated Game Showcase View</h3>
-<p>Rich showcase for selected games with 16:9 hero wallpaper banners, title typography, prominent PLAY NOW launch buttons, playtime metrics, and descriptions.</p>
+<p>Rich showcase for selected games featuring 16:9 hero wallpaper banners, title typography, prominent PLAY NOW launch buttons, playtime metrics, and descriptions.</p>
 </div>
 <div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">📸</span>
-<h3>10-Image Screenshot Media Gallery</h3>
-<p>Interactive media carousel featuring up to 10 high-resolution screenshots with a fullscreen lightbox viewer.</p>
+<span class="feature-card__icon" aria-hidden="true">🎬</span>
+<h3>Consolidated Unified Media Showcase</h3>
+<p>Streamlined media section with dynamic tabs: <strong>🖼️ Screenshots &amp; Art</strong> (with fullscreen lightbox), <strong>🎬 Trailers</strong> (streaming modern Steam Akamai MP4 videos), and <strong>🎵 Soundtracks</strong> (ambient theme playback).</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">⚙️</span>
+<h3>Per-Game Customization Modal</h3>
+<p>The <code>⚙ Manage</code> modal in Library allows editing game Title, Short Description, Developers, Publishers, Release Date, Genres, and Custom Artwork (Capsule, Hero, Logo via URL or local file picker).</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🤖</span>
+<h3>Automatic Multi-Source Metadata Engine</h3>
+<p>Automatically enriches games in the background across Local Inspector, Libretro Thumbnails CDN, Steam Store, GOG Catalog v1, Wikipedia/Wikidata MediaWiki API, PCGamingWiki Cargo API, and ProtonDB with zero placeholder strings.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🗄️</span>
+<h3>Generic SQLite &amp; In-Memory KV Persistence</h3>
+<p>All collections, custom tags, favorite flags, and artwork assignments persist locally in <code>database.sqlite</code> backed by an in-memory Redis KV tier (<code>mem_kv</code>) for sub-millisecond responsiveness.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">⚡</span>
@@ -87,34 +107,14 @@ The core launcher provides the native user interface, window ergonomics, high-pe
 <p>Launches, updates, and uninstalls delegate directly to official client protocols or native binaries, preserving overlays, cloud saves, friend lists, and achievements without storing credentials.</p>
 </div>
 <div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🗄️</span>
-<h3>Generic SQLite &amp; In-Memory KV Persistence</h3>
-<p>All collections, custom tags, favorite flags, and artwork assignments persist locally in <code>database.sqlite</code> backed by an in-memory Redis KV tier (<code>mem_kv</code>) for sub-millisecond responsiveness.</p>
+<span class="feature-card__icon" aria-hidden="true">🧹</span>
+<h3>Settings-Only Cache Refresh &amp; Purge</h3>
+<p>Library views remain focused on playing and customization; cache refresh and purge actions live exclusively in <strong>Settings → Storage &amp; Cache</strong>.</p>
 </div>
 <div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🎨</span>
-<h3>Custom Artwork Studio</h3>
-<p>Inspect, fetch, and set portrait capsule covers, hero banners, transparent logos, and square icons via community providers and local image imports.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">📁</span>
-<h3>Custom &amp; Dynamic Smart Collections</h3>
-<p>Create custom categories, tag favorites, hide titles, and build dynamic smart collections evaluated instantaneously against your library.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🧩</span>
-<h3>Native Modular Plugin Engine</h3>
-<p>The core runtime loads and orchestrates native modular plugins (<code>src/lib/plugins/</code>) with full category isolation, typed schemas, and connection verification.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">⚙️</span>
-<h3>Tabbed Plugin Settings Dialog</h3>
-<p>Dedicated sub-window dialog for configuring each enabled plugin, featuring live password visibility eye toggles, direct help links, and real-time in-memory connection tests.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🛡️</span>
-<h3>100% Non-Invasive Safety</h3>
-<p>Never writes to Steam files (no <code>shortcuts.vdf</code> tampering), never requires official launchers to be closed, and stores zero external credentials.</p>
+<span class="feature-card__icon" aria-hidden="true">💻</span>
+<h3>Headless CLI Foundation (<code>--cli</code>)</h3>
+<p>Built-in command-line interface supporting <code>--cli scan</code>, <code>scan-roms</code>, <code>scaffold-roms</code>, <code>normalize-title</code>, and <code>launchers</code> for headless automation and continuous quality assurance.</p>
 </div>
 </div>
 </section>
@@ -124,42 +124,42 @@ The core launcher provides the native user interface, window ergonomics, high-pe
 <span class="section-number">03</span>
 <div>
 <p class="eyebrow">Modularity</p>
-<h2>Modular Plugin Ecosystem</h2>
+<h2>Universal Core Plugins Ecosystem</h2>
 </div>
 </div>
 <p>
-External features are decoupled into native modular plugins built directly into the application under <code>src/lib/plugins/</code>. This eliminates Cloudflare network blocks, runtime script evaluation, and fragile external JSON manifests:
+External features are organized into unified <strong>Universal Core Plugins</strong> paired with global helper modules under <code>src/lib/plugins/</code>, eliminating Cloudflare blocks and fragile external JSON manifests:
 </p>
 <div class="features-grid">
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🕹️</span>
-<h3>12 Platform Storefront Integrations</h3>
-<p>Native discovery, launch delegation, social friend rosters, and achievement hooks for Steam, Epic Games (official or Legendary CLI), GOG Galaxy, Xbox, itch.io, EA App, Ubisoft Connect, Battle.net, Amazon Games, Rockstar Games, Standalone executables, and EmulationStation.</p>
+<h3>Universal Platform Engine (<code>platform-universal</code>)</h3>
+<p>Consolidated engine managing discovery, launch delegation, social rosters, and achievement hooks across all 12 platforms (Steam, Epic Games, GOG Galaxy, Xbox, itch.io, EA App, Ubisoft Connect, Battle.net, Amazon Games, Rockstar Games, Standalone, and EmulationStation) paired with global platform helpers.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">📚</span>
-<h3>11 Rich Metadata &amp; Artwork Providers</h3>
-<p>Authoritative native storefront details, community artwork, and game telemetry via Steam Store, GOG Catalog, Epic Games Store, itch.io, SteamGridDB, IGDB, TheGamesDB, ScreenScraper, HowLongToBeat, PCGamingWiki, and ProtonDB.</p>
+<h3>Universal Metadata Engine (<code>metadata-universal</code>)</h3>
+<p>Automatic multi-source metadata resolution cascading across Local Inspector, Libretro CDN, Steam Store, GOG Catalog v1, Wikipedia + Wikidata MediaWiki API, PCGamingWiki Cargo API, ProtonDB, and optional authenticated APIs (SteamGridDB, IGDB).</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🔤</span>
+<h3>Universal Title Normalizer (<code>utility-title-normalizer</code>)</h3>
+<p>Dedicated title normalizer handling RPG Maker <code>System.json</code> parsing, itch.io slug separation, ROM dump tags, article inversion (<code>The Legend of Zelda</code>), and unified subtitle formatting.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🎬</span>
+<h3>Universal Media Engine (<code>media-universal</code>)</h3>
+<p>Provides modern Steam CDN MP4 streaming video trailers and ambient soundtrack playback inside the consolidated media showcase.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🎁</span>
-<h3>GamerPower Universal Feeds &amp; Alerts</h3>
-<p>Plugin-powered notifications for 100% free store giveaways across major storefronts, weekly sales &amp; bargains, and developer patch notes for installed games.</p>
+<h3>Universal Feeds &amp; Alerts (<code>utility-deals</code> &amp; <code>utility-patchnotes</code>)</h3>
+<p>Live alerts for 100% free store giveaways across major PC storefronts, weekly sales &amp; bargains, and developer patch notes for installed titles.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">💾</span>
-<h3>Storage &amp; Drive Footprint Analyzer</h3>
+<h3>Storage &amp; Drive Footprint Analyzer (<code>utility-storage</code>)</h3>
 <p>Utility plugin performing non-blocking drive capacity analysis and platform game storage footprint calculations using background thread workers.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🎞️</span>
-<h3>Trailers &amp; Ambient Media</h3>
-<p>Media plugins providing official streaming video trailer previews and ambient game soundtrack playback in the game showcase view.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🕹️</span>
-<h3>EmulationStation ROM Normalization</h3>
-<p>Organize ROM libraries conforming to the ES-DE directory standard with automated folder scaffolding and intelligent title normalization stripping dump tags.</p>
 </div>
 </div>
 <p>
@@ -179,27 +179,26 @@ Explore the complete <a href="{{ '/docs/Available-Plugins/' | relative_url }}">A
 Universal Game Launcher enforces an authoritative role hierarchy between game platforms and metadata providers:
 </p>
 <ul>
-<li><strong>Native Game Providers (Authoritative Default):</strong> When games are scanned or loaded, the official game provider plugin (Steam, Epic, GOG, itch, EA, EmulationStation, Standalone) fetches its own authoritative game details and artwork directly from its own source.</li>
-<li><strong>Metadata Providers (Manual On-Demand Enhancement):</strong> Third-party metadata providers (TheGamesDB, ScreenScraper, IGDB, SteamGridDB, HowLongToBeat, PCGamingWiki, ProtonDB) are run on-demand by the user via the <strong>✨ Enhance Metadata</strong> action in the showcase view and the Manage Game dialog to enrich details and fill missing fields.</li>
-<li><strong>Cache Reset Invariant:</strong> Game providers are <em>strictly prohibited</em> from overwriting metadata contributed by metadata providers unless the user explicitly chooses to reset the cache via <strong>↺ Reset Cache to Provider Defaults</strong>. Enhanced records are flagged with <code>userEnhanced: true</code> and protected during normal background syncs.</li>
+<li><strong>Automatic Multi-Source Resolution:</strong> When games are imported, the Universal Metadata Engine cascades across Local Inspector, Libretro Thumbnails CDN, Steam Store, GOG Catalog v1, Wikipedia/Wikidata MediaWiki API, and PCGamingWiki Cargo API to automatically populate rich descriptions, release dates, and authentic artwork without requiring manual intervention.</li>
+<li><strong>Modern Video Trailers &amp; Media:</strong> Steam Store metadata queries extract modern Akamai CDN MP4 video trailer streams (<code>https://cdn.akamai.steamstatic.com/steam/apps/{movie_id}/movie_max.mp4</code>) for playback in the Trailers tab.</li>
+<li><strong>Per-Game Customization:</strong> Users can override any field or artwork slot directly via the <strong>⚙ Manage</strong> modal in the Library showcase view, persisting overrides locally in <code>database.sqlite</code>.</li>
+<li><strong>Cache Reset Invariant:</strong> Background scans never overwrite user-enhanced or manually customized metadata. Cache refresh and cache purge actions are cleanly isolated in <strong>Settings → Storage &amp; Cache</strong>.</li>
 </ul>
 
 <table>
 <thead>
-<tr><th>Provider Plugin</th><th>Category</th><th>Key Required</th><th>Primary Information &amp; Assets Provided</th></tr>
+<tr><th>Provider Source</th><th>Category</th><th>Key Required</th><th>Primary Information &amp; Assets Provided</th></tr>
 </thead>
 <tbody>
-<tr><td><strong>Steam Store</strong> (<code>metadata-steam</code>)</td><td>Metadata</td><td>No</td><td>Genres, developers, publishers, release dates, reviews, 1080p screenshots</td></tr>
-<tr><td><strong>GOG Catalog</strong> (<code>metadata-gog</code>)</td><td>Metadata</td><td>No</td><td>Official vertical covers, hero wallpapers, summaries, DRM-free releases</td></tr>
-<tr><td><strong>Epic Games Store</strong> (<code>metadata-epic</code>)</td><td>Metadata</td><td>No</td><td>Catalog details, promotional keyart covers, release dates</td></tr>
-<tr><td><strong>itch.io Store</strong> (<code>metadata-itch</code>)</td><td>Metadata</td><td>No</td><td>Indie titles, developer profiles, screenshots, library sync</td></tr>
-<tr><td><strong>SteamGridDB</strong> (<code>metadata-steamgriddb</code>)</td><td>Metadata</td><td>Yes (Optional)</td><td>Community capsule covers (600×900), hero banners, logos, square icons</td></tr>
-<tr><td><strong>IGDB (Twitch)</strong> (<code>metadata-igdb</code>)</td><td>Metadata</td><td>Yes (Optional)</td><td>Global taxonomy, developer studios, franchise links, critic scores</td></tr>
-<tr><td><strong>TheGamesDB</strong> (<code>metadata-thegamesdb</code>)</td><td>Metadata</td><td>No</td><td>Retro console metadata, authentic box art, fanart heroes, clear logos</td></tr>
-<tr><td><strong>ScreenScraper</strong> (<code>metadata-screenscraper</code>)</td><td>Metadata</td><td>No</td><td>Multi-console ROM metadata, 2D/3D box art, wheel logos, video snaps</td></tr>
-<tr><td><strong>HowLongToBeat</strong> (<code>metadata-howlongtobeat</code>)</td><td>Metadata</td><td>No</td><td>Main Story, Main + Extra, and Completionist playtime averages</td></tr>
-<tr><td><strong>PCGamingWiki</strong> (<code>metadata-pcgamingwiki</code>)</td><td>Metadata</td><td>No</td><td>Engine info, FOV/ultrawide fixes, controller flags, save locations</td></tr>
-<tr><td><strong>ProtonDB</strong> (<code>metadata-protondb</code>)</td><td>Metadata</td><td>No</td><td>Linux / Steam Deck compatibility tiers and recommended launch tweaks</td></tr>
+<tr><td><strong>Local Inspector</strong></td><td>Local Manifest</td><td>No</td><td>RPG Maker <code>System.json</code> titles, itch.io receipt manifests, <code>rom.ini</code> overrides, binary metadata</td></tr>
+<tr><td><strong>Libretro CDN</strong></td><td>Metadata &amp; Art</td><td>No</td><td>Authentic console box art (Named_Boxarts), title screens (Named_Titles), snaps, clear logos</td></tr>
+<tr><td><strong>Steam Store</strong></td><td>Metadata &amp; Media</td><td>No</td><td>Genres, developers, publishers, release dates, reviews, 1080p screenshots, modern CDN MP4 trailers</td></tr>
+<tr><td><strong>GOG Catalog v1</strong></td><td>Metadata</td><td>No</td><td>Official vertical covers, hero wallpapers, summaries, DRM-free releases</td></tr>
+<tr><td><strong>Wikipedia &amp; Wikidata</strong></td><td>Metadata</td><td>No</td><td>Deep synopses, developers (P178), publishers (P123), genres (P136), release dates (P577)</td></tr>
+<tr><td><strong>PCGamingWiki Cargo</strong></td><td>Metadata</td><td>No</td><td>Game engine, architecture, save file locations, FOV/ultrawide fixes</td></tr>
+<tr><td><strong>ProtonDB</strong></td><td>Metadata</td><td>No</td><td>Linux / Steam Deck compatibility ratings (Native, Platinum, Gold) and launch flags</td></tr>
+<tr><td><strong>SteamGridDB</strong></td><td>Metadata &amp; Art</td><td>Yes (Optional)</td><td>Community capsule covers (600×900), hero banners, logos, square icons</td></tr>
+<tr><td><strong>IGDB (Twitch)</strong></td><td>Metadata</td><td>Yes (Optional)</td><td>Global taxonomy, developer studios, franchise links, aggregated critic scores</td></tr>
 </tbody>
 </table>
 <p>

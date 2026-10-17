@@ -6,18 +6,25 @@ import { fileURLToPath } from 'node:url'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 const USAGE = [
-	'Usage: npm run sign [-- options] [-- file ...]',
+	'Usage: npm run sign [windows|linux|macos] [-- options] [-- file ...]',
+	'       npm run sign:windows [-- options] [-- file ...]',
+	'       npm run sign:linux   [-- options] [-- file ...]',
+	'       npm run sign:macos   [-- options] [-- file ...]',
 	'',
 	'Opt-in signing step for Universal Game Launcher. It never runs as part of a build:',
 	'run it deliberately (after `npm run tauri:build` or `tauri build`) when you want signed artifacts.',
 	'',
-	'With no file arguments, signs the artifacts discovered for this platform:',
+	'Target platforms:',
 	'  windows   universal-game-launcher.exe, the portable exe, and every .exe/.msi under src-tauri/target/release/bundle',
-	'  macOS     every .app and .dmg under src-tauri/target/release/bundle/macos (plus notarization when credentials are set)',
+	'  macos     every .app and .dmg under src-tauri/target/release/bundle/macos (plus notarization when credentials are set)',
 	'  linux     every package under bundle/appimage, bundle/deb and bundle/rpm (gpg detached signature)',
 	'',
 	'Options:',
 	'  --dry-run           print targets and commands without signing anything',
+	'  --platform <name>   target platform filter (windows, linux, macos)',
+	'  --windows           filter to Windows artifacts',
+	'  --linux             filter to Linux artifacts',
+	'  --macos             filter to macOS artifacts',
 	'  --identity <name>   codesign identity (default: $APPLE_SIGNING_IDENTITY, else the only',
 	'                      codesigning identity found in the keychain)',
 	'  --cert <path>       code-signing PFX on Windows (default: certificates/*.pfx or $WINDOWS_CERTIFICATE_BASE64)',
@@ -31,7 +38,10 @@ const USAGE = [
 	'',
 	'Examples:',
 	'  npm run sign',
-	'  npm run sign -- --dry-run',
+	'  npm run sign:windows',
+	'  npm run sign:windows -- --dry-run',
+	'  npm run sign:linux',
+	'  npm run sign:macos',
 	'  npm run sign -- "src-tauri/target/release/bundle/nsis/Universal Game Launcher_1.3.3_x64-setup.exe"',
 	'  npm run sign -- --identity "Developer ID Application: Name (TEAMID)"',
 ].join('\n')
@@ -56,6 +66,7 @@ function usageError(message) {
 function parseArgs(argv) {
 	const opts = {
 		dry: false,
+		platform: null,
 		help: false,
 		identity: null,
 		cert: null,
@@ -68,10 +79,19 @@ function parseArgs(argv) {
 	}
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i]
+		const lower = arg.toLowerCase()
 		if (arg === '-h' || arg === '--help') opts.help = true
 		else if (arg === '--dry-run') opts.dry = true
 		else if (arg === '--') continue
-		else if (arg === '--identity') {
+		else if (arg === '--windows' || lower === 'windows' || lower === 'win' || lower === 'win32') opts.platform = 'windows'
+		else if (arg === '--linux' || lower === 'linux') opts.platform = 'linux'
+		else if (arg === '--macos' || arg === '--mac' || lower === 'macos' || lower === 'mac' || lower === 'darwin') opts.platform = 'macos'
+		else if (arg === '--platform') {
+			opts.platform = value(arg, i).toLowerCase()
+			i++
+		} else if (arg.startsWith('--platform=')) {
+			opts.platform = arg.slice('--platform='.length).toLowerCase()
+		} else if (arg === '--identity') {
 			opts.identity = value(arg, i)
 			i++
 		} else if (arg.startsWith('--identity=')) opts.identity = arg.slice('--identity='.length)
@@ -129,13 +149,20 @@ function walk(dir) {
 	return out
 }
 
-function discover() {
+function discover(targetPlatform) {
 	const bundle = path.join(ROOT, 'src-tauri', 'target', 'release', 'bundle')
 	const found = []
 	const push = (p) => {
 		if (fs.existsSync(p)) found.push(p)
 	}
-	if (process.platform === 'win32') {
+
+	const plat = targetPlatform ?? (
+		process.platform === 'win32' ? 'windows' :
+		process.platform === 'darwin' ? 'macos' :
+		process.platform === 'linux' ? 'linux' : null
+	)
+
+	if (plat === 'windows') {
 		push(path.join(ROOT, 'src-tauri', 'target', 'release', 'universal-game-launcher.exe'))
 		push(path.join(ROOT, 'src-tauri', 'target', 'release', 'portable', 'Universal Game Launcher.exe'))
 		try {
@@ -152,7 +179,7 @@ function discover() {
 			if (/\.(exe|msi)$/i.test(f)) found.push(f)
 		}
 	}
-	if (process.platform === 'darwin') {
+	if (plat === 'macos') {
 		const macDir = path.join(bundle, 'macos')
 		try {
 			for (const e of fs.readdirSync(macDir, { withFileTypes: true })) {
@@ -166,7 +193,7 @@ function discover() {
 			}
 		} catch {}
 	}
-	if (process.platform === 'linux') {
+	if (plat === 'linux') {
 		for (const sub of ['appimage', 'deb', 'rpm']) {
 			for (const f of walk(path.join(bundle, sub))) {
 				if (!f.endsWith('.asc')) found.push(f)
@@ -176,15 +203,15 @@ function discover() {
 	return [...new Set(found)]
 }
 
-function route(targets) {
+function route(targets, dry = false) {
 	const groups = { windows: [], apple: [], gpg: [] }
 	for (const t of targets) {
 		const lower = t.toLowerCase()
 		if (lower.endsWith('.exe') || lower.endsWith('.msi')) {
-			if (process.platform !== 'win32') fail(`${path.basename(t)} can only be signed on Windows (signtool)`)
+			if (!dry && process.platform !== 'win32') fail(`${path.basename(t)} can only be signed on Windows (signtool)`)
 			groups.windows.push(t)
 		} else if (lower.endsWith('.app') || lower.endsWith('.dmg')) {
-			if (process.platform !== 'darwin') fail(`${path.basename(t)} can only be signed on macOS (codesign)`)
+			if (!dry && process.platform !== 'darwin') fail(`${path.basename(t)} can only be signed on macOS (codesign)`)
 			groups.apple.push(t)
 		} else {
 			groups.gpg.push(t)
@@ -415,12 +442,12 @@ function main() {
 		if (!fs.existsSync(t)) fail(`target not found: ${t}`)
 	}
 	if (!targets.length) {
-		targets = discover()
+		targets = discover(opts.platform)
 		if (!targets.length)
-			fail('nothing to sign — build first (npm run tauri:build) or pass files explicitly')
+			fail(`nothing to sign for platform ${opts.platform ?? process.platform} — build first (npm run tauri:build) or pass files explicitly`)
 	}
-	log(`platform ${process.platform} — ${targets.length} target(s)`)
-	const groups = route(targets)
+	log(`platform ${opts.platform ?? process.platform} — ${targets.length} target(s)`)
+	const groups = route(targets, opts.dry)
 	if (groups.windows.length) signWindows(groups.windows, opts, opts.dry)
 	if (groups.apple.length) signApple(groups.apple, opts, opts.dry)
 	if (groups.gpg.length) signLinux(groups.gpg, opts.dry)

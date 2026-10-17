@@ -98,6 +98,7 @@ export interface AppMeta {
   fetchedAt: number | null;
   screenshots?: string[];
   movies?: string[];
+  soundtracks?: string[];
   locales?: Record<string, { title?: string; shortDescription?: string | null; aliases?: string[] }>;
   providers?: Record<string, any>;
   userEnhanced?: boolean;
@@ -451,6 +452,7 @@ export interface LauncherStatus {
   alternativeLabel?: string | null;
   supportsSilentInstall?: boolean;
   wingetPackageId?: string | null;
+  launchArgs?: string | null;
 }
 
 export interface LegendaryAuthStatus {

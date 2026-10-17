@@ -1,10 +1,13 @@
-import { ALL_PLUGINS } from "./catalog";
+import { ALL_PLUGINS, PLATFORM_PLUGINS } from "./catalog";
+import { getPlatformSpec, createPlatformProviderAdapter } from "./platforms/universal";
+import { testMetadataProviderConnection } from "./metadata/universal";
 import type { UniversalPlugin, TestConnectionResult, PluginMetadataResult, PluginArtworkResult } from "./framework";
 import type { PluginInfo, PluginSettingsConfig, AppMeta } from "$lib/types";
 import { api } from "$lib/api";
 
 class PluginEngineManager {
   private registry = new Map<string, UniversalPlugin>();
+  private platformAdapters = new Map<string, UniversalPlugin>();
 
   constructor() {
     this.ensureInitialized();
@@ -14,6 +17,14 @@ class PluginEngineManager {
     if (this.registry.size === 0 && Array.isArray(ALL_PLUGINS)) {
       for (const plugin of ALL_PLUGINS) {
         this.registry.set(plugin.id, plugin);
+      }
+    }
+    if (this.platformAdapters.size === 0 && Array.isArray(PLATFORM_PLUGINS)) {
+      for (const adapter of PLATFORM_PLUGINS) {
+        this.platformAdapters.set(adapter.id, adapter);
+        if (adapter.platformId) {
+          this.platformAdapters.set(adapter.platformId, adapter);
+        }
       }
     }
   }
@@ -27,14 +38,14 @@ class PluginEngineManager {
   /** Lookup a plugin by its unique identifier. */
   getPlugin(id: string): UniversalPlugin | undefined {
     this.ensureInitialized();
-    return this.registry.get(id);
+    return this.registry.get(id) ?? this.platformAdapters.get(id);
   }
 
   /**
    * Retrieves the settings configuration schema for a plugin.
    */
   getPluginSettingsSchema(id: string): PluginSettingsConfig | null {
-    const plugin = this.registry.get(id);
+    const plugin = this.getPlugin(id);
     if (plugin?.getSettingsSchema) {
       return plugin.getSettingsSchema();
     }
@@ -45,7 +56,10 @@ class PluginEngineManager {
    * Tests an API connection or credential validity for a plugin.
    */
   async testPluginConnection(id: string, config: Record<string, any>): Promise<TestConnectionResult> {
-    const plugin = this.registry.get(id);
+    if (id.startsWith("metadata-")) {
+      return await testMetadataProviderConnection(id, config);
+    }
+    const plugin = this.getPlugin(id);
     if (plugin?.testConnection) {
       return await plugin.testConnection(config);
     }
@@ -178,14 +192,17 @@ class PluginEngineManager {
   getProviderPlugin(platformId?: string | null): UniversalPlugin | undefined {
     this.ensureInitialized();
     if (!platformId) return undefined;
-    const norm = platformId.toLowerCase().trim();
-    return Array.from(this.registry.values()).find(p => {
-      if (p.pluginType !== "platform") return false;
-      if (p.platformId && p.platformId.toLowerCase() === norm) return true;
-      if (p.id === `platform-${norm}`) return true;
-      if ((norm === "other" || norm === "custom") && p.id === "platform-standalone") return true;
-      return false;
-    });
+    const norm = platformId.toLowerCase().trim().replace(/^platform-/, "");
+    const existing = this.platformAdapters.get(norm) ?? this.platformAdapters.get(`platform-${norm}`);
+    if (existing) return existing;
+    const spec = getPlatformSpec(norm);
+    if (spec) {
+      const adapter = createPlatformProviderAdapter(spec);
+      this.platformAdapters.set(spec.id, adapter);
+      this.platformAdapters.set(adapter.id, adapter);
+      return adapter;
+    }
+    return this.registry.get("platform-universal");
   }
 
   /**
@@ -273,6 +290,7 @@ class PluginEngineManager {
       fetchedAt: Date.now(),
       screenshots: isEnhanced && existing?.screenshots?.length ? existing.screenshots : (providerMeta.screenshots || existing?.screenshots || []),
       movies: isEnhanced && existing?.movies?.length ? existing.movies : (providerMeta.movies || existing?.movies || []),
+      soundtracks: isEnhanced && existing?.soundtracks?.length ? existing.soundtracks : (providerMeta.soundtracks || existing?.soundtracks || []),
       userEnhanced: isEnhanced ? true : false,
       enhancedBy: isEnhanced ? (existing?.enhancedBy || []) : []
     };
@@ -316,7 +334,8 @@ class PluginEngineManager {
       userScore: null,
       fetchedAt: Date.now(),
       screenshots: [],
-      movies: []
+      movies: [],
+      soundtracks: []
     };
 
     const override = options?.override === true;
@@ -325,11 +344,17 @@ class PluginEngineManager {
       if (!plugin.queryMetadata) continue;
       try {
         const config = await this.loadPluginConfig(plugin.id);
-        const res = await plugin.queryMetadata({
-          appId: game.appId,
-          name: current.name || game.name,
-          platform: (game.console || game.platform) ?? undefined
-        }, config);
+        const res = await Promise.race([
+          plugin.queryMetadata(
+            {
+              appId: game.appId,
+              name: current.name || game.name,
+              platform: (game.console || game.platform) ?? undefined,
+            },
+            config
+          ),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 4000)),
+        ]);
 
         if (!res) continue;
 
@@ -378,11 +403,17 @@ class PluginEngineManager {
 
         if (plugin.queryArtwork) {
           try {
-            const art = await plugin.queryArtwork({
-              appId: game.appId,
-              name: current.name || game.name,
-              platform: (game.console || game.platform) ?? undefined
-            }, config);
+            const art = await Promise.race([
+              plugin.queryArtwork(
+                {
+                  appId: game.appId,
+                  name: current.name || game.name,
+                  platform: (game.console || game.platform) ?? undefined,
+                },
+                config
+              ),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+            ]);
             if (art) {
               if (art.capsuleImage && (override || !current.capsuleImage)) {
                 current.capsuleImage = art.capsuleImage;
@@ -420,6 +451,14 @@ class PluginEngineManager {
         }
         if (res.screenshots?.length && (override || !current.screenshots?.length)) {
           current.screenshots = res.screenshots;
+          contributed = true;
+        }
+        if (res.movies?.length && (override || !current.movies?.length)) {
+          current.movies = res.movies;
+          contributed = true;
+        }
+        if (res.soundtracks?.length && (override || !current.soundtracks?.length)) {
+          current.soundtracks = res.soundtracks;
           contributed = true;
         }
 

@@ -152,6 +152,8 @@ pub struct AppMeta {
     #[serde(default)]
     pub movies: Vec<String>,
     #[serde(default)]
+    pub soundtracks: Vec<String>,
+    #[serde(default)]
     pub locales: std::collections::HashMap<String, serde_json::Value>,
     #[serde(default)]
     pub providers: std::collections::HashMap<String, serde_json::Value>,

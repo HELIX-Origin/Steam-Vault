@@ -17,6 +17,7 @@
     steamRunning
   } from "$lib/stores";
   import { getAllPlatformMetadata, getPlatformMetadata, pluginEngine } from "$lib/plugins";
+  import PlatformIcon from "$lib/components/PlatformIcon.svelte";
   import AddGameModal from "$lib/components/library/AddGameModal.svelte";
   import type { Game } from "$lib/types";
 
@@ -41,7 +42,6 @@
     { href: "/store", label: "Store" },
     { href: "/social", label: "Social" },
     { href: "/storage", label: "Storage" },
-    { href: "/settings?tab=plugins", label: "Plugins" },
     { href: "/settings", label: "Settings" }
   ];
 
@@ -73,33 +73,19 @@
     })
   );
 
-  function getConsoleIcon(consoleName: string): string {
-    const c = consoleName.toLowerCase();
-    if (c.includes("gamecube") || c.includes("gc")) return "🎲";
-    if (c.includes("playstation") || c.includes("psx") || c.includes("ps1") || c.includes("ps2") || c.includes("ps3")) return "🎮";
-    if (c.includes("nintendo 64") || c.includes("n64")) return "🕹️";
-    if (c.includes("snes") || c.includes("super nintendo")) return "🎮";
-    if (c.includes("nes") || c.includes("entertainment system")) return "🕹️";
-    if (c.includes("wii")) return "🪄";
-    if (c.includes("switch")) return "🔴";
-    if (c.includes("game boy") || c.includes("gba") || c.includes("gbc") || c.includes("nds") || c.includes("3ds") || c.includes("psp") || c.includes("vita")) return "📱";
-    if (c.includes("dreamcast") || c.includes("saturn") || c.includes("sega") || c.includes("genesis") || c.includes("megadrive")) return "🌀";
-    if (c.includes("arcade") || c.includes("mame") || c.includes("neo geo")) return "👾";
-    return "🕹️";
-  }
-
   let platformGroups = $derived.by(() => {
     const map = new Map<string, { label: string; icon: string; games: Game[] }>();
 
     for (const g of filteredGames) {
-      if (g.platform === "emulationstation" && (g.console || (g.collections && g.collections.length > 0))) {
+      const isEmulated = g.platform === "emulationstation" || Boolean(g.console);
+      if (isEmulated && (g.console || (g.collections && g.collections.length > 0))) {
         // Group and sort emulation games by their console platform (GameCube, PlayStation 1, etc.)
         const consoleName = g.console || g.collections[0];
         const key = `console:${consoleName.toLowerCase()}`;
         if (!map.has(key)) {
           map.set(key, {
             label: consoleName,
-            icon: getConsoleIcon(consoleName),
+            icon: consoleName,
             games: []
           });
         }
@@ -110,7 +96,7 @@
           const meta = getPlatformMetadata(p);
           map.set(p, {
             label: meta.label,
-            icon: meta.icon,
+            icon: p,
             games: []
           });
         }
@@ -151,35 +137,15 @@
     }
   }
 
+  import { backgroundWorker } from "$lib/worker";
+
   async function handleScanAllPlatforms() {
     if (isScanning) return;
     isScanning = true;
     try {
-      const scan = await api.scanAllPlatforms();
-      platformScan.set(scan);
-
-      // If EmulationStation plugin is enabled, scan and import ROMs
-      try {
-        const installedPlugs = await api.getInstalledPlugins();
-        const esPlug = installedPlugs.find((p) => p.id === "platform-emulationstation");
-        if (esPlug?.enabled) {
-          const cfg = await pluginEngine.loadPluginConfig("platform-emulationstation");
-          const romsPath = (cfg?.romsPath || "C:\\ROMs").trim();
-          const normalize = cfg?.normalizeTitles !== false;
-          const roms = await api.scanEmulationRoms(romsPath, normalize);
-          if (roms.length > 0) {
-            await api.importPlatformGames(roms);
-          }
-        }
-      } catch (esErr) {
-        console.warn("EmulationStation scan error:", esErr);
-      }
-
-      const updated = await api.loadLibrary(undefined, true);
-      games.set(updated);
-      if (!$selectedGameId && updated.length > 0) {
-        selectedGameId.set(updated[0].appId);
-      }
+      await backgroundWorker.scanAndRefreshLibrary({
+        currentSelectedId: $selectedGameId,
+      });
     } catch (e) {
       error.set(errorMessage(e));
     } finally {
@@ -239,15 +205,8 @@
     <!-- Title Bar Navigation Links (Steam / GOG Top Menu Style) -->
     <nav class="tb-nav" data-tauri-drag-region="false">
       {#each titlebarNav as item (item.href)}
-        {@const isPluginsLink = item.href.includes("tab=plugins")}
-        {@const isSettingsLink = item.href === "/settings"}
         {@const currentPath = page.url.pathname}
-        {@const currentSearch = page.url.search}
-        {@const isActive = isPluginsLink
-          ? (currentPath === "/settings" && currentSearch.includes("tab=plugins"))
-          : isSettingsLink
-            ? (currentPath === "/settings" && !currentSearch.includes("tab=plugins"))
-            : (currentPath === item.href || (item.href !== "/" && currentPath.startsWith(item.href)))}
+        {@const isActive = currentPath === item.href || (item.href !== "/" && currentPath.startsWith(item.href))}
         <a
           class="tb-nav-link"
           class:active={isActive}
@@ -375,7 +334,10 @@
                   title={isCollapsed ? "Expand section" : "Collapse section"}
                 >
                   <span class="accordion-chevron">{isCollapsed ? "▸" : "▾"}</span>
-                  <span class="accordion-label">{group.icon ? `${group.icon} ` : ""}{group.label}</span>
+                  <span class="accordion-label" style="display:inline-flex;align-items:center;gap:0.35rem">
+                    <PlatformIcon platform={group.icon} size={13} />
+                    <span>{group.label}</span>
+                  </span>
                   <span class="accordion-count">({group.games.length})</span>
                 </button>
                 {#if !isCollapsed}

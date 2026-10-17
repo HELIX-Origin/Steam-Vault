@@ -74,6 +74,10 @@ async fn fetch_one(
         return None;
     }
     let data = entry.get("data")?;
+    let app_type = data.get("type").and_then(Value::as_str).unwrap_or("game");
+    if matches!(app_type, "music" | "soundtrack" | "series" | "episode" | "advertising") {
+        return None;
+    }
     Some((app_id, parse_details(app_id, data)))
 }
 
@@ -138,6 +142,11 @@ fn parse_details(app_id: u32, data: &Value) -> AppMeta {
                             })
                             .and_then(Value::as_str)
                             .map(str::to_string)
+                            .or_else(|| {
+                                m.get("id").and_then(Value::as_u64).map(|movie_id| {
+                                    format!("https://cdn.akamai.steamstatic.com/steam/apps/{movie_id}/movie_max.mp4")
+                                })
+                            })
                     })
                     .collect()
             })

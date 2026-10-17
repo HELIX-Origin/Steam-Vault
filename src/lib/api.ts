@@ -229,6 +229,9 @@ export const api = {
     const raw = JSON.stringify(value);
     return invoke<boolean>("kv_set", { key, value: raw, ttlSecs: ttlSecs ?? null });
   },
+  fetchExternalJson: <T = unknown>(url: string, headers?: Record<string, string> | null) =>
+    invoke<T>("fetch_external_json", { url, headers: headers ?? null }),
+  pickGameImageFile: () => invoke<string | null>("pick_game_artwork"),
 };
 
 /** Normalize an unknown thrown value into a readable message. */

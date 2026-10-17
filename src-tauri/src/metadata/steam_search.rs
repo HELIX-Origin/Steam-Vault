@@ -76,11 +76,21 @@ pub async fn search_steam_store(
     };
 
     let mut results = Vec::new();
+    let clean_lower = clean.to_ascii_lowercase();
     for item in items {
         if let (Some(id), Some(name)) = (
             item.get("id").and_then(Value::as_u64).map(|v| v as u32),
             item.get("name").and_then(Value::as_str),
         ) {
+            let name_lower = name.to_ascii_lowercase();
+            let is_auxiliary = name_lower.contains("soundtrack")
+                || name_lower.contains(" ost")
+                || name_lower.contains("artbook")
+                || name_lower.contains("art book");
+            if is_auxiliary && !clean_lower.contains("soundtrack") && !clean_lower.contains("ost") {
+                continue;
+            }
+
             results.push(SteamSearchResult {
                 id,
                 name: name.to_string(),
@@ -102,15 +112,53 @@ pub async fn find_steam_app_id(
     cc: &str,
     lang: &str,
 ) -> AppResult<Option<u32>> {
-    let results = search_steam_store(client, title, cc, lang).await?;
+    let mut results = search_steam_store(client, title, cc, lang).await?;
     let clean_lower = clean_search_term(title).to_lowercase();
-    // Prefer exact name match, otherwise first result
-    let best = results
-        .iter()
-        .find(|res| res.name.trim().to_lowercase() == clean_lower)
-        .or_else(|| results.first());
 
-    Ok(best.map(|res| res.id))
+    // Extract base title before subtitle separator (" - " or ": ")
+    let base_title = title
+        .split_once(" - ")
+        .or_else(|| title.split_once(": "))
+        .map(|(b, _)| clean_search_term(b).to_lowercase())
+        .filter(|b| b.len() >= 4);
+
+    if results.is_empty() {
+        if let Some(ref base) = base_title {
+            results = search_steam_store(client, base, cc, lang).await?;
+        }
+    }
+
+    // 1. Exact or clean name match
+    if let Some(exact) = results.iter().find(|res| {
+        let res_clean = clean_search_term(&res.name).to_lowercase();
+        res.name.trim().to_lowercase() == clean_lower || res_clean == clean_lower
+    }) {
+        return Ok(Some(exact.id));
+    }
+
+    // 2. Base title match (e.g. "FINAL FANTASY XIV - A Realm Reborn" -> "FINAL FANTASY XIV Online")
+    if let Some(ref base) = base_title {
+        if let Some(matched) = results.iter().find(|res| {
+            let res_clean = clean_search_term(&res.name).to_lowercase();
+            res_clean == *base
+                || res_clean == format!("{base} online")
+                || res_clean.starts_with(base)
+        }) {
+            return Ok(Some(matched.id));
+        }
+    }
+
+    // 3. Prefix / substring match if clean_lower is at least 5 chars
+    if clean_lower.len() >= 5 {
+        if let Some(matched) = results.iter().find(|res| {
+            let res_clean = clean_search_term(&res.name).to_lowercase();
+            res_clean.starts_with(&clean_lower) || clean_lower.starts_with(&res_clean)
+        }) {
+            return Ok(Some(matched.id));
+        }
+    }
+
+    Ok(None)
 }
 
 #[cfg(test)]

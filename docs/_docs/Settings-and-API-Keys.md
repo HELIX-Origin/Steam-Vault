@@ -1,40 +1,46 @@
 ---
 layout: docs
 title: Settings & Plugin Configuration
-summary: Configuration reference for Universal Game Launcher and the tabbed Plugin Settings system
+summary: Configuration reference for Universal Game Launcher, Storage & Cache controls, and the Plugin Settings dialog
 parent: Documentation Home
 nav_order: 9
 ---
 
 # Settings & Plugin Configuration
 
-Universal Game Launcher cleanly separates core application preferences from individual plugin configurations. All settings are stored locally on your machine with zero cloud telemetry.
+Universal Game Launcher cleanly separates core application preferences, platform detection options, and storage cache maintenance from third-party API configurations. All settings are stored locally on your machine with zero cloud telemetry.
 
 ---
 
-## ⚙️ General Settings (`/settings`)
+## ⚙️ Settings View Layout (`/settings`)
 
-The **Settings** view configures core launcher behavior, display options, and persistence:
+The **Settings** view is structured into clear, functional sections:
 
-| Setting | Description |
-| :--- | :--- |
-| **System Language** | Display and metadata language. Select from 30 officially supported languages or auto-detect from system locale. See [Localization](Localization.md). |
-| **Store Country** | Two-letter country/region code (e.g. `US`, `GB`, `DE`) used for regional store pricing, currency, and age ratings. |
-| **Library Metadata Refresh** | One-click button to trigger a background metadata and cover art refresh across all library titles. |
-| **Cache Management** | Clear the in-memory KV cache and cached artwork without touching game installations or custom tags. |
-| **Plugins & Modules Tab** | Inspect, enable, disable, and configure native plugins organized by category (`platforms`, `metadata`, `utility`, `media`). |
+### 1. General & Localization
+- **System Language**: Display and metadata language. Select from 30 officially supported languages or auto-detect from system locale. See [Localization](Localization.md).
+- **Store Country**: Two-letter country/region code (e.g. `US`, `GB`, `DE`) used for regional store pricing, currency, and age ratings.
+
+### 2. Platforms & Clients
+- Renders authentic vector SVG platform icons (`PlatformIcon.svelte`) for all 12 supported game providers.
+- Toggle individual platforms (Steam, Epic Games, GOG Galaxy, Xbox, EA Desktop, Ubisoft Connect, Battle.net, itch.io, Amazon Games, Rockstar Games, Standalone, EmulationStation) to control which clients are scanned on startup.
+- Dedicated button to launch the **Plugin Settings Dialog** for advanced client paths and alternate backends.
+
+### 3. Storage & Cache
+- Dedicated hub for cache maintenance and local database integrity:
+  - **↻ Refresh Metadata Cache**: Re-executes the automatic multi-source metadata engine across all library titles to fetch updated descriptions, reviews, and artwork without touching your custom per-game overrides.
+  - **🗑 Purge Data Cache**: Clears in-memory KV records (`mem_kv`) and cached disk artwork, allowing the application to rebuild assets cleanly from scratch.
 
 ---
 
 ## 🧩 Dedicated Plugin Settings Dialog
 
-To maintain a clean and modular architecture, third-party API keys and platform-specific configurations are **decoupled from general settings**. Instead, each enabled plugin that declares configurable fields renders inside the **Plugin Settings** sub-window dialog.
+To maintain a clean and modular architecture, third-party API keys and platform-specific configurations are **decoupled from general settings**. Each enabled plugin that declares configurable fields renders inside the **Plugin Settings** sub-window dialog.
 
-You can open this dialog by clicking **Open Plugin Settings** or the gear icon (`⚙`) next to any configurable plugin in the Plugins list.
+You can open this dialog by clicking **Open Plugin Settings** or the gear icon (`⚙`) next to any configurable plugin in the Platforms or Plugins list.
 
 ### Features of the Plugin Settings Dialog
 
-- **Tabbed Plugin Navigation**: A clean left-hand rail lists every enabled plugin with configurable settings (Steam, GOG, Epic, itch.io, EmulationStation, SteamGridDB, IGDB, GamerPower, Storage Analyzer, Trailers, Ambient).
+- **Tabbed Plugin Navigation**: A clean left-hand rail lists every enabled plugin with configurable settings (Steam, GOG, Epic, itch.io, EmulationStation, SteamGridDB, IGDB, GamerPower, Storage Analyzer).
 - **Dynamic Field Schemas**: Renders inputs based on each plugin's `PluginSettingsConfig`:
   - `text` / `string`: General configuration values (paths, directory locations, countries).
   - `password`: API keys and secrets with a visibility eye toggle (`👁`).
@@ -52,13 +58,11 @@ Universal Game Launcher works **100% keyless** out of the box. API keys are enti
 
 | Plugin | Key Type | Where to Obtain | Key Required |
 | :--- | :--- | :--- | :---: |
-| **SteamGridDB** (`metadata-steamgriddb`) | API Key | `steamgriddb.com` → Preferences → API | Yes |
-| **IGDB** (`metadata-igdb`) | Client ID & Client Secret | Twitch Developer Console (`dev.twitch.tv/console`) | Yes |
-| **Steam Web API** (`metadata-steam`) | Web API Key | `steamcommunity.com/dev/apikey` | Optional |
-| **itch.io** (`metadata-itch`) | API Key | `itch.io` → Account Settings → API Keys | Optional |
-| **TheGamesDB** (`metadata-thegamesdb`) | Developer Key | `thegamesdb.net` | Optional |
+| **SteamGridDB** (`metadata-universal`) | API Key | `steamgriddb.com` → Preferences → API | Optional |
+| **IGDB** (`metadata-universal`) | Client ID & Client Secret | Twitch Developer Console (`dev.twitch.tv/console`) | Optional |
+| **itch.io** (`platform-universal`) | API Key | `itch.io` → Account Settings → API Keys | Optional |
 
-All other built-in providers — including Steam Store (`appdetails`), GOG Catalog, Epic Games Store, ScreenScraper, HowLongToBeat, PCGamingWiki, ProtonDB, GamerPower, and Storage Analyzer — require **zero API keys or credentials**.
+All primary built-in data sources — including Steam Store (`appdetails` and modern MP4 trailer streams), GOG Catalog v1, Libretro CDN, Wikipedia/Wikidata MediaWiki API, PCGamingWiki Cargo API, ProtonDB, GamerPower, and Storage Analyzer — require **zero API keys or credentials**.
 
 ---
 
@@ -72,7 +76,7 @@ All other built-in providers — including Steam Store (`appdetails`), GOG Catal
 
 ## ➡️ Next Steps
 
-- [Available Plugins Catalog](Available-Plugins.md) — complete catalog of all 27 plugins.
-- [Plugin Development Guide](Plugin-Development.md) — authoring plugins with custom settings schemas.
-- [Metadata Providers](Metadata-Providers.md) — details on what each provider fetches.
-- [Supported Launchers & Platforms](External-Platforms.md) — platform discovery options.
+- [Available Plugins Catalog](Available-Plugins.md) — complete catalog of Universal Core plugins.
+- [Organizing Your Library](Organizing-Your-Library.md) — library showcase and per-game customization.
+- [Metadata Providers](Metadata-Providers.md) — multi-source metadata engine.
+- [Storage Management](Storage-Management.md) — drive utilization and game storage exploration.

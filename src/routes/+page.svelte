@@ -4,6 +4,7 @@
   import { t } from "$lib/i18n";
   import { customNames, error, games, install, loading, settings } from "$lib/stores";
   import { PLATFORM_PLUGINS, getAllPlatformMetadata, getPlatformMetadata, pluginEngine } from "$lib/plugins";
+  import PlatformIcon from "$lib/components/PlatformIcon.svelte";
   import type { DiskInfo, DownloadItem, FreeGamePromotion, Game, PatchNote, Platform, StorageReport, StoreDeal } from "$lib/types";
   import "$styles/dashboard.scss";
 
@@ -510,7 +511,7 @@
       {:else if notificationTab === "free-games"}
         {#if !freeGamesEnabled}
           <div style="padding:1.5rem;text-align:center" class="muted-sm">
-            The <strong>Free Game Alerts</strong> utility plugin is currently disabled. Enable it in <a href="/settings?tab=plugins" style="color:var(--accent)">Plugins &amp; Modules</a> to track active store giveaways.
+            The <strong>Free Game Alerts</strong> feature is currently disabled. Enable it in <a href="/settings" style="color:var(--accent)">Settings</a> to track active store giveaways.
           </div>
         {:else if enabledFreeGames.length === 0}
           <div style="padding:1.5rem;text-align:center" class="muted-sm">
@@ -544,7 +545,7 @@
                       <div class="row-between" style="align-items:center">
                         <strong style="font-size:0.95rem;color:var(--text)">{promo.title}</strong>
                         <span class="pill pill-dim" style="font-size:0.62rem;border-color:{pMeta.color}40;color:{pMeta.color}">
-                          {pMeta.icon} {pMeta.label}
+                          <PlatformIcon platform={pMeta.id} size={12} /> {pMeta.label}
                         </span>
                       </div>
                       {#if promo.description}
@@ -597,7 +598,7 @@
                       <div class="row-between" style="align-items:center">
                         <strong style="font-size:0.95rem;color:var(--text)">{promo.title}</strong>
                         <span class="pill pill-dim" style="font-size:0.62rem;border-color:{pMeta.color}40;color:{pMeta.color}">
-                          {pMeta.icon} {pMeta.label}
+                          <PlatformIcon platform={pMeta.id} size={12} /> {pMeta.label}
                         </span>
                       </div>
                       {#if promo.description}
@@ -633,7 +634,7 @@
       {:else if notificationTab === "deals"}
         {#if !dealsEnabled}
           <div style="padding:1.5rem;text-align:center" class="muted-sm">
-            The <strong>Store Promotion &amp; Deal Alerts</strong> utility plugin is currently disabled. Enable it in <a href="/settings?tab=plugins" style="color:var(--accent)">Plugins &amp; Modules</a> to view featured discounts.
+            The <strong>Store Promotion &amp; Deal Alerts</strong> feature is currently disabled. Enable it in <a href="/settings" style="color:var(--accent)">Settings</a> to view featured discounts.
           </div>
         {:else if enabledStoreDeals.length === 0}
           <div style="padding:1.5rem;text-align:center" class="muted-sm">
@@ -656,7 +657,7 @@
                   <div class="row-between" style="align-items:center">
                     <strong style="font-size:0.95rem;color:var(--text)">{deal.title}</strong>
                     <span class="pill pill-dim" style="font-size:0.62rem;border-color:{pMeta.color}40;color:{pMeta.color}">
-                      {pMeta.icon} {pMeta.label}
+                      <PlatformIcon platform={pMeta.id} size={12} /> {pMeta.label}
                     </span>
                   </div>
                   <div class="row-between" style="align-items:center;margin-top:auto;padding-top:0.6rem">
@@ -684,7 +685,7 @@
       {:else if notificationTab === "patch-notes"}
         {#if !patchNotesEnabled}
           <div style="padding:1.5rem;text-align:center" class="muted-sm">
-            The <strong>Patch Notes &amp; Game Updates</strong> utility plugin is currently disabled. Enable it in <a href="/settings?tab=plugins" style="color:var(--accent)">Plugins &amp; Modules</a> to monitor installed game updates.
+            The <strong>Patch Notes &amp; Game Updates</strong> feature is currently disabled. Enable it in <a href="/settings" style="color:var(--accent)">Settings</a> to monitor installed game updates.
           </div>
         {:else if enabledPatchNotes.length === 0}
           <div style="padding:1.5rem;text-align:center" class="muted-sm">
@@ -697,7 +698,7 @@
               <div class="glass" style="display:flex;flex-direction:column;padding:0.9rem;border-radius:8px;border:1px solid rgba(255,255,255,0.08);background:rgba(0,0,0,0.3)">
                 <div class="row-between" style="align-items:center;margin-bottom:0.4rem">
                   <span class="pill pill-dim" style="font-size:0.65rem;border-color:{pMeta.color}40;color:{pMeta.color}">
-                    {pMeta.icon} {note.gameName}
+                    <PlatformIcon platform={pMeta.id} size={12} /> {note.gameName}
                   </span>
                   {#if note.date}
                     <span class="muted-xs" style="font-size:0.68rem">
@@ -833,7 +834,7 @@
                 <img src={coverSrc} alt={getDisplayName(game)} loading="lazy" />
               {:else}
                 <div class="fallback-cover" style="color:{pMeta.color}">
-                  {pMeta.icon}
+                  <PlatformIcon platform={game.console || game.platform} size={22} />
                 </div>
               {/if}
             </div>
@@ -845,7 +846,7 @@
               </span>
               <div class="recent-badge-row">
                 <span class="pill pill-dim" style="border-color:{pMeta.color}40;color:{pMeta.color};font-size:0.68rem;padding:0.1rem 0.35rem">
-                  {pMeta.icon} {pMeta.label}
+                  <PlatformIcon platform={game.console || game.platform} size={11} /> {pMeta.label}
                 </span>
                 {#if game.installed}
                   <span class="pill pill-ok" style="font-size:0.65rem;padding:0.1rem 0.3rem">Ready</span>
@@ -897,7 +898,7 @@
         <div class="platform-legend-grid">
           {#each platformDistribution as p}
             <a href={`/library?platform=${p.platform}`} class="platform-legend-item">
-              <span class="legend-dot" style="background:{p.color}"></span>
+              <PlatformIcon platform={p.platform} size={13} color={p.color} />
               <span class="legend-name">{p.label}</span>
               <span class="legend-count">{p.count}</span>
             </a>

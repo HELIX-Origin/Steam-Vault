@@ -47,8 +47,8 @@ npm run tauri:build
 When the application launches, it displays the **Dashboard** and automatically discovers games installed across all supported storefronts:
 
 1. **Automatic Multi-Platform Scan:** On startup, the launcher inspects standard installation paths and registry manifests for all installed clients — **Steam**, **Epic Games Store**, **GOG Galaxy**, **Ubisoft Connect**, **EA App**, **Xbox / Microsoft Store**, **Battle.net**, **itch.io**, and **Amazon Games**.
-2. **Library View:** Navigate to **Library** from the top title bar menu. The left sidebar presents your full aggregated games list grouped into collapsible platform accordions with quick filters (`All`, `Installed`, `★ Favorites`).
-3. **Dedicated Showcase:** Click any title in the sidebar to view its high-resolution hero banner, portrait capsule, 10-image screenshot media gallery, storage footprint, and prominent **Play Now** launch button.
+2. **Library View:** Navigate to **Library** from the top title bar menu. The left sidebar presents your full aggregated games list grouped into collapsible platform and console accordions with **Authentic Vector SVG Platform Icons** (`PlatformIcon.svelte`) and quick filters (`All`, `Installed`, `★ Favorites`).
+3. **Dedicated Showcase & Unified Media:** Click any title in the sidebar to view its high-resolution hero banner, portrait capsule, consolidated tabbed media showcase (**🖼️ Screenshots & Art**, **🎬 Trailers** with modern Steam Akamai MP4 video streaming, and **🎵 Soundtracks**), prominent **Play Now** launch button, and the **⚙ Manage** per-game customization modal.
 4. **Plugin Settings & Credentials:** Optional credentials (such as **SteamGridDB** for custom community artwork or **IGDB** for extended taxonomy) can be configured by clicking **Plugin Settings** in **Settings**. Each enabled plugin presents its own dedicated tab with live connection verification.
 
 ---
@@ -65,7 +65,7 @@ Universal Game Launcher operates completely non-invasively:
 
 ## 🧪 5. Verification & Testing
 
-Both the frontend and backend have strict type checks and automated tests:
+Both the frontend and backend have strict type checks, automated tests, and headless CLI verification:
 
 ```bash
 # Verify TypeScript types and Svelte diagnostics
@@ -73,6 +73,9 @@ npm run check
 
 # Run Rust unit tests
 cargo test --manifest-path src-tauri/Cargo.toml
+
+# Run headless CLI library scan and title verification
+./src-tauri/target/debug/universal-game-launcher.exe --cli scan
 
 # Full end-to-end verification suite (check, rust, frontend, build)
 node scripts/test.mjs check rust frontend build
