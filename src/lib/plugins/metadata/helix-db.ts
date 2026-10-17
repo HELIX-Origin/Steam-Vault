@@ -58,8 +58,9 @@ export interface HelixDbGamePayload {
   verified: boolean;
 }
 
-// Support official custom domain, www alias, and GitHub Pages origin fallback
+// Support Cloudflare raw GitHub proxy, official custom domain, www alias, and GitHub Pages origin fallback
 const HELIX_DOMAINS = [
+  "https://api.helix-origin.club/helix-gaming-db/main",
   "https://helix-origin.club/helix-gaming-db",
   "https://www.helix-origin.club/helix-gaming-db",
   "https://helix-origin.github.io/helix-gaming-db",
@@ -79,11 +80,13 @@ function normalizeKey(str: string): string {
 /**
  * Fetch a JSON resource trying primary domain first, then fallback domain.
  */
-async function fetchWithFallback<T>(relativePath: string): Promise<T | null> {
+async function fetchWithFallback<T>(relativePath: string, customBase?: string): Promise<T | null> {
   const path = relativePath.startsWith("/") ? relativePath : `/${relativePath}`;
-  for (const domain of HELIX_DOMAINS) {
+  const candidates = customBase ? [customBase, ...HELIX_DOMAINS] : HELIX_DOMAINS;
+  for (const domain of candidates) {
     try {
-      const url = `${domain}${path}`;
+      const cleanDomain = domain.endsWith("/") ? domain.slice(0, -1) : domain;
+      const url = `${cleanDomain}${path}`;
       const data = await api.fetchExternalJson<T>(url);
       if (data) return data;
     } catch {
@@ -209,9 +212,9 @@ export const helixDbMetadataPlugin: UniversalPlugin = {
           key: "endpoint_url",
           label: "Custom API Endpoint",
           type: "text",
-          default: "https://helix-origin.club/helix-gaming-db",
-          description: "Base URL for the HELIX Gaming DB REST API (defaults to official domain with GitHub Pages fallback).",
-          placeholder: "https://helix-origin.club/helix-gaming-db",
+          default: "https://api.helix-origin.club/helix-gaming-db/main",
+          description: "Base URL for the HELIX Gaming DB REST API (defaults to Cloudflare raw proxy with GitHub Pages fallback).",
+          placeholder: "https://api.helix-origin.club/helix-gaming-db/main",
         },
       ],
     };
@@ -219,7 +222,10 @@ export const helixDbMetadataPlugin: UniversalPlugin = {
 
   async testConnection(config?: Record<string, any>): Promise<TestConnectionResult> {
     try {
-      const manifest = await fetchWithFallback<{ name: string; totalGames: number }>("/api/v1/manifest.json");
+      const manifest = await fetchWithFallback<{ name: string; totalGames: number }>(
+        "/api/v1/manifest.json",
+        config?.endpoint_url
+      );
       if (manifest && manifest.name) {
         return {
           success: true,
