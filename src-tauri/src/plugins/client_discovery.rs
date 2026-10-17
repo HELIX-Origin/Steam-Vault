@@ -670,10 +670,10 @@ fn ea_slug_to_clean_title(slug: &str) -> String {
 /// Discover all owned and installed EA games from EA Desktop client logs and manifests.
 pub fn discover_ea_client_games() -> Vec<PlatformGame> {
     let mut discovered = Vec::new();
-    let mut seen_canonical = HashSet::new();
 
     #[cfg(windows)]
     {
+        let mut seen_canonical: HashSet<String> = HashSet::new();
         let mut ea_offers: HashMap<String, String> = HashMap::new();
 
         // 1. Scan EA Desktop Logs for authoritative owned offerId and slug pairs
