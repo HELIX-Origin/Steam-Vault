@@ -12,6 +12,7 @@ import { titlesMatchStrict, backupMetadataForTitle } from "./developers";
 export interface HelixDbSearchEntry {
   slug: string;
   title: string;
+  canonicalTitle?: string;
   developers: string[];
   publishers?: string[];
   releaseYear?: number;
@@ -24,6 +25,10 @@ export interface HelixDbSearchEntry {
   heroImage?: string;
   logoImage?: string | null;
   headerImage?: string | null;
+  shard?: string;
+  repository?: string;
+  sourceUrl?: string;
+  isLocalized?: boolean;
   keys: string[];
   isAdult?: boolean;
 }
@@ -67,12 +72,25 @@ export interface HelixDbGamePayload {
   movies?: Array<{ title: string; url: string; thumbnail?: string | null }>;
   soundtracks?: Array<{ title: string; url: string; artist?: string | null }>;
   verified: boolean;
+  shard?: string;
+  repository?: string;
+  sourceUrl?: string;
+  locales?: Record<
+    string,
+    {
+      title?: string;
+      shortDescription?: string;
+      detailedDescription?: string;
+      aliases?: string[];
+    }
+  >;
 }
 
 export interface HelixQueryOptions {
   customBase?: string;
   includeAdult?: boolean;
   tier?: "v2" | "v1";
+  lang?: string;
 }
 
 // Support Cloudflare edge proxy (auto branch resolver), custom domain, www alias, and GitHub Pages origin fallback
@@ -182,12 +200,13 @@ export async function getHelixDbSearchIndex(
 }
 
 /**
- * Fetches and caches a detailed game payload from HELIX Gaming DB.
+ * Fetches and caches a detailed game payload from HELIX Gaming DB with federated multi-repo resolution.
  */
 export async function getHelixDbGame(
   slug: string,
   tier: "v2" | "v3" = "v2",
-  customBase?: string
+  customBase?: string,
+  meta?: { shard?: string; repository?: string; sourceUrl?: string }
 ): Promise<HelixDbGamePayload | null> {
   const memKey = `${tier}:${slug}`;
   if (cachedGames.has(memKey)) {
@@ -196,7 +215,44 @@ export async function getHelixDbGame(
 
   const kvKey = `helix_db_game_${tier}_${slug}`;
 
-  // 1. Try remote fetch
+  // 1. Direct source URL if provided by federated shard index
+  if (meta?.sourceUrl) {
+    try {
+      const data = await api.fetchExternalJson<HelixDbGamePayload>(meta.sourceUrl);
+      if (data && data.title) {
+        cachedGames.set(memKey, data);
+        try {
+          await api.kvSetJson(kvKey, data, 86400 * 14);
+        } catch {
+          // Non-fatal
+        }
+        return data;
+      }
+    } catch {
+      // Fall through to shard repository or primary registry
+    }
+  }
+
+  // 2. Federated multi-repo resolution if hosted on dedicated shard repository
+  if (meta?.repository && meta.repository !== "HELIX-Origin/helix-gaming-db") {
+    const rawShardUrl = `https://raw.githubusercontent.com/${meta.repository}/main/api/${tier}/games/${slug}.json`;
+    try {
+      const data = await api.fetchExternalJson<HelixDbGamePayload>(rawShardUrl);
+      if (data && data.title) {
+        cachedGames.set(memKey, data);
+        try {
+          await api.kvSetJson(kvKey, data, 86400 * 14);
+        } catch {
+          // Non-fatal
+        }
+        return data;
+      }
+    } catch {
+      // Fall through to primary registry
+    }
+  }
+
+  // 3. Try primary registry / CDN domains
   try {
     const path = tier === "v3" ? `/api/v3/games/${slug}.json` : `/api/v2/games/${slug}.json`;
     const game = await fetchWithFallback<HelixDbGamePayload>(path, customBase);
@@ -213,7 +269,7 @@ export async function getHelixDbGame(
     // Network offline; proceed to persistent cache
   }
 
-  // 2. Offline fallback: read persistent KV cache
+  // 4. Offline fallback: read persistent KV cache
   try {
     const persisted = await api.kvGetJson<HelixDbGamePayload>(kvKey);
     if (persisted && persisted.title) {
@@ -227,11 +283,13 @@ export async function getHelixDbGame(
   return null;
 }
 
-function mapHelixPayloadToResult(game: HelixDbGamePayload): PluginMetadataResult {
+function mapHelixPayloadToResult(game: HelixDbGamePayload, lang?: string): PluginMetadataResult {
+  const loc = lang && game.locales && game.locales[lang] ? game.locales[lang] : null;
+
   return {
-    name: game.title,
-    shortDescription: game.shortDescription,
-    detailedDescription: game.detailedDescription,
+    name: loc?.title || game.title,
+    shortDescription: loc?.shortDescription || game.shortDescription,
+    detailedDescription: loc?.detailedDescription || game.detailedDescription,
     releaseDate: game.releaseDate,
     releaseYear: game.releaseYear,
     developers: game.developers,
@@ -308,10 +366,14 @@ export async function queryHelixGamingDb(
     });
 
     if (match) {
-      // Fetch full game payload
-      const game = await getHelixDbGame(match.slug, tier, options?.customBase);
+      // Fetch full game payload (with federated multi-repo resolution)
+      const game = await getHelixDbGame(match.slug, tier, options?.customBase, {
+        shard: match.shard,
+        repository: match.repository,
+        sourceUrl: match.sourceUrl,
+      });
       if (game) {
-        return mapHelixPayloadToResult(game);
+        return mapHelixPayloadToResult(game, options?.lang);
       }
 
       // Offline fallback: synthesize result from rich search index entry
@@ -355,7 +417,7 @@ export const helixDbMetadataPlugin: UniversalPlugin = {
   description:
     "Authoritative open REST metadata API and gaming database for PC, indie, Patreon, and emulation titles.",
   homepage: "https://helix-origin.club/helix-gaming-db",
-  features: ["indie_metadata", "patreon_titles", "verified_artwork", "offline_fallback", "adult_v3_tier"],
+  features: ["indie_metadata", "patreon_titles", "verified_artwork", "offline_fallback", "adult_v3_tier", "i18n_localization", "multi_repo_federation"],
 
   getSettingsSchema(): PluginSettingsConfig {
     return {
@@ -368,6 +430,27 @@ export const helixDbMetadataPlugin: UniversalPlugin = {
           default: "https://api.helix-origin.club/helix-gaming-db",
           description: "Base URL for the HELIX Gaming DB REST API (defaults to Cloudflare edge proxy with GitHub Pages fallback).",
           placeholder: "https://api.helix-origin.club/helix-gaming-db",
+        },
+        {
+          key: "preferred_language",
+          label: "Metadata Language",
+          type: "select",
+          default: "en",
+          options: [
+            { value: "en", label: "English" },
+            { value: "ja", label: "日本語 (Japanese)" },
+            { value: "zh-CN", label: "简体中文 (Simplified Chinese)" },
+            { value: "zh-TW", label: "繁體中文 (Traditional Chinese)" },
+            { value: "es", label: "Español (Spanish)" },
+            { value: "fr", label: "Français (French)" },
+            { value: "de", label: "Deutsch (German)" },
+            { value: "it", label: "Italiano (Italian)" },
+            { value: "pt-BR", label: "Português (Brasil)" },
+            { value: "ru", label: "Русский (Russian)" },
+            { value: "ko", label: "한국어 (Korean)" },
+            { value: "pl", label: "Polski (Polish)" },
+          ],
+          description: "Language to use for localized game titles, synopses, and taxonomy when available.",
         },
         {
           key: "include_adult_content",
@@ -427,6 +510,7 @@ export const helixDbMetadataPlugin: UniversalPlugin = {
       customBase: config?.endpoint_url,
       includeAdult: config?.include_adult_content !== false,
       tier: config?.api_tier === "v1" ? "v1" : "v2",
+      lang: config?.preferred_language || "en",
     });
   },
 
