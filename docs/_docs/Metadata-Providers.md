@@ -8,9 +8,9 @@ nav_order: 6
 
 # Metadata Providers & Plugins
 
-Universal Game Launcher connects to an extensive ecosystem of modular metadata providers. Each provider is delivered as a drop-in plugin hosted in the official [Universal-Game-Launcher-Plugins](https://github.com/HELIX-Origin/Universal-Game-Launcher-Plugins) repository.
+Universal Game Launcher connects to an extensive ecosystem of modular metadata providers. Each provider is delivered as a dedicated in-app modular plugin built directly into the application under `src/lib/plugins/metadata/`.
 
-You can enable, disable, and configure individual providers directly from **Settings → Plugins**. Only the providers you enable are queried during library scans and showcase rendering.
+You can enable, disable, and configure individual providers directly from **Settings → Plugins** or through the dedicated **Plugin Settings** sub-window dialog. Only the providers you enable are queried during library scans and showcase rendering.
 
 ---
 
@@ -29,7 +29,6 @@ You can enable, disable, and configure individual providers directly from **Sett
 | **PCGamingWiki** | No | `www.pcgamingwiki.com/w/api.php` | Save file directories, config file paths, FOV/ultrawide fixes, controller support, and community patches. |
 | **Wikipedia & Wikidata** | No | `en.wikipedia.org/w/api.php` | Encyclopedic summaries, game engine specifications, director/composer credits, and historical context. |
 | **MobyGames** | User Key | `api.mobygames.com/v1/games` | Historical credit registries, authentic box art scans, and platform port lineage. |
-| **RAWG.io** | User Key | `api.rawg.io/api/games` | Over 500,000 indexed games, ESRB/PEGI ratings, gameplay tags, and high-res screenshot feeds. |
 | **Giant Bomb** | User Key | `www.giantbomb.com/api/games/` | Editorial wiki decks, franchise universes, gameplay concepts, and character rosters. |
 | **ProtonDB** | No | `www.protondb.com/api/v1` | Linux / Steam Deck compatibility tiers (Native, Platinum, Gold) and launch option tweaks. |
 | **HowLongToBeat** | No | `howlongtobeat.com/api/search` | Main Story, Main + Extra, and Completionist playtime averages. |
@@ -44,7 +43,6 @@ Providers that require credentials or support custom preferences expose these di
 
 - **SteamGridDB**: Enter your free API key from your SteamGridDB account preferences to unlock community capsule and hero artwork.
 - **IGDB**: Enter your Twitch Client ID and Client Secret; Universal Game Launcher manages OAuth token acquisition automatically.
-- **RAWG**: Enter your personal API key from RAWG.io.
 - **MobyGames**: Enter your API key from your MobyGames profile to access retro packaging scans and credits.
 - **Giant Bomb**: Enter your personal API key from Giant Bomb.
 - **Keyless Providers**: Function immediately without authentication.
@@ -61,4 +59,4 @@ All fetched metadata is cached locally in the embedded SQLite database (`databas
 
 - [Plugin Development Guide](Plugin-Development.md)
 - [Settings & API Keys](Settings-and-API-Keys.md)
-- [AutoCategorization](AutoCategorization.md)
+- [Collections](Collections.md)

@@ -52,7 +52,7 @@ pub fn run() {
                 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
                 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 
-                let show_i = MenuItem::with_id(app, "show", "Show Steam Vault", true, None::<&str>)?;
+                let show_i = MenuItem::with_id(app, "show", "Show Universal Game Launcher", true, None::<&str>)?;
                 let min_i = MenuItem::with_id(app, "minimize", "Minimize to Tray", true, None::<&str>)?;
                 let sep = PredefinedMenuItem::separator(app)?;
                 let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
@@ -62,7 +62,7 @@ pub fn run() {
                 let mut tray_builder = TrayIconBuilder::with_id("main")
                     .menu(&menu)
                     .show_menu_on_left_click(false)
-                    .tooltip("Steam Vault")
+                    .tooltip("Universal Game Launcher")
                     .on_menu_event(|app, event| match event.id().as_ref() {
                         "show" => {
                             if let Some(window) = app.get_webview_window("main") {
@@ -140,22 +140,9 @@ pub fn run() {
             commands::sync_library_metadata,
             commands::refresh_game_metadata,
             commands::fetch_owned_games,
-            commands::steamgriddb_search,
-            commands::steamgriddb_assets,
-            commands::igdb_search,
-            commands::pcgamingwiki_lookup,
-            commands::wikipedia_summary,
-            commands::wikipedia_game_lookup,
-            commands::vndb_lookup,
-            commands::gog_lookup,
-            commands::epic_lookup,
-            commands::indiedb_lookup,
-            commands::itch_lookup,
             commands::steam_store_search,
             commands::get_installed_plugins,
             commands::toggle_plugin,
-            commands::open_plugins_folder,
-            commands::install_plugin_from_url,
             commands::scan_all_platforms,
             commands::detect_platforms,
             commands::find_platform_folders,
@@ -175,6 +162,12 @@ pub fn run() {
             commands::uninstall_game,
             commands::open_game_folder,
             commands::get_installed_launchers,
+            commands::check_binary_installed,
+            commands::install_winget_package,
+            commands::is_winget_available,
+            commands::get_managed_directories,
+            commands::set_managed_directories,
+            commands::open_launchers_folder,
             commands::install_legendary,
             commands::open_external_url,
             commands::open_tools_folder,
@@ -187,6 +180,7 @@ pub fn run() {
             commands::install_eos_overlay,
             commands::get_free_game_promotions,
             commands::get_store_deals,
+            commands::get_featured_store_items,
             commands::get_library_patch_notes,
             commands::kv_get,
             commands::kv_set,
@@ -196,6 +190,12 @@ pub fn run() {
             commands::kv_mget,
             commands::kv_mset,
             commands::kv_clear_expired,
+            commands::scaffold_emulation_folders,
+            commands::scan_emulation_roms,
+            commands::normalize_rom_title_cmd,
+            commands::pick_game_executable,
+            commands::pick_game_directory,
+            commands::pick_game_artwork,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

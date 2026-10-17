@@ -8,11 +8,11 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const USAGE = [
 	'Usage: npm run sign [-- options] [-- file ...]',
 	'',
-	'Opt-in signing step for Steam Vault. It never runs as part of a build:',
+	'Opt-in signing step for Universal Game Launcher. It never runs as part of a build:',
 	'run it deliberately (after `npm run tauri:build` or `tauri build`) when you want signed artifacts.',
 	'',
 	'With no file arguments, signs the artifacts discovered for this platform:',
-	'  windows   steam-vault.exe, the portable exe, and every .exe/.msi under src-tauri/target/release/bundle',
+	'  windows   universal-game-launcher.exe, the portable exe, and every .exe/.msi under src-tauri/target/release/bundle',
 	'  macOS     every .app and .dmg under src-tauri/target/release/bundle/macos (plus notarization when credentials are set)',
 	'  linux     every package under bundle/appimage, bundle/deb and bundle/rpm (gpg detached signature)',
 	'',
@@ -21,7 +21,7 @@ const USAGE = [
 	'  --identity <name>   codesign identity (default: $APPLE_SIGNING_IDENTITY, else the only',
 	'                      codesigning identity found in the keychain)',
 	'  --cert <path>       code-signing PFX on Windows (default: certificates/*.pfx or $WINDOWS_CERTIFICATE_BASE64)',
-	'  --cert-pass <pass>  PFX password (default: $WINDOWS_CERTIFICATE_PASSWORD, else "steam-vault")',
+	'  --cert-pass <pass>  PFX password (default: $WINDOWS_CERTIFICATE_PASSWORD, else "youshallnotpass")',
 	'  -h, --help          show this help',
 	'',
 	'Environment:',
@@ -32,7 +32,7 @@ const USAGE = [
 	'Examples:',
 	'  npm run sign',
 	'  npm run sign -- --dry-run',
-	'  npm run sign -- "src-tauri/target/release/bundle/nsis/Steam Vault_1.2.0_x64-setup.exe"',
+	'  npm run sign -- "src-tauri/target/release/bundle/nsis/Universal Game Launcher_1.3.3_x64-setup.exe"',
 	'  npm run sign -- --identity "Developer ID Application: Name (TEAMID)"',
 ].join('\n')
 
@@ -136,8 +136,18 @@ function discover() {
 		if (fs.existsSync(p)) found.push(p)
 	}
 	if (process.platform === 'win32') {
-		push(path.join(ROOT, 'src-tauri', 'target', 'release', 'steam-vault.exe'))
-		push(path.join(ROOT, 'src-tauri', 'target', 'release', 'portable', 'Steam Vault.exe'))
+		push(path.join(ROOT, 'src-tauri', 'target', 'release', 'universal-game-launcher.exe'))
+		push(path.join(ROOT, 'src-tauri', 'target', 'release', 'portable', 'Universal Game Launcher.exe'))
+		try {
+			const releaseDir = path.join(ROOT, 'src-tauri', 'target', 'release')
+			if (fs.existsSync(releaseDir)) {
+				for (const e of fs.readdirSync(releaseDir, { withFileTypes: true })) {
+					if (e.isFile() && e.name.toLowerCase().endsWith('.exe') && !e.name.startsWith('build_')) {
+						push(path.join(releaseDir, e.name))
+					}
+				}
+			}
+		} catch {}
 		for (const f of walk(bundle)) {
 			if (/\.(exe|msi)$/i.test(f)) found.push(f)
 		}
@@ -185,13 +195,13 @@ function route(targets) {
 
 function inspectSelfSigned(file, pass) {
 	const script = [
-		'try { $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($env:STEAM_VAULT_SIGN_PFX_FILE, $env:STEAM_VAULT_SIGN_PFX_PASS) -ErrorAction Stop } catch { exit 10 }',
+		'try { $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($env:CODESIGN_PFX_FILE, $env:CODESIGN_PFX_PASS) -ErrorAction Stop } catch { exit 10 }',
 		'if ($cert.Issuer -eq $cert.Subject) { exit 0 } else { exit 1 }',
 	].join('; ')
 	const res = spawnSync('powershell', ['-NoProfile', '-Command', script], {
 		stdio: 'ignore',
 		cwd: ROOT,
-		env: { ...process.env, STEAM_VAULT_SIGN_PFX_FILE: file, STEAM_VAULT_SIGN_PFX_PASS: pass },
+		env: { ...process.env, CODESIGN_PFX_FILE: file, CODESIGN_PFX_PASS: pass },
 	})
 	if (res.error) fail('powershell not found — needed to inspect the code-signing certificate')
 	if (res.status === 0) return true
@@ -200,28 +210,43 @@ function inspectSelfSigned(file, pass) {
 }
 
 function resolveCert(opts) {
-	const pass = opts.certPass ?? process.env.WINDOWS_CERTIFICATE_PASSWORD ?? 'steam-vault'
+	const pass = opts.certPass ?? process.env.WINDOWS_CERTIFICATE_PASSWORD ?? 'youshallnotpass'
 	if (opts.cert) {
 		const p = path.resolve(ROOT, opts.cert)
 		if (!fs.existsSync(p)) fail(`certificate not found: ${p}`)
 		return { file: p, pass, selfSigned: inspectSelfSigned(p, pass) }
 	}
+	// 1. Standard generic certificate filenames
 	for (const candidate of [
-		'certificates/steam-vault-codesign.pfx',
-		'certificates/steam-vault.pfx',
-		'certificates/steam-desktop-codesign.pfx',
+		'certificates/certificate.pfx',
+		'certificates/certificate.p12',
+		'certificates/codesign.pfx',
+		'certificates/codesign.p12',
 	]) {
 		const p = path.join(ROOT, candidate)
 		if (fs.existsSync(p)) return { file: p, pass, selfSigned: inspectSelfSigned(p, pass) }
 	}
+	// 2. Discover any existing .pfx or .p12 in certificates directory
+	const certDir = path.join(ROOT, 'certificates')
+	if (fs.existsSync(certDir)) {
+		try {
+			for (const file of fs.readdirSync(certDir)) {
+				if (/\.(pfx|p12)$/i.test(file)) {
+					const p = path.join(certDir, file)
+					return { file: p, pass, selfSigned: inspectSelfSigned(p, pass) }
+				}
+			}
+		} catch {}
+	}
+	// 3. Materialize from base64 secret if provided
 	if (process.env.WINDOWS_CERTIFICATE_BASE64) {
-		const p = path.join(ROOT, 'certificates', 'steam-vault-codesign.pfx')
+		const p = path.join(ROOT, 'certificates', 'certificate.pfx')
 		fs.mkdirSync(path.dirname(p), { recursive: true })
 		fs.writeFileSync(p, Buffer.from(process.env.WINDOWS_CERTIFICATE_BASE64, 'base64'))
 		log(`materialized certificate from WINDOWS_CERTIFICATE_BASE64 -> ${p}`)
 		return { file: p, pass, selfSigned: inspectSelfSigned(p, pass) }
 	}
-	return { file: path.join(ROOT, 'certificates', 'steam-vault-codesign.pfx'), pass, selfSigned: true }
+	return { file: path.join(ROOT, 'certificates', 'certificate.pfx'), pass, selfSigned: true }
 }
 
 function ensureCert(cert, dry) {
@@ -233,12 +258,12 @@ function ensureCert(cert, dry) {
 	log('no certificate found — generating a local self-signed code-signing certificate')
 	fs.mkdirSync(path.dirname(cert.file), { recursive: true })
 	const script = [
-		"$cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=HELIX Origin, O=HELIX Origin, OU=Steam Vault' -CertStoreLocation 'Cert:\\CurrentUser\\My'",
-		'$pwd = ConvertTo-SecureString -String $env:STEAM_VAULT_SIGN_PFX_PASS -Force -AsPlainText',
+		"$cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=HELIX Origin, O=HELIX Origin, OU=Code Signing' -CertStoreLocation 'Cert:\\CurrentUser\\My'",
+		'$pwd = ConvertTo-SecureString -String $env:CODESIGN_PFX_PASS -Force -AsPlainText',
 		`Export-PfxCertificate -Cert $cert -FilePath '${cert.file.replace(/'/g, "''")}' -Password $pwd | Out-Null`,
 	].join('; ')
 	const st = run('powershell', ['-NoProfile', '-Command', script], {
-		env: { STEAM_VAULT_SIGN_PFX_PASS: cert.pass },
+		env: { CODESIGN_PFX_PASS: cert.pass },
 		missing: 'powershell not found — needed to generate a self-signed certificate',
 	})
 	if (st !== 0) fail('failed to generate the self-signed certificate')

@@ -8,36 +8,41 @@ nav_order: 1
 
 # What is Universal Game Launcher?
 
-**Universal Game Launcher** is a fast, lightweight, and privacy-first desktop application that unifies your entire multi-platform PC gaming library. It brings together games across **Steam**, **Epic Games Store**, **GOG Galaxy**, **Ubisoft Connect**, **EA App**, **Xbox / Microsoft Store**, **Battle.net**, **itch.io**, and **Amazon Games**, alongside full support for **manually adding local games and standalone executables**.
+**Universal Game Launcher** is a fast, lightweight, and privacy-first desktop application that unifies your entire multi-platform PC gaming library. It brings together games across **Steam**, **Epic Games Store**, **GOG Galaxy**, **Ubisoft Connect**, **EA App**, **Xbox / Microsoft Store**, **Battle.net**, **itch.io**, and **Amazon Games**, alongside full support for **manually added standalone executables** and **emulation / ROM libraries via drop-in plugins**.
 
-Inspired by the clean organization philosophies of **Depressurizer**, Universal Game Launcher lets you build custom collections, auto-categorize by genre, developer, and tags, manage multi-drive storage, and track free game giveaways and store discounts.
+Universal Game Launcher provides an ergonomic, high-performance user experience inspired by the proven layouts of **Steam and GOG Galaxy**:
+- **Frameless Title Bar Navigation:** Quick switching between Dashboard, Library, Storage, Plugins, and Settings.
+- **Steam & GOG-Style Left Sidebar:** Interactive game list with instant search, quick filter pills (All, Installed, ★ Favorites), background platform scan trigger, and collapsible platform and collection accordions.
+- **Dedicated Game Showcase View:** Rich selected game view with 16:9 hero banner, capsule cover, title typography, prominent **PLAY NOW** launch button, 10-screenshot media gallery with fullscreen lightbox, details, and custom artwork studio.
+- **Modular Drop-In Plugin Ecosystem:** All game platform integrations, emulation/ROM systems, metadata providers, and feeds (free games, store deals, patch notes) are decoupled into modular drop-in plugins.
 
-It is built on **Tauri v2** (Rust backend with a SvelteKit frontend) and relies on **official launcher protocols and local client records** rather than screen-scraping or credential storage.
+Built on **Tauri v2** (Rust backend + SvelteKit frontend), Universal Game Launcher is 100% non-invasive. It never tampers with external store files, never harvests credentials, and stores library data locally in generic SQLite (`database.sqlite`) backed by an in-memory serverless KV tier for sub-millisecond responsiveness.
 
 ## 🚀 Key Highlights
 
-- 🎮 **All Popular Game Launchers** — Discover and launch games across Steam, Epic Games, GOG Galaxy, Xbox, EA, Ubisoft, Battle.net, itch.io, and Amazon Games.
-- 📁 **Manually Added Local Games** — Easily import and organize standalone DRM-free executables, custom launch arguments, and indie releases.
-- 🔒 **Native Launcher Delegation** — Launches, updates, and uninstalls delegate directly to official clients, preserving overlays, cloud saves, friend lists, playtime, and achievements.
-- 🗂️ **Custom & Smart Collections** — Create custom categories and evaluate native dynamic filter rules with live previews.
-- 🧠 **AutoCats** — Generate categories automatically from genre, developer, publisher, and tags.
-- 🎛️ **Advanced Filters** — An Allowed (OR) / Required (AND) / Excluded (NOT) rule builder over your entire collection.
-- 🖼️ **Artwork Management** — Inspect and set custom portrait grids, heroes, logos, and icons using SteamGridDB and local image files.
-- 🎁 **Free Games & Store Deals** — Track 100% free game giveaways and major store promotions with zero payment processing in-app.
-- 💽 **Storage Management** — Inspect drive capacity and game footprints across library folders, with safe cross-drive moves.
-- ⚡ **Generic SQLite Persistence** — Zero-dependency embedded database (`database.sqlite`) in WAL mode with transactional backups.
-- 🌍 **28+ Languages** — Hand-rolled reactive i18n localization engine supporting all major languages with Arabic RTL support.
+- 🎮 **Steam & GOG Left Games List Sidebar** — Instant search, filter pills (All, Installed, Favorites), platform accordions with game counts, and collections tree.
+- 🧭 **Frameless Title Bar Navigation** — Seamless header navigation: Dashboard, Library, Storage, Plugins, and Settings.
+- 🖼️ **Dedicated Game Showcase View** — 16:9 hero wallpaper banner with dark vignette, title logo, prominent PLAY NOW launch button, and game overview.
+- 📸 **10-Screenshot Media Gallery** — Interactive screenshot gallery with full-resolution lightbox viewer.
+- 🧩 **Drop-In Plugin Ecosystem** — All game platforms, emulation/ROM systems, metadata providers, and notification feeds are modular plugins with schema validation.
+- ⚙️ **Universal Per-Plugin Settings** — Dedicated configuration modal for API keys (with password toggle), custom executable paths, and options.
+- 🔒 **Native Launcher Delegation** — Launches, updates, and uninstalls delegate directly to official clients, preserving overlays, cloud saves, friend lists, and achievements.
+- 🎁 **Free Games, Deals & Patch Notes** — Plugin-powered feeds for verified 100% free giveaways, major store deals, and official game update notes.
+- 🎨 **Custom Artwork Studio** — Inspect and set custom portrait capsules, heroes, logos, and icons using SteamGridDB and local files.
+- 🗂️ **Custom & Smart Collections** — Create custom categories and evaluate dynamic filter rules with instant preview.
+- 💾 **Storage Footprint Explorer** — Inspect drive capacity and game footprints across library volumes.
+- ⚡ **Zero-Lag Obsidian Purple Theme** — High-contrast dark purple visual theme (#080511 / #0f0920 / #a855f7) with zero `backdrop-filter: blur` performance overhead.
 
 ## 🧭 Getting Around
 
 - **[Getting Started](Getting-Started.md)** — prerequisites, build, and first launch.
-- **[Organizing Your Library](Organizing-Your-Library.md)** — the Library view, filters, and selections.
-- **[Supported Launchers & Platforms](External-Platforms.md)** — multi-launcher detection and client delegation.
+- **[Organizing Your Library](Organizing-Your-Library.md)** — the Library showcase view, sidebar filters, and game launcher.
+- **[Supported Launchers & Platforms](External-Platforms.md)** — multi-launcher detection, plugins, and client delegation.
 - **[Manually Added Local Games](Non-Steam-Games.md)** — standalone executables, custom artwork, and tagging.
-- **[Collections](Collections.md)** — creating, editing, and safely writing collections.
-- **[AutoCategorization](AutoCategorization.md)** — the AutoCats categorization engine.
-- **[Artwork Management](Artwork-Management.md)** — custom art for any game.
-- **[Storage Management](Storage-Management.md)** — libraries, drives, and moving games.
+- **[Collections](Collections.md)** — creating, editing, and managing collections.
+- **[Artwork Management](Artwork-Management.md)** — custom art studio for capsules, heroes, logos, and icons.
+- **[Storage Management](Storage-Management.md)** — drive utilization and game storage exploration.
+- **[Plugin Development](Plugin-Development.md)** — creating platform and metadata plugins.
 - **[Metadata Providers](Metadata-Providers.md)** — provider capabilities and keyless architecture.
 - **[Settings & API Keys](Settings-and-API-Keys.md)** — configuration reference.
 - **[Troubleshooting](Troubleshooting.md)** — common issues and fixes.
@@ -51,18 +56,17 @@ It is built on **Tauri v2** (Rust backend with a SvelteKit frontend) and relies 
 
 ## 🔗 Links
 
-- [Repository](https://github.com/HELIX-Origin/Steam-Vault)
-- [Changelog](https://github.com/HELIX-Origin/Steam-Vault/blob/main/CHANGELOG.md)
-- [Security](https://github.com/HELIX-Origin/Steam-Vault/blob/main/SECURITY.md)
-- [License](https://github.com/HELIX-Origin/Steam-Vault/blob/main/LICENSE)
+- [Repository](https://github.com/HELIX-Origin/Universal-Game-Launcher)
+- [Security](https://github.com/HELIX-Origin/Universal-Game-Launcher/blob/main/SECURITY.md)
+- [License](https://github.com/HELIX-Origin/Universal-Game-Launcher/blob/main/LICENSE)
 
 ---
 
 ### 📚 Documentation Index
 - **Core**: [Home]({{ '/' | relative_url }}) · [Getting Started](Getting-Started.md) · [Organizing Your Library](Organizing-Your-Library.md)
-- **Features**: [Supported Launchers](External-Platforms.md) · [Manually Added Local Games](Non-Steam-Games.md) · [Collections](Collections.md) · [AutoCategorization](AutoCategorization.md) · [Artwork Management](Artwork-Management.md) · [Storage Management](Storage-Management.md)
+- **Features**: [Supported Launchers](External-Platforms.md) · [Manually Added Local Games](Non-Steam-Games.md) · [Collections](Collections.md) · [Artwork Management](Artwork-Management.md) · [Storage Management](Storage-Management.md) · [Plugin Development](Plugin-Development.md)
 - **Reference**: [Metadata Providers](Metadata-Providers.md) · [Settings & API Keys](Settings-and-API-Keys.md) · [Troubleshooting](Troubleshooting.md) · [FAQ](FAQ.md)
 
 ---
 
-*[Universal Game Launcher](https://github.com/HELIX-Origin/Steam-Vault) — a fast, lightweight universal game launcher and library organizer.*
+*[Universal Game Launcher](https://github.com/HELIX-Origin/Universal-Game-Launcher) — a fast, lightweight universal game launcher and library organizer.*

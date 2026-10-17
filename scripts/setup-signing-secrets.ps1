@@ -1,20 +1,44 @@
 param(
-  [string]$CertPath = "certificates/steam-vault-codesign.pfx",
-  [string]$Password = "steam-vault"
+  [string]$CertPath = "certificates/certificate.pfx",
+  [string]$Password = "youshallnotpass",
+  [string]$Repo = ""
 )
 
 if (-not (Test-Path $CertPath)) {
-  Write-Error "Certificate not found at $CertPath"
-  exit 1
+  $discovered = Get-ChildItem -Path "certificates" -Filter "*.pfx" -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $discovered) {
+    $discovered = Get-ChildItem -Path "certificates" -Filter "*.p12" -ErrorAction SilentlyContinue | Select-Object -First 1
+  }
+  if ($discovered) {
+    $CertPath = $discovered.FullName
+    Write-Host "Using discovered certificate: $CertPath"
+  } else {
+    Write-Error "Certificate not found at $CertPath and no .pfx/.p12 found in certificates/"
+    exit 1
+  }
 }
 
 $bytes = [System.IO.File]::ReadAllBytes((Resolve-Path $CertPath).Path)
 $base64 = [System.Convert]::ToBase64String($bytes)
 
-Write-Host "Uploading WINDOWS_CERTIFICATE_BASE64 to GitHub Secrets..."
-$base64 | gh secret set WINDOWS_CERTIFICATE_BASE64 --repo HELIX-Origin/Steam-Vault
+if (-not $Repo) {
+  try {
+    $origin = git config --get remote.origin.url 2>$null
+    if ($origin -match "github\.com[:/]([^/]+/[^/.]+?)(\.git)?$") {
+      $Repo = $matches[1]
+    }
+  } catch {}
+}
 
-Write-Host "Uploading WINDOWS_CERTIFICATE_PASSWORD to GitHub Secrets..."
-$Password | gh secret set WINDOWS_CERTIFICATE_PASSWORD --repo HELIX-Origin/Steam-Vault
+if (-not $Repo) {
+  $dirName = Split-Path -Leaf (Get-Location)
+  $Repo = "HELIX-Origin/$dirName"
+}
 
-Write-Host "Successfully configured signing secrets on HELIX-Origin/Steam-Vault!"
+Write-Host "Uploading WINDOWS_CERTIFICATE_BASE64 to GitHub Secrets for $Repo..."
+$base64 | gh secret set WINDOWS_CERTIFICATE_BASE64 --repo $Repo
+
+Write-Host "Uploading WINDOWS_CERTIFICATE_PASSWORD to GitHub Secrets for $Repo..."
+$Password | gh secret set WINDOWS_CERTIFICATE_PASSWORD --repo $Repo
+
+Write-Host "Successfully configured signing secrets on $Repo!"

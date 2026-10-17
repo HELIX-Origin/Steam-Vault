@@ -64,7 +64,6 @@ export const en: TranslationDictionary = {
     openLibrary: "Browse Library",
     scanPlatforms: "Scan External Launchers",
     manageArtwork: "Artwork Manager",
-    autoCategorize: "Auto-Categorize",
     recentGames: "Recently Played"
   },
   library: {

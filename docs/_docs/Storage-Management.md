@@ -1,58 +1,76 @@
 ---
 layout: docs
 title: Storage Management
-summary: Inspecting libraries and drives, and moving games between them
+summary: Inspecting drives, volume utilization, and managing multi-platform game storage
 parent: Documentation Home
 nav_order: 12
 ---
 
 # Storage Management
 
-The **Storage** view is where Steam Vault shows how your installed games are spread across drives
-and Steam libraries, and where you move them around.
+The **Storage** view (`/storage`) in Universal Game Launcher provides a comprehensive storage analytics cockpit. It reveals how your installed games are distributed across physical drives, mounted volumes, and storefront library directories.
 
-A Steam installation keeps its games in one or more **library folders**. Each library folder is a
-directory containing a `steamapps` subfolder, and the set of libraries is registered in
-`libraryfolders.vdf`. Steam rewrites every copy of that file it finds on startup, so when you move
-something, **every copy must be updated** or Steam will "lose" the game and re-download it.
+---
 
-## What the view shows
+## ⚡ Non-Blocking Background Worker & Plugin Gating
 
-- **Drives** — every mounted disk with its used/free space, so you can see at a glance which drive
-  has room.
-- **Libraries** — each registered library folder with its path, whether it currently exists, how
-  many installed games it holds, their total size, and the free space on its drive.
-- **Games** — every installed game, searchable and filterable by library, with its size and the
-  library that holds it.
+The Storage view is powered by the **Storage & Drive Analyzer** utility plugin (`utility-storage`):
+- **Instant UI Rendering**: Switching to the Storage tab renders the page structure immediately (0ms blocking time). Heavy disk inspection is dispatched to a background thread pool (`tauri::async_runtime::spawn_blocking`), streaming metrics in reactively without UI hitches.
+- **Plugin-Aware Filtering**: Only installed titles from enabled platform plugins (`platform-steam`, `platform-gog`, `platform-epic`, etc.) are tracked and computed. Disabling a storefront plugin in **Settings → Plugins** automatically excludes its titles from the storage footprint.
+- **Utility Plugin Control**: If `utility-storage` is disabled in plugin settings, drive scanning is deactivated gracefully.
 
-## Registering and removing libraries
+---
 
-- **Add** — enter a folder path and Steam Vault creates its `steamapps` subfolder if needed, then
-  registers it in `libraryfolders.vdf`. A library cannot live inside the Steam installation folder.
-- **Remove** — unregisters a library from `libraryfolders.vdf`. The **files on disk are left
-  untouched**, and a library that still holds installed games cannot be removed — move its games
-  out first. The Steam installation's own library cannot be removed.
+## 💾 Multi-Drive Capacity Gauges
 
-## Moving games and whole libraries
+At the top of the Storage view, Universal Game Launcher visualizes disk utilization across every mounted drive on your system:
 
-Select **Move…** on a game (or a library) to start a move:
+- **Drive Capacity Gauges**: Visual percentage bars indicating used vs. available gigabytes.
+- **Game Footprint vs. Other Data**: Differentiates between storage consumed by discovered games and other operating system / user data.
+- **Drive Health & Threshold Alerts**: Clear indicators when volumes are running low on disk space.
 
-1. **Choose a destination** — another registered library for a game, or a new path for a whole
-   library.
-2. **Preview** — Steam Vault reports how many bytes will move, whether the destination has enough
-   free space, and whether the move stays on one drive. A same-drive move is an instant rename; a
-   cross-drive move copies the files and then removes the originals.
-3. **Move** — a progress bar tracks the copy. When it finishes, Steam Vault updates every copy of
-   `libraryfolders.vdf` (and, for a game, moves its `appmanifest_*.acf` and any Workshop manifest
-   too) so Steam finds everything in its new home.
+---
 
-## Safety
+## 🗂️ Library Volumes & Platforms
 
-- **Steam must be closed.** Every change is refused while Steam is running — if it were open, Steam
-  would overwrite the changes on exit or start re-downloading. Close Steam completely first.
-- **Backups.** Each `libraryfolders.vdf` is backed up before it is rewritten.
-- **Pre-flight checks.** Moves are validated first: the destination must have room (plus a safety
-  margin), cannot be inside the source, and cannot already hold the content.
+Below the system drive gauges, games are grouped and filterable by platform origin and storage volume:
 
-> Moving a library is a large, real file operation — it copies the actual game data. Make sure the
-> destination drive is connected and has space before you start.
+| Platform | Storage Discovery Mechanism |
+| :--- | :--- |
+| **Steam** | Parses all registered libraries in `libraryfolders.vdf` and game manifests (`appmanifest_*.acf`). |
+| **GOG Galaxy** | Queries local Galaxy SQLite DB and install paths for discrete game directory sizes. |
+| **Epic Games** | Reads `.item` manifests in `Manifests/` for install sizes and target directories. |
+| **Xbox / Windows Apps** | Inspects AppX/MSIX package footprints across system and secondary drives. |
+| **EA App & Ubisoft Connect** | Inspects installer registry entries and configured game folders. |
+| **Battle.net & Amazon Games** | Reads client product databases and manifests. |
+| **Standalone / ROMs** | Directly calculates disk usage of manually added executables, directories, and emulator ROMs. |
+
+---
+
+## 🎮 Game Storage Explorer
+
+- **Search & Filter**: Search games by name or filter to titles installed on a specific drive.
+- **Sort by Size**: Instantly sort from largest to smallest to identify games consuming the most disk space.
+- **One-Click Folder Access**: Click the **Open Folder** action to open the game's local installation directory directly in your operating system's file manager (Windows Explorer, macOS Finder, or Linux file manager).
+- **Uninstall Trigger**: Initiate uninstallation via native client protocol handlers (`steam://uninstall/{id}`, `goggalaxy://uninstallGame/{id}`, etc.) or launcher delegation.
+
+---
+
+## 📦 Steam Library Folder Management & Game Moving
+
+For Steam installations, Universal Game Launcher provides advanced library folder management:
+
+1. **Viewing Registered Libraries**: View all Steam library directories registered across secondary drives.
+2. **Moving Games Between Drives**:
+   - **Choose Destination**: Select another registered Steam library with sufficient free space.
+   - **Pre-Flight Validation**: Checks available destination headroom and ensures the game is not currently running.
+   - **Safe File Copy**: Copies game assets, relocates the `appmanifest_<appid>.acf` file, and updates `libraryfolders.vdf`.
+   - **Safety Margin**: Requires Steam to be closed during file moves to prevent cloud sync collisions and maintains automatic backups in the app data directory.
+
+---
+
+## ➡️ Next Steps
+
+- [Organizing Your Library](Organizing-Your-Library.md) — filter by installed games in the left sidebar.
+- [Manually Added Local Games](Non-Steam-Games.md) — manage standalone game paths.
+- [Troubleshooting](Troubleshooting.md) — resolving storage and permission issues.

@@ -1,71 +1,89 @@
 ---
 layout: wiki
 title: Architecture
-summary: The big picture and module map of Steam Vault
-parent: Steam Vault Technical Wiki
+summary: Core launcher architecture, in-app modular plugin system, and generic SQLite persistence
+parent: Technical Wiki
 nav_order: 2
 ---
 
 # Architecture
 
-Steam Vault is a single desktop process with two halves: a **Rust / Tauri v2 backend** that owns all
-Steam data access, and a **SvelteKit static SPA** that renders the interface and calls the backend
-over typed IPC.
+Universal Game Launcher is built on a high-performance, decoupled architecture:
+- **Core Launcher**: Owns the user interface (frameless title bar navigation, Steam & GOG-style left sidebar, main game showcase, media gallery, artwork studio), storage footprint analytics, local persistence (`database.sqlite`), in-memory KV caching (`mem_kv`), and IPC bridge.
+- **In-App Modular Plugin Ecosystem (`src/lib/plugins/`)**: All external features — platform storefront integrations, emulation & ROM systems, and metadata providers — are decoupled into modular, dedicated plugins implementing the `UniversalPlugin` framework.
 
 ```mermaid
 flowchart TB
-    ui[SvelteKit SPA] --> ipc[Typed Tauri commands]
-    ipc --> core[Rust core: library, collections, storage, autocat, filter]
-    core --> steam[Steam data layer]
-    core --> meta[Metadata providers]
-    steam --> disk[(Steam local files)]
-    meta --> cache[(SQLite metadata cache)]
-    core --> backup[(Timestamped backups)]
+    subgraph Frontend["Frontend (SvelteKit + Svelte 5 Runes)"]
+        TitleBar[Frameless Title Bar Navigation]
+        Sidebar[Steam & GOG Left Games List Sidebar]
+        Showcase[Main Game Showcase View]
+        StorageUI[Storage Footprint Analytics]
+        PluginModal[Tabbed Plugin Settings Dialog]
+    end
+
+    subgraph Backend["Rust Core Backend (Tauri v2)"]
+        IPC[Typed Tauri IPC Commands]
+        PluginEngine["Internal Plugin Engine (src-tauri/src/plugins/)"]
+        StorageEngine[Disk Storage & Drive Analyzer]
+        MemKV["In-Memory Serverless KV Tier (mem_kv)"]
+        DB[(Local SQLite database.sqlite)]
+    end
+
+    subgraph Plugins["Native Modular Plugins (src/lib/plugins/)"]
+        Platforms["Platform Plugins (Steam, Epic [Official & Legendary], GOG, Xbox, EA, Ubisoft, Battle.net, itch, Rockstar, Amazon, Standalone)"]
+        Meta["Metadata Plugins (Steam Store, GOG, IGDB, SGDB, PCGamingWiki, ProtonDB, HLTB, itch)"]
+        Utility["Utility Plugins (Free Game Alerts, Store Deals, Patch Notes, Storage Analyzer)"]
+        Media["Media Plugins (Video Trailers, Ambient Audio)"]
+    end
+
+    Frontend -->|Typed IPC| IPC
+    IPC --> PluginEngine
+    IPC --> StorageEngine
+    IPC --> MemKV
+    MemKV <--> DB
+    Frontend <-->|Direct Modular Registry| Plugins
 ```
 
-The design rule is simple: **the frontend never touches the filesystem**. Every read and write goes
-through a Rust command, which is where validation, Steam-closed checks, and backups live.
+---
 
-## 🧱 Module map
+## 🧱 Architectural Division of Responsibilities
 
-The backend is split into focused modules:
+### 1. The Core Application
+1. **Ergonomic UI System:**
+   - **Custom Titlebar Navigation:** Seamless switching between Dashboard, Library, Storage, Plugins, and Settings with instant 0ms tab rendering.
+   - **Steam & GOG Galaxy-Style Left Sidebar:** Instant search filter, status pills (All, Installed, ★ Favorites), platform accordions with live game counts, collections tree, and instant game selection.
+   - **Main Game Showcase View:** 16:9 hero wallpaper banner with dark vignette, title logo typography, prominent PLAY NOW launch button, 10-screenshot gallery with fullscreen lightbox, and custom artwork studio.
+2. **Universal Non-Blocking Background Workers:**
+   - Heavy filesystem and disk scans are offloaded to background threads via `tauri::async_runtime::spawn_blocking`, eliminating UI hangs across all tabs.
+3. **Internal Necessary Files & Persistence:**
+   - **Generic SQLite Persistence (`database.sqlite`):** Stores custom collections, user title overrides, favorite flags, and artwork paths in WAL mode.
+   - **In-Memory KV Tier (`mem_kv`):** Provides sub-millisecond retrieval of games and collections with zero UI hang.
+4. **Internal Plugin Engine (`src-tauri/src/plugins/`):**
+   - Provides internal Rust support for platform scanning, launch protocol generation, and store CDN artwork resolution.
+   - Built directly into the core `universal_game_launcher_lib` without detached crate overhead or loose JSON files.
 
-| Module | Responsibility |
-| :--- | :--- |
-| `steam/` | Locating Steam, parsing Valve KeyValues (text and binary), reading libraries, collections, and shortcuts, and moving installed games between library folders. |
-| `metadata/` | One client per provider, plus the shared HTTP client and provider registry. |
-| `autocat` | The rule engine that turns metadata into proposed collections. |
-| `filter` | The Allowed / Required / Excluded filter model. |
-| `cache` | Embedded SQLite database (`metadata.db`) with WAL mode, indexing, TTL checking, and precompiled Community Game Catalog seed (`catalog_seed.bin` / `catalog.db`). |
-| `settings` | Loading and saving local settings and API keys. |
-| `backup` | Timestamped file backups taken before any write. |
-| `commands` | The Tauri IPC surface and shared application state. |
+### 2. Features Provided via Plugins (`src/lib/plugins/`)
+All external integrations are decoupled into the in-app modular plugin ecosystem:
+- **Game Platform Integrations (`src/lib/plugins/platforms/`):** Discovering installed titles and delegating launch protocols for Steam, Epic Games (official launcher or optional Legendary CLI), GOG Galaxy, Xbox, EA App, Ubisoft Connect, Battle.net, itch.io, Amazon Games, Rockstar Games, and Standalone Executables.
+- **Metadata Providers (`src/lib/plugins/metadata/`):** Retrieving covers, heroes, descriptions, release years, tags, and reviews via Steam Store, GOG Catalog, IGDB, SteamGridDB, PCGamingWiki, ProtonDB, HowLongToBeat, and itch.io.
+- **Utility Plugins (`src/lib/plugins/utility/`):** Delivering live notifications, giveaways, deals, patch notes, and disk storage inspection.
+- **Media Enhancements (`src/lib/plugins/media/`):** Video trailer streaming and ambient game soundtrack playback.
+- **Decoupled Settings Forms:** Each plugin exports its own `PluginSettingsConfig` schema, rendered inside the dedicated tabbed `PluginSettingsDialog.svelte` sub-window.
 
-## 🔁 Typical flow
+---
 
-```mermaid
-sequenceDiagram
-    participant UI as SvelteKit SPA
-    participant CMD as Tauri command
-    participant Core as Rust core
-    participant Steam as Steam files
-    UI->>CMD: load_library()
-    CMD->>Core: parse manifests + collections + shortcuts
-    Core->>Steam: read appmanifest_*.acf, namespace json, shortcuts.vdf
-    Steam-->>Core: raw data
-    Core-->>UI: Vec<Game> (camelCase JSON)
-```
+## 🔒 Non-Invasive Safety Invariant
+The core launcher operates completely non-invasively:
+- Never modifies or writes to external client files (no Steam VDF tampering).
+- Never requires storefront clients to be closed during normal operation.
+- Never handles or stores user passwords or login credentials.
+- All game launching delegates to official client protocols or standalone binaries.
 
-For writes, the same path applies with two extra guards: the app checks that Steam is not running,
-and it backs up the target file before modifying it.
+---
 
-## 🎯 Design goals
+## ➡️ Next Steps
 
-- **Resilience** — read documented local formats and public APIs, never scrape HTML.
-- **Safety** — refuse risky writes and make every write reversible.
-- **Clarity** — keep Steam knowledge in one layer and the UI free of filesystem concerns.
-
-## ➡️ Next
-
-- [Steam Data Layer](Steam-Data-Layer.md)
-- [Backend (Rust)](Backend-Rust.md)
+- [Plugins Architecture](Plugins-Architecture.md) — modular plugin engine details.
+- [Backend Rust Architecture](Backend-Rust.md) — internal Rust modules and IPC.
+- [Security Model](Security.md) — non-invasive security and credential boundaries.

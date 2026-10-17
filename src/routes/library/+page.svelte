@@ -4,6 +4,8 @@
   import { api, errorMessage } from "$lib/api";
   import { t, locale, activeLanguage } from "$lib/i18n";
   import { customNames, error, games, loading, selectedGameId, settings } from "$lib/stores";
+  import { getPlatformMetadata, pluginEngine } from "$lib/plugins";
+  import AddGameModal from "$lib/components/library/AddGameModal.svelte";
   import type { AppMeta, Game, MediaItem } from "$lib/types";
 
   // Per-game details state
@@ -14,38 +16,15 @@
   let selectedGalleryIdx = $state(0);
   let activeLightboxMedia = $state<MediaItem | null>(null);
   let showManageModal = $state(false);
+  let showAddGameModal = $state(false);
+  let isStandaloneEnabled = $state(true);
   let managingGame = $state<Game | null>(null);
   let actionFeedback = $state<string | null>(null);
   let modalCustomName = $state("");
   let modalFeedback = $state<string | null>(null);
-
-  const platformLabels: Record<string, string> = {
-    steam: "Steam",
-    gog: "GOG",
-    epic: "Epic Games",
-    itch: "itch.io",
-    ubisoft: "Ubisoft",
-    ea: "EA",
-    battlenet: "Battle.net",
-    amazon: "Amazon",
-    xbox: "Xbox",
-    rockstar: "Rockstar",
-    other: "Other"
-  };
-
-  function getPlatformIcon(platform: string): string {
-    switch (platform) {
-      case "steam": return "🎮";
-      case "gog": return "🌌";
-      case "epic": return "⚡";
-      case "itch": return "👾";
-      case "ubisoft": return "🌀";
-      case "ea": return "⚽";
-      case "battlenet": return "⚔️";
-      case "xbox": return "🟢";
-      default: return "🎲";
-    }
-  }
+  let selectedEnhanceProvider = $state("all");
+  let overrideExisting = $state(false);
+  let isEnhancing = $state(false);
 
   function getDisplayName(game: Game | null | undefined): string {
     if (!game) return "";
@@ -166,7 +145,22 @@
     loadingMeta = true;
 
     try {
-      const meta = await api.getCachedGameMetadata(game.appId, game.name, game.exe);
+      // 1. Check persistent KV cache first
+      let meta = await api.kvGetJson<AppMeta>(`game_meta:${game.appId}`);
+      if (!meta) {
+        meta = await api.getCachedGameMetadata(game.appId, game.name, game.exe);
+      }
+
+      // 2. Default source per platform is the game provider:
+      // If no metadata or missing provider fields, query the native provider plugin
+      if (!meta || (!meta.shortDescription && !meta.developers?.length && !meta.heroImage)) {
+        const providerData = await pluginEngine.fetchProviderGameData(game);
+        if (providerData) {
+          meta = pluginEngine.mergeProviderData(meta, providerData, game, false);
+          await api.kvSetJson(`game_meta:${game.appId}`, meta);
+        }
+      }
+
       gameMeta = meta;
       mediaItems = buildMediaGallery(game, meta);
     } catch {
@@ -177,16 +171,88 @@
     }
   }
 
-  async function refreshCurrentGameMetadata(game: Game) {
+  async function refreshCurrentGameMetadata(game: Game, isReset = false) {
     loadingMeta = true;
     try {
-      const meta = await api.refreshGameMetadata(game.appId, true);
+      let meta = gameMeta;
+      // 1. Fetch from native platform provider plugin
+      const providerData = await pluginEngine.fetchProviderGameData(game);
+
+      // 2. If it's a native Steam game, also query the backend Steam refresh
+      if (game.platform === "steam" || game.kind === "steam") {
+        try {
+          const steamMeta = await api.refreshGameMetadata(game.appId, isReset);
+          if (steamMeta) {
+            meta = steamMeta;
+          }
+        } catch {
+          // Non-fatal if backend steam call fails
+        }
+      }
+
+      if (providerData) {
+        meta = pluginEngine.mergeProviderData(meta, providerData, game, isReset);
+      }
+
+      if (meta) {
+        await api.kvSetJson(`game_meta:${game.appId}`, meta);
+      }
+
       gameMeta = meta;
       mediaItems = buildMediaGallery(game, meta);
-      actionFeedback = "Metadata refreshed from store!";
+      actionFeedback = isReset
+        ? "Metadata cache reset to provider defaults!"
+        : "Metadata refreshed from provider source!";
       setTimeout(() => (actionFeedback = null), 4000);
     } catch (e) {
       actionFeedback = `Metadata refresh failed: ${errorMessage(e)}`;
+    } finally {
+      loadingMeta = false;
+    }
+  }
+
+  async function handleEnhanceMetadata(
+    game: Game,
+    options?: { providerId?: string; override?: boolean }
+  ) {
+    isEnhancing = true;
+    try {
+      const targetProvider = options?.providerId && options.providerId !== "all"
+        ? options.providerId
+        : (selectedEnhanceProvider !== "all" ? selectedEnhanceProvider : undefined);
+
+      const { meta, enhancedBy } = await pluginEngine.enhanceGameMetadata(gameMeta, game, {
+        providerId: targetProvider,
+        override: options?.override ?? overrideExisting
+      });
+
+      gameMeta = meta;
+      mediaItems = buildMediaGallery(game, meta);
+      const provList = enhancedBy.length ? enhancedBy.join(", ") : "Metadata providers";
+      modalFeedback = `Enhanced details using: ${provList}`;
+      actionFeedback = `Enhanced metadata via ${provList}!`;
+      setTimeout(() => {
+        actionFeedback = null;
+        modalFeedback = null;
+      }, 5000);
+    } catch (e) {
+      const err = `Enhancement failed: ${errorMessage(e)}`;
+      modalFeedback = err;
+      actionFeedback = err;
+    } finally {
+      isEnhancing = false;
+    }
+  }
+
+  async function handleResetMetadataCache(game: Game) {
+    loadingMeta = true;
+    try {
+      await api.kvDelete(`game_meta:${game.appId}`);
+      await refreshCurrentGameMetadata(game, true);
+      modalFeedback = "Metadata cache reset to provider defaults.";
+      setTimeout(() => (modalFeedback = null), 4000);
+    } catch (e) {
+      modalFeedback = `Reset failed: ${errorMessage(e)}`;
     } finally {
       loadingMeta = false;
     }
@@ -295,6 +361,14 @@
   });
 
   onMount(async () => {
+    try {
+      const plugins = await api.getInstalledPlugins();
+      const standalone = plugins.find((p) => p.id === "platform-standalone");
+      isStandaloneEnabled = standalone ? standalone.enabled : true;
+    } catch {
+      isStandaloneEnabled = true;
+    }
+
     if ($games.length === 0) {
       loading.set(true);
       try {
@@ -321,7 +395,7 @@
     <div class="details-topbar glass">
       <div class="topbar-title-block">
         <h2 class="topbar-game-name">{getLocalizedTitle(selectedGame, gameMeta)}</h2>
-        <span class="pill pill-accent2">{platformLabels[selectedGame.platform] || selectedGame.platform}</span>
+        <span class="pill pill-accent2">{selectedGame.console || getPlatformMetadata(selectedGame.platform).label}</span>
         {#if selectedGame.installed}
           <span class="pill pill-ok">Installed</span>
         {:else}
@@ -361,6 +435,16 @@
           <span>{loadingMeta ? $t("library.refreshingMetadata") : $t("library.refreshMetadata")}</span>
         </button>
 
+        <button
+          class="btn btn-ghost"
+          onclick={() => handleEnhanceMetadata(selectedGame!)}
+          title="Enhance game details and fill in missing metadata from metadata sources"
+          disabled={loadingMeta || isEnhancing}
+        >
+          <span class:spin={isEnhancing}>✨</span>
+          <span>{isEnhancing ? "Enhancing…" : "Enhance Metadata"}</span>
+        </button>
+
         <button class="btn btn-ghost" onclick={() => openManageModal(selectedGame!)} title="Manage Game Options">
           ⚙ Manage
         </button>
@@ -373,6 +457,16 @@
         >
           {selectedGame.favorite ? "★" : "☆"}
         </button>
+
+        {#if isStandaloneEnabled}
+          <button
+            class="btn btn-ghost add-game-btn"
+            onclick={() => (showAddGameModal = true)}
+            title="Add local game manually (Standalone & Local Executables)"
+          >
+            ➕ Add Game
+          </button>
+        {/if}
       </div>
     </div>
 
@@ -388,8 +482,8 @@
           <img class="hero-capsule" src={coverUrl} alt={selectedGame.name} />
         {:else}
           <div class="hero-capsule hero-capsule-fallback platform-{selectedGame.platform}">
-            <span class="fallback-icon">{getPlatformIcon(selectedGame.platform)}</span>
-            <span class="fallback-platform">{platformLabels[selectedGame.platform] || selectedGame.platform}</span>
+            <span class="fallback-icon">{getPlatformMetadata(selectedGame.platform).icon}</span>
+            <span class="fallback-platform">{getPlatformMetadata(selectedGame.platform).label}</span>
           </div>
         {/if}
 
@@ -399,7 +493,7 @@
             <p class="hero-desc">{getLocalizedDescription(gameMeta)}</p>
           {/if}
           <div class="row hero-tags">
-            <span class="pill pill-accent">{platformLabels[selectedGame.platform]}</span>
+            <span class="pill pill-accent">{getPlatformMetadata(selectedGame.platform).label}</span>
             <span class="pill pill-dim">App ID: {selectedGame.appId}</span>
             {#if selectedGame.playtimeMinutes}
               <span class="pill pill-dim">Playtime: {formatPlaytime(selectedGame.playtimeMinutes)}</span>
@@ -530,7 +624,7 @@
           <div class="info-table">
             <div class="info-row">
               <span class="muted">Platform:</span>
-              <span>{platformLabels[selectedGame.platform] || selectedGame.platform}</span>
+              <span>{selectedGame.console || getPlatformMetadata(selectedGame.platform).label}</span>
             </div>
             {#if gameMeta?.developers && gameMeta.developers.length > 0}
               <div class="info-row">
@@ -655,6 +749,16 @@
       <div class="empty-icon">🎮</div>
       <h2>No Games in Library</h2>
       <p class="muted">Scan your installed gaming platforms or connect accounts in Platforms to populate your unified library.</p>
+      {#if isStandaloneEnabled}
+        <button
+          type="button"
+          class="btn btn-primary"
+          style="margin-top: 1.25rem;"
+          onclick={() => (showAddGameModal = true)}
+        >
+          ➕ Add Local Game Manually
+        </button>
+      {/if}
     </div>
   {/if}
 </div>
@@ -699,6 +803,75 @@
             {managingGame.launchUri || managingGame.exe || "Platform default"}
           </div>
         </div>
+
+        <div class="form-group" style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.08)">
+          <span class="form-label">Metadata & Provider Management</span>
+          
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.5rem;font-size:0.85rem">
+            <span class="muted">Default Game Provider:</span>
+            <span class="pill pill-default">
+              {getPlatformMetadata(managingGame.platform).icon} {getPlatformMetadata(managingGame.platform).label}
+            </span>
+          </div>
+
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-top:0.5rem;font-size:0.85rem">
+            <span class="muted">Enhancement Status:</span>
+            {#if gameMeta?.userEnhanced}
+              <span class="pill pill-accent" title="Enhanced from metadata providers">
+                ✨ Enhanced ({gameMeta.enhancedBy?.join(", ") || "Metadata Sources"})
+              </span>
+            {:else}
+              <span class="pill pill-default">Default Provider Data</span>
+            {/if}
+          </div>
+
+          <div style="margin-top:1rem">
+            <label for="manual-enhance-source" class="form-label" style="font-size:0.8rem">Manual Metadata Enhancement Source:</label>
+            <select id="manual-enhance-source" class="input-text" bind:value={selectedEnhanceProvider} style="width:100%;margin-top:0.25rem">
+              <option value="all">All Enabled Metadata Sources (Sequential Fallback)</option>
+              <option value="metadata-screenscraper">ScreenScraper (Arcade & Retro Consoles)</option>
+              <option value="metadata-thegamesdb">TheGamesDB (Community Game Database)</option>
+              <option value="metadata-igdb">IGDB (Twitch / Amazon Games Database)</option>
+              <option value="metadata-steamgriddb">SteamGridDB (High-Res Covers & Grids)</option>
+              <option value="metadata-hltb">HowLongToBeat (Playtime Statistics)</option>
+              <option value="metadata-pcgamingwiki">PCGamingWiki (Configuration & Fixes)</option>
+              <option value="metadata-protondb">ProtonDB (Linux & Deck Compatibility)</option>
+            </select>
+          </div>
+
+          <label style="display:flex;align-items:center;gap:0.5rem;margin-top:0.75rem;cursor:pointer;font-size:0.825rem">
+            <input type="checkbox" bind:checked={overrideExisting} />
+            <span>Override existing details with metadata provider</span>
+          </label>
+          <span class="muted-xs" style="display:block;margin-left:1.5rem">
+            When unchecked, metadata providers only fill in missing fields. When checked, provider metadata is replaced with the selected source.
+          </span>
+
+          <div style="display:flex;gap:0.5rem;margin-top:1rem;flex-wrap:wrap">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              onclick={() => handleEnhanceMetadata(managingGame!)}
+              disabled={isEnhancing}
+            >
+              <span class:spin={isEnhancing}>✨</span>
+              <span>{isEnhancing ? "Scanning Metadata…" : "Enhance Metadata"}</span>
+            </button>
+
+            <button
+              type="button"
+              class="btn btn-ghost"
+              onclick={() => handleResetMetadataCache(managingGame!)}
+              title="Clears user/metadata-provider enhancements and restores default game provider data"
+              disabled={loadingMeta}
+            >
+              ↺ Reset Cache to Provider Defaults
+            </button>
+          </div>
+          <span class="muted-xs" style="margin-top:0.5rem;display:block">
+            Note: Game providers are only allowed to override metadata from metadata providers when you choose to reset the metadata cache.
+          </span>
+        </div>
       </div>
 
       <div class="row modal-footer" style="justify-content:flex-end;gap:0.5rem;margin-top:1.5rem">
@@ -724,6 +897,10 @@
       {/if}
     </div>
   </div>
+{/if}
+
+{#if showAddGameModal}
+  <AddGameModal onclose={() => (showAddGameModal = false)} />
 {/if}
 
 <style>

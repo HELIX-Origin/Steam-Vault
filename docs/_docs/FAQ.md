@@ -1,58 +1,44 @@
 ---
 layout: docs
 title: FAQ
-summary: Frequently asked questions about Steam Vault
+summary: Frequently asked questions about Universal Game Launcher
 parent: Documentation Home
 nav_order: 11
 ---
 
 # FAQ
 
-## Is Steam Vault safe to use on my real library?
+## What is Universal Game Launcher?
 
-Yes, within a clear safety model: writes are refused while Steam is running, and every modified file
-is backed up with a timestamp first. You can always restore a backup. See
-[Collections](Collections.md).
+Universal Game Launcher is a fast, standalone, privacy-first cross-platform universal game library organizer and launcher built with Tauri v2 (Rust backend and SvelteKit frontend). It aggregates your game libraries across Steam, Epic Games Store, GOG Galaxy, Xbox, EA App, Ubisoft Connect, Battle.net, itch.io, Amazon Games, Standalone executables, and Emulation / ROM collections.
 
-## Does it upload my data anywhere?
+## Does Universal Game Launcher modify my launcher files or require Steam to be closed?
 
-No. Everything is processed locally. The only network requests are metadata lookups to the providers
-you enable, and only when you ask for them. See
-[Metadata Providers](Metadata-Providers.md).
+No. Universal Game Launcher is completely **non-invasive**. It **never** writes to Steam's `shortcuts.vdf`, `cloud-storage-namespace-1.json`, or external client files. Official launchers do not need to be closed while using Universal Game Launcher. All collections, custom names, and artwork mappings are persisted locally in our generic embedded SQLite database (`database.sqlite`).
+
+## How does the app launch games?
+
+Universal Game Launcher uses **native client protocol delegation**:
+- Storefront games launch via their official client URI schemes (`steam://`, `com.epicgames.launcher://`, `goggalaxy://`, etc.).
+- Standalone titles and emulator plugins execute their respective local binaries directly.
+This preserves official game overlays, cloud synchronization, playtime tracking, friend lists, and achievement unlocks without ever touching or storing your credentials.
+
+## Does it upload my data or collect telemetry?
+
+No. Universal Game Launcher is **100% on-device and privacy-first**. There is no account requirement, no user tracking, and zero telemetry. Network communication is strictly limited to user-requested metadata and artwork lookups to providers you explicitly enable.
 
 ## Do I need API keys to use it?
 
-No. The core organizing features work with keyless Steam Store metadata. Keys only add extra
-sources: Steam Web API (owned games/playtime), SteamGridDB (artwork), and IGDB (rich metadata).
+No. All primary platform integrations and core storefront metadata operate completely keyless out-of-the-box. Optional API keys (e.g. SteamGridDB, IGDB, MobyGames) can be configured per-plugin in the **Plugin Settings** sub-window to enrich high-resolution artwork and community metadata.
 
-## Why is RAWG not supported?
+## How does the plugin architecture work?
 
-RAWG is defunct. No RAWG provider exists, by design. Steam Web API, SteamGridDB, and IGDB are the
-only keyed providers.
+The core application provides the UI, storage statistics, persistence, and launcher engine. All external features — platform integrations, emulation/ROM systems, metadata scrapers, free game alerts, deals, and patch notes — are provided via native in-app modular plugins under `src/lib/plugins/`.
 
-## Will a Steam update break it?
+## Can I organize emulation and ROM libraries?
 
-Steam Vault deliberately reads **stable, documented data sources** — Steam's own local files and
-public APIs — rather than scraping HTML, so ordinary updates are unlikely to break it. When Steam
-does change a format, the parser is isolated and can be updated in one place.
-
-## Does it work on Linux and macOS?
-
-Steam Vault is built with Tauri, which is cross-platform. Windows is the primary development target;
-the data layer includes cross-platform discovery paths. Platform-specific testing is ongoing.
-
-## Can I undo a change?
-
-Yes — restore the relevant timestamped backup from the app data directory. Because Steam Vault edits
-Steam's own files, a backup is the cleanest way to roll back.
-
-## Is this affiliated with Depressurizer or Valve?
-
-No. Steam Vault is an independent, clean-room project inspired by Depressurizer (by Andrew Martin
-and contributors). It is not affiliated with or endorsed by Valve or the Depressurizer project.
+Yes. Emulation platforms and ROM scrapers are fully supported through the drop-in plugin ecosystem. Because Universal Game Launcher distributes direct installers rather than being restricted by app store policies, users can freely install and configure emulator and ROM plugins.
 
 ## Where do I report bugs or request features?
 
-Open an issue on the
-[tracker](https://github.com/HELIX-Origin/Steam-Vault/issues). For security reports, follow
-[SECURITY.md](https://github.com/HELIX-Origin/Steam-Vault/blob/main/SECURITY.md).
+Open an issue on the [Universal Game Launcher GitHub Issues](https://github.com/HELIX-Origin/Universal-Game-Launcher/issues). For security reports, see [SECURITY.md](https://github.com/HELIX-Origin/Universal-Game-Launcher/blob/main/SECURITY.md).

@@ -1,20 +1,22 @@
 ---
 layout: docs
 title: Localization (i18n)
-summary: Complete guide to Steam Vault's hand-rolled multilingual architecture and supported languages
+summary: Complete guide to Universal Game Launcher's hand-rolled multilingual architecture and supported languages
 parent: Documentation Home
 nav_order: 10
 ---
 
 # Localization (i18n)
 
-Steam Vault features a hand-rolled, zero-dependency reactive internationalization engine designed specifically for Steam library management. It provides full, native UI localization across all 30 officially supported Valve/Steam platform languages.
+Universal Game Launcher features a hand-rolled, zero-dependency reactive internationalization engine designed specifically for multi-platform game library management. It provides full, native UI localization across all 30 officially supported gaming storefront languages.
+
+---
 
 ## 🌐 Supported Languages
 
-Steam Vault mirrors Valve's official language catalogue:
+Universal Game Launcher provides comprehensive translation across the following languages:
 
-| Language | Code | Steam API Code | Native Name | Direction |
+| Language | Code | Storefront API Code | Native Name | Direction |
 | :--- | :--- | :--- | :--- | :--- |
 | **English** | `en` | `english` | English | Left-to-Right |
 | **German** | `de` | `german` | Deutsch | Left-to-Right |
@@ -47,9 +49,11 @@ Steam Vault mirrors Valve's official language catalogue:
 | **Vietnamese** | `vi` | `vietnamese` | Tiếng Việt | Left-to-Right |
 | **Indonesian** | `id` | `indonesian` | Bahasa Indonesia | Left-to-Right |
 
+---
+
 ## ⚙️ Architecture & Features
 
-1. **Zero External Dependencies**: The localization system is hand-rolled in pure TypeScript and Svelte 5 reactive stores, avoiding heavy external frameworks and bloat.
+1. **Zero External Dependencies**: The localization system is hand-rolled in pure TypeScript and Svelte 5 reactive stores (`$t`), avoiding heavy external translation bundles or runtime overhead.
 2. **Instant Reactive Switching**: Changing languages in **Settings** or via the language selector immediately updates the `$t` store across the entire interface without reloading the window.
 3. **Bi-directional Layout Support (RTL)**: Dynamic detection applies `dir="rtl"` automatically when Arabic is selected.
 4. **Fallback Safety**: If any translation key is missing or incomplete in a locale, the engine automatically falls back to the English dictionary, guaranteeing no broken keys or missing UI elements.

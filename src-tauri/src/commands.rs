@@ -68,21 +68,6 @@ fn resolve_account(root: &Path, state: &AppState, account: Option<String>) -> Op
         .or_else(|| paths::read_accounts(root).first().map(|a| a.id3.clone()))
 }
 
-/// Result of computing AutoCat assignments (dry-run, review before applying).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutoCatAssignment {
-    pub collection: String,
-    pub app_ids: Vec<u32>,
-}
-
-/// A proposed category rename/addition computed from AutoCats.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutoCatPlan {
-    pub assignments: Vec<AutoCatAssignment>,
-    pub games_without_metadata: Vec<u32>,
-}
 
 // ---------------------------------------------------------------------------
 // Discovery & settings
@@ -192,27 +177,11 @@ fn collect_library(root: &Path, account: Option<&str>, state: &AppState) -> AppR
         apply_membership(&mut games, &cols);
     }
 
-    // Populate direct store artwork URLs (capsule cover, hero banner, logo)
+    // Populate cached store artwork URLs (capsule cover, hero banner, logo)
     {
-        let settings = state.settings_snapshot();
-        let plugins = state.plugins.lock().expect("plugins lock poisoned");
         let cache = state.cache.lock().expect("cache lock poisoned");
 
         for game in &mut games {
-            if game.capsule_image.is_none() {
-                let platform_id = game.platform.id();
-                if let Some(art) = plugins.resolve_store_artwork(
-                    platform_id,
-                    game.app_id,
-                    &game.name,
-                    &settings.enabled_plugins,
-                ) {
-                    game.capsule_image = art.capsule_image;
-                    game.hero_image = art.hero_image;
-                    game.logo_image = art.logo_image;
-                }
-            }
-
             if game.capsule_image.is_none() {
                 let meta = cache
                     .get("shortcut-meta", game.app_id, None)
@@ -333,9 +302,6 @@ pub fn load_collections(
     Ok(Vec::new())
 }
 
-fn ensure_steam_closed() -> AppResult<()> {
-    Ok(())
-}
 
 #[tauri::command]
 pub fn update_collection(
@@ -649,27 +615,7 @@ pub async fn ensure_game_metadata(
         result.requested += 1;
         let mut resolved: Option<AppMeta> = None;
 
-        // 1. Official Store Provider lookup based on storefront platform
-        match game.platform {
-            Platform::Gog => {
-                if let Ok(Some(gog_meta)) = metadata::gog::gog_lookup(&client, &game.name).await {
-                    resolved = Some(gog_meta);
-                }
-            }
-            Platform::Epic => {
-                if let Ok(Some(epic_meta)) = metadata::epic::epic_lookup(&client, &game.name).await {
-                    resolved = Some(epic_meta);
-                }
-            }
-            Platform::Itch => {
-                if let Ok(Some(itch_meta)) = metadata::itch::itch_lookup(&client, &game.name).await {
-                    resolved = Some(itch_meta);
-                }
-            }
-            _ => {}
-        }
-
-        // 2. Local engine inspection (itch receipt, RPG Maker, Ren'Py, PE VersionInfo)
+        // 1. Local engine inspection (itch receipt, RPG Maker, Ren'Py, PE VersionInfo)
         if resolved.is_none() {
             let dir = game.install_dir.as_deref().map(Path::new);
             let exe = game.exe.as_deref().map(Path::new);
@@ -772,40 +718,43 @@ pub async fn refresh_game_metadata(
     let mut resolved: Option<AppMeta> = None;
 
     // 1. Primary Storefront / Platform Provider (Authoritative Origin)
-    match game.platform {
-        crate::platforms::Platform::Steam if game.kind == GameKind::Steam && game.app_id != 0 => {
-            if let Ok(map) = metadata::steam_store::fetch_app_details(
-                &client,
-                &[game.app_id],
-                &settings.country_code,
-                &settings.language,
-            )
-            .await
-            {
-                if let Some(meta) = map.get(&game.app_id) {
-                    resolved = Some(meta.clone());
-                }
+    if game.kind == GameKind::Steam && game.app_id != 0 {
+        if let Ok(map) = metadata::steam_store::fetch_app_details(
+            &client,
+            &[game.app_id],
+            &settings.country_code,
+            &settings.language,
+        )
+        .await
+        {
+            if let Some(meta) = map.get(&game.app_id) {
+                resolved = Some(meta.clone());
             }
         }
-        crate::platforms::Platform::Gog => {
-            if let Ok(Some(gog_meta)) = metadata::gog::gog_lookup(&client, &game.name).await {
-                resolved = Some(gog_meta);
-            }
-        }
-        crate::platforms::Platform::Epic => {
-            if let Ok(Some(epic_meta)) = metadata::epic::epic_lookup(&client, &game.name).await {
-                resolved = Some(epic_meta);
-            }
-        }
-        crate::platforms::Platform::Itch => {
-            if let Ok(Some(itch_meta)) = metadata::itch::itch_lookup(&client, &game.name).await {
-                resolved = Some(itch_meta);
-            }
-        }
-        _ => {}
     }
 
-
+    // 2. Local directory engine / receipt inspection
+    if let Some(ref exe_path) = game.exe {
+        let p = std::path::Path::new(exe_path);
+        let dir = p.parent();
+        if let Some(local_meta) = metadata::local::inspect_local_game(dir, Some(p)) {
+            if let Some(ref mut cur) = resolved {
+                if cur.developers.is_empty() {
+                    cur.developers = local_meta.developers;
+                }
+                if cur.publishers.is_empty() {
+                    cur.publishers = local_meta.publishers;
+                }
+                for t in local_meta.tags {
+                    if !cur.tags.contains(&t) {
+                        cur.tags.push(t);
+                    }
+                }
+            } else {
+                resolved = Some(local_meta);
+            }
+        }
+    }
 
     // 3. Steam Search fallback (for non-Steam games that exist on Steam Store)
     if resolved
@@ -855,111 +804,61 @@ pub async fn refresh_game_metadata(
         }
     }
 
-    // 4. GOG Store lookup (official covers, galaxy hero, developers, tags)
-    if resolved
-        .as_ref()
-        .map_or(true, |m| m.developers.is_empty() || m.publishers.is_empty() || m.genres.is_empty())
-    {
-        if let Ok(Some(gog_meta)) = metadata::gog::gog_lookup(&client, &game.name).await {
-            if let Some(ref mut cur) = resolved {
-                if cur.developers.is_empty() {
-                    cur.developers = gog_meta.developers;
-                }
-                if cur.publishers.is_empty() {
-                    cur.publishers = gog_meta.publishers;
-                }
-                if cur.release_year.is_none() {
-                    cur.release_year = gog_meta.release_year;
-                }
-                if cur.capsule_image.is_none() {
-                    cur.capsule_image = gog_meta.capsule_image;
-                }
-                if cur.hero_image.is_none() {
-                    cur.hero_image = gog_meta.hero_image;
-                }
-                for g in gog_meta.genres {
-                    if !cur.genres.contains(&g) {
-                        cur.genres.push(g);
-                    }
-                }
-            } else {
-                resolved = Some(gog_meta);
-            }
-        }
-    }
+    let existing_cached = {
+        let cache = state.cache.lock().expect("cache lock poisoned");
+        cache.get("shortcut-meta", app_id, None)
+            .or_else(|| cache.get("steam-store", app_id, None))
+    };
 
-    // 8. Epic Games Store catalog lookup
-    if resolved
-        .as_ref()
-        .map_or(true, |m| m.developers.is_empty() || m.short_description.is_none())
-    {
-        if let Ok(Some(epic_meta)) = metadata::epic::epic_lookup(&client, &game.name).await {
-            if let Some(ref mut cur) = resolved {
-                if cur.short_description.is_none() {
-                    cur.short_description = epic_meta.short_description;
-                }
-                if cur.capsule_image.is_none() {
-                    cur.capsule_image = epic_meta.capsule_image;
-                }
-                if cur.hero_image.is_none() {
-                    cur.hero_image = epic_meta.hero_image;
-                }
-            } else {
-                resolved = Some(epic_meta);
-            }
-        }
-    }
-
-    // 6. Local directory engine / receipt inspection
-    if let Some(ref exe_path) = game.exe {
-        let p = std::path::Path::new(exe_path);
-        let dir = p.parent();
-        if let Some(local_meta) = metadata::local::inspect_local_game(dir, Some(p)) {
-            if let Some(ref mut cur) = resolved {
-                if cur.developers.is_empty() {
-                    cur.developers = local_meta.developers;
-                }
-                if cur.publishers.is_empty() {
-                    cur.publishers = local_meta.publishers;
-                }
-                for t in local_meta.tags {
-                    if !cur.tags.contains(&t) {
-                        cur.tags.push(t);
-                    }
-                }
-            } else {
-                resolved = Some(local_meta);
-            }
-        }
-    }
-
-    // 12. itch.io online lookup
-    if resolved
-        .as_ref()
-        .map_or(true, |m| m.capsule_image.is_none() || m.short_description.is_none())
-    {
-        if let Ok(Some(itch_meta)) = metadata::itch::itch_lookup(&client, &game.name).await {
-            if let Some(ref mut cur) = resolved {
-                if cur.capsule_image.is_none() {
-                    cur.capsule_image = itch_meta.capsule_image;
-                }
-                if cur.short_description.is_none() {
-                    cur.short_description = itch_meta.short_description;
-                }
-                for t in itch_meta.tags {
-                    if !cur.tags.contains(&t) {
-                        cur.tags.push(t);
-                    }
-                }
-            } else {
-                resolved = Some(itch_meta);
-            }
-        }
-    }
+    let user_enhanced = existing_cached.as_ref().and_then(|m| m.user_enhanced).unwrap_or(false);
+    let is_cache_reset = _force.unwrap_or(false);
 
     if let Some(mut final_meta) = resolved {
         final_meta.app_id = game.app_id;
         final_meta.fetched_at = Some(chrono::Utc::now().timestamp());
+
+        // Invariant: Game providers should only be allowed to override the metadata
+        // from the metadata providers if the user chooses to reset the metadata cache.
+        if user_enhanced && !is_cache_reset {
+            if let Some(existing) = existing_cached {
+                if existing.short_description.is_some() {
+                    final_meta.short_description = existing.short_description;
+                }
+                if !existing.developers.is_empty() {
+                    final_meta.developers = existing.developers;
+                }
+                if !existing.publishers.is_empty() {
+                    final_meta.publishers = existing.publishers;
+                }
+                if !existing.genres.is_empty() {
+                    final_meta.genres = existing.genres;
+                }
+                if !existing.tags.is_empty() {
+                    final_meta.tags = existing.tags;
+                }
+                if existing.release_date.is_some() {
+                    final_meta.release_date = existing.release_date;
+                }
+                if existing.release_year.is_some() {
+                    final_meta.release_year = existing.release_year;
+                }
+                if existing.capsule_image.is_some() {
+                    final_meta.capsule_image = existing.capsule_image;
+                }
+                if existing.hero_image.is_some() {
+                    final_meta.hero_image = existing.hero_image;
+                }
+                if existing.logo_image.is_some() {
+                    final_meta.logo_image = existing.logo_image;
+                }
+                if existing.user_score.is_some() {
+                    final_meta.user_score = existing.user_score;
+                }
+                final_meta.user_enhanced = Some(true);
+                final_meta.enhanced_by = existing.enhanced_by;
+            }
+        }
+
         let mut cache = state.cache.lock().expect("cache lock poisoned");
         if game.kind == GameKind::Steam {
             cache.put("steam-store", game.app_id, &final_meta);
@@ -969,7 +868,7 @@ pub async fn refresh_game_metadata(
         }
         Ok(Some(final_meta))
     } else {
-        Ok(None)
+        Ok(existing_cached)
     }
 }
 
@@ -991,101 +890,6 @@ pub async fn fetch_owned_games(state: State<'_, AppState>) -> AppResult<Vec<Owne
 }
 
 #[tauri::command]
-pub async fn steamgriddb_search(
-    term: String,
-    state: State<'_, AppState>,
-) -> AppResult<Vec<metadata::steamgriddb::SgdbGame>> {
-    let key = require_key(&state, "steamgriddb")?;
-    let client = metadata::http_client();
-    metadata::steamgriddb::search_games(&client, &key, &term).await
-}
-
-#[tauri::command]
-pub async fn steamgriddb_assets(
-    game_id: u32,
-    kind: String,
-    state: State<'_, AppState>,
-) -> AppResult<Vec<metadata::steamgriddb::SgdbAsset>> {
-    let key = require_key(&state, "steamgriddb")?;
-    let client = metadata::http_client();
-    match kind.as_str() {
-        "grids" => metadata::steamgriddb::grids(&client, &key, game_id, Some("600x900")).await,
-        "heroes" => metadata::steamgriddb::heroes(&client, &key, game_id).await,
-        "logos" => metadata::steamgriddb::logos(&client, &key, game_id).await,
-        "icons" => metadata::steamgriddb::icons(&client, &key, game_id).await,
-        other => Err(AppError::Invalid(format!("unknown artwork kind '{other}'"))),
-    }
-}
-
-#[tauri::command]
-pub async fn igdb_search(
-    query: String,
-    state: State<'_, AppState>,
-) -> AppResult<Vec<metadata::igdb::IgdbGame>> {
-    let settings = state.settings_snapshot();
-    let client_id = settings
-        .igdb_client_id
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| AppError::msg("No IGDB client id configured."))?;
-    let client_secret = settings
-        .igdb_client_secret
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| AppError::msg("No IGDB client secret configured."))?;
-
-    let client = metadata::http_client();
-    let token = metadata::igdb::request_token(&client, &client_id, &client_secret).await?;
-    metadata::igdb::search_games(&client, &client_id, &token, &query, 20).await
-}
-
-#[tauri::command]
-pub async fn pcgamingwiki_lookup(name: String) -> AppResult<Option<AppMeta>> {
-    let client = metadata::http_client();
-    metadata::extra::pcgamingwiki_lookup(&client, &name).await
-}
-
-#[tauri::command]
-pub async fn wikipedia_summary(title: String) -> AppResult<Option<String>> {
-    let client = metadata::http_client();
-    metadata::extra::wikipedia_summary(&client, &title).await
-}
-
-#[tauri::command]
-pub async fn wikipedia_game_lookup(title: String) -> AppResult<Option<AppMeta>> {
-    let client = metadata::http_client();
-    metadata::extra::wikipedia_game_lookup(&client, &title).await
-}
-
-#[tauri::command]
-pub async fn vndb_lookup(title: String) -> AppResult<Option<AppMeta>> {
-    let client = metadata::http_client();
-    metadata::vndb::vndb_lookup(&client, &title).await
-}
-
-#[tauri::command]
-pub async fn gog_lookup(title: String) -> AppResult<Option<AppMeta>> {
-    let client = metadata::http_client();
-    metadata::gog::gog_lookup(&client, &title).await
-}
-
-#[tauri::command]
-pub async fn epic_lookup(title: String) -> AppResult<Option<AppMeta>> {
-    let client = metadata::http_client();
-    metadata::epic::epic_lookup(&client, &title).await
-}
-
-#[tauri::command]
-pub async fn indiedb_lookup(title: String) -> AppResult<Option<AppMeta>> {
-    let client = metadata::http_client();
-    metadata::indiedb::indiedb_lookup(&client, &title).await
-}
-
-#[tauri::command]
-pub async fn itch_lookup(title: String) -> AppResult<Option<AppMeta>> {
-    let client = metadata::http_client();
-    metadata::itch::itch_lookup(&client, &title).await
-}
-
-#[tauri::command]
 pub async fn steam_store_search(
     term: String,
     state: State<'_, AppState>,
@@ -1101,17 +905,6 @@ pub async fn steam_store_search(
     .await
 }
 
-fn require_key(state: &AppState, provider: &str) -> AppResult<String> {
-    let settings = state.settings_snapshot();
-    let key = match provider {
-        "steamgriddb" => settings.steamgriddb_api_key,
-        "steam" => settings.steam_api_key,
-        _ => None,
-    };
-    key.filter(|value| !value.is_empty())
-        .ok_or_else(|| AppError::msg(format!("No API key configured for {provider}.")))
-}
-
 // ---------------------------------------------------------------------------
 // External platforms & the full owned library
 // ---------------------------------------------------------------------------
@@ -1124,31 +917,26 @@ pub struct ImportResult {
     pub skipped: Vec<String>,
 }
 
-/// Scan the machine for games installed by GOG, Epic, itch.io, and others.
-///
-/// Honours the per-platform preferences saved in Settings and looks on every
-/// mounted drive, so games installed on an external drive are discovered too.
+/// Scan the machine for games installed across platforms.
 #[tauri::command]
 pub fn detect_platforms(
     include_other_drives: Option<bool>,
     state: State<'_, AppState>,
 ) -> PlatformScan {
-    let settings = state.settings_snapshot();
-    platforms::scan_all(&platforms::ScanConfig {
-        sources: settings.platform_sources,
-        include_other_drives: include_other_drives.unwrap_or(false),
-    })
+    scan_all_platforms(include_other_drives, state)
 }
 
 /// Existing library folders for one platform, used to autofill Settings.
-///
-/// Mirrors the "Auto-detect" behaviour of the Steam folder field: the frontend
-/// asks for a platform's known folders and offers them as extra scan roots.
 #[tauri::command]
-pub fn find_platform_folders(platform: String) -> AppResult<Vec<String>> {
-    let platform = Platform::from_id(&platform)
-        .ok_or_else(|| AppError::Invalid(format!("unknown platform '{platform}'")))?;
-    Ok(platforms::library_folders(platform))
+pub fn find_platform_folders(platform: String, state: State<'_, AppState>) -> AppResult<Vec<String>> {
+    let settings = state.settings_snapshot();
+    let roots = settings
+        .platform_sources
+        .into_iter()
+        .filter(|s| s.id == platform)
+        .flat_map(|s| s.roots)
+        .collect();
+    Ok(roots)
 }
 
 /// Import selected platform games as local games without modifying Steam files.
@@ -1267,6 +1055,7 @@ pub async fn import_platform_games(
             kind: GameKind::Shortcut,
             installed: game.installed,
             collections: tags,
+            console: game.console,
             size_on_disk: game.size_on_disk.unwrap_or(0),
             ..Default::default()
         });
@@ -1377,14 +1166,19 @@ pub async fn refresh_owned_games(state: State<'_, AppState>) -> AppResult<OwnedL
 // ---------------------------------------------------------------------------
 
 /// Inspect registered library folders, their games, and mounted disks (read-only).
+/// Offloads the filesystem scan to a background thread pool so IPC never hangs.
 #[tauri::command]
-pub fn get_storage_report(
+pub async fn get_storage_report(
     account_id3: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<StorageReport> {
     let root = steam_root(&state)?;
     let account = resolve_account(&root, &state, account_id3);
-    crate::steam::storage::report(&root, account.as_deref())
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::steam::storage::report(&root, account.as_deref())
+    })
+    .await
+    .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?
 }
 
 // ---------------------------------------------------------------------------
@@ -1404,33 +1198,6 @@ pub fn toggle_plugin(id: String, enabled: bool, state: State<'_, AppState>) -> A
     settings.enabled_plugins.insert(id, enabled);
     crate::settings::save(&settings)?;
     Ok(())
-}
-
-#[tauri::command]
-pub fn open_plugins_folder() -> AppResult<bool> {
-    let dir = crate::plugins::plugins_dir();
-    let _ = std::fs::create_dir_all(&dir);
-    open_external_target(&dir.display().to_string())?;
-    Ok(true)
-}
-
-#[tauri::command]
-pub async fn install_plugin_from_url(
-    url: String,
-    state: State<'_, AppState>,
-) -> AppResult<crate::plugins::PluginInfo> {
-    let client = crate::metadata::http_client();
-    let plugin_id = crate::plugins::PluginEngine::install_plugin_package(&url, &client).await?;
-
-    let settings = state.settings_snapshot();
-    let mut plugins = state.plugins.lock().expect("plugins lock poisoned");
-    plugins.reload();
-
-    plugins
-        .list_plugins(&settings.enabled_plugins)
-        .into_iter()
-        .find(|p| p.id == plugin_id)
-        .ok_or_else(|| AppError::NotFound(format!("Plugin '{plugin_id}' not found after installation")))
 }
 
 #[tauri::command]
@@ -1870,10 +1637,66 @@ pub fn get_installed_launchers() -> AppResult<Vec<crate::platforms::LauncherStat
     Ok(crate::platforms::detect_all_launchers())
 }
 
+/// Autodetect binary from PATH, custom path override, or managed directories.
+#[tauri::command]
+pub fn check_binary_installed(
+    binaries: Vec<String>,
+    custom_path: Option<String>,
+) -> Option<String> {
+    crate::platforms::check_binary_installed(&binaries, custom_path.as_deref())
+}
+
+/// Silently install a package via winget into a user-manageable folder.
+#[tauri::command]
+pub fn install_winget_package(
+    package_id: String,
+    location: Option<String>,
+) -> AppResult<bool> {
+    crate::platforms::install_winget_package(&package_id, location.as_deref())
+}
+
+/// Checks if winget is installed and available on the host PATH.
+#[tauri::command]
+pub fn is_winget_available() -> bool {
+    crate::platforms::is_winget_available()
+}
+
+/// Retrieve user-manageable directories for tools and launchers.
+#[tauri::command]
+pub fn get_managed_directories() -> crate::platforms::ManagedDirectories {
+    crate::platforms::ManagedDirectories {
+        tools_dir: crate::platforms::managed_tools_dir().display().to_string(),
+        launchers_dir: crate::platforms::managed_launchers_dir().display().to_string(),
+        winget_available: crate::platforms::is_winget_available(),
+    }
+}
+
+/// Update user-configured custom directories for tools and launchers.
+#[tauri::command]
+pub fn set_managed_directories(
+    tools_dir: Option<String>,
+    launchers_dir: Option<String>,
+) -> AppResult<bool> {
+    let mut current = crate::settings::load();
+    current.custom_tools_dir = tools_dir.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    current.custom_launchers_dir = launchers_dir.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
+    crate::settings::save(&current)?;
+    Ok(true)
+}
+
+/// Open the user-accessible launchers directory in Explorer/Finder/File Manager.
+#[tauri::command]
+pub fn open_launchers_folder() -> AppResult<bool> {
+    let dir = crate::platforms::managed_launchers_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    open_external_target(&dir.display().to_string())?;
+    Ok(true)
+}
+
 /// Download and install the built-in standalone Legendary CLI and configure EOS service.
 #[tauri::command]
 pub async fn install_legendary() -> AppResult<crate::platforms::LauncherStatus> {
-    crate::platforms::launchers::install_legendary_cli().await
+    crate::platforms::install_legendary_cli().await
 }
 
 /// Open an external URL in the user's default web browser.
@@ -1886,7 +1709,7 @@ pub fn open_external_url(url: String) -> AppResult<bool> {
 /// Open the user-accessible tools directory in Explorer/Finder/File Manager.
 #[tauri::command]
 pub fn open_tools_folder() -> AppResult<bool> {
-    let dir = crate::platforms::launchers::managed_tools_dir();
+    let dir = crate::platforms::managed_tools_dir();
     let _ = std::fs::create_dir_all(&dir);
     open_external_target(&dir.display().to_string())?;
     Ok(true)
@@ -2058,7 +1881,7 @@ pub fn install_eos_overlay() -> AppResult<crate::platforms::EosOverlayStatus> {
     crate::platforms::install_eos_overlay()
 }
 
-pub use crate::platforms::{FreeGamePromotion, PatchNote, StoreDeal};
+pub use crate::platforms::{FeaturedStoreItem, FreeGamePromotion, PatchNote, StoreDeal};
 
 /// Fetch current 100% free games and giveaways from enabled storefront platforms (Steam, Epic, GOG, etc.).
 #[tauri::command]
@@ -2104,6 +1927,29 @@ pub async fn get_store_deals(
     let client = crate::metadata::http_client();
     let deals = crate::platforms::promotions::fetch_all_deals(&client, &enabled_platforms).await;
     Ok(deals)
+}
+
+/// Fetch highlighted featured storefront items across enabled platforms for the Store hero carousel.
+#[tauri::command]
+pub async fn get_featured_store_items(
+    platforms: Option<Vec<String>>,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<FeaturedStoreItem>> {
+    let settings = state.settings.lock().expect("settings lock poisoned").clone();
+    let enabled_platforms: std::collections::HashSet<String> = if let Some(list) = platforms {
+        list.into_iter().collect()
+    } else {
+        settings
+            .platform_sources
+            .iter()
+            .filter(|s| s.enabled)
+            .map(|s| s.id.clone())
+            .collect()
+    };
+
+    let client = crate::metadata::http_client();
+    let items = crate::platforms::promotions::fetch_featured_items(&client, &enabled_platforms).await;
+    Ok(items)
 }
 
 /// Fetch patch notes and game update announcements for candidate library games.
@@ -2224,4 +2070,84 @@ pub fn kv_clear_expired(state: State<'_, AppState>) -> usize {
     let cache = state.cache.lock().expect("cache lock poisoned");
     cache.cleanup_expired_kv()
 }
+
+// ---------------------------------------------------------------------------
+// EmulationStation & ROM Directory Scaffolding and Title Normalization
+// ---------------------------------------------------------------------------
+
+/// Scaffolds standardized EmulationStation system subdirectories and necessary .txt files
+/// inside the user-selected ROM folder.
+#[tauri::command]
+pub async fn scaffold_emulation_folders(
+    roms_dir: String,
+) -> AppResult<crate::platforms::ScaffoldReport> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::platforms::scaffold_emulation_folders(&roms_dir)
+    })
+    .await
+    .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?
+}
+
+/// Scans the user-selected ROM directory across all scaffolded console system folders.
+#[tauri::command]
+pub async fn scan_emulation_roms(
+    roms_dir: String,
+    normalize_titles: Option<bool>,
+) -> AppResult<Vec<crate::platforms::PlatformGame>> {
+    let normalize = normalize_titles.unwrap_or(true);
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::platforms::scan_emulation_roms(&roms_dir, normalize)
+    })
+    .await
+    .map_err(|e| AppError::Io(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())))?
+}
+
+/// Normalizes a raw ROM filename by stripping region dump tags, brackets, and file extensions.
+#[tauri::command]
+pub fn normalize_rom_title_cmd(title: String) -> String {
+    crate::platforms::normalize_rom_title(&title)
+}
+
+// ---------------------------------------------------------------------------
+// Native File & Directory Pickers for Standalone & Local Games
+// ---------------------------------------------------------------------------
+
+/// Opens a native file dialog allowing the user to pick a local game executable.
+#[tauri::command]
+pub async fn pick_game_executable() -> AppResult<Option<String>> {
+    let file = rfd::AsyncFileDialog::new()
+        .add_filter("Game & Executable Files", &["exe", "bat", "cmd", "sh", "bin", "app", "jar", "py", "love"])
+        .add_filter("All Files", &["*"])
+        .set_title("Select Local Game Executable")
+        .pick_file()
+        .await;
+
+    Ok(file.map(|f| f.path().display().to_string()))
+}
+
+/// Opens a native folder dialog allowing the user to pick a game directory.
+#[tauri::command]
+pub async fn pick_game_directory() -> AppResult<Option<String>> {
+    let folder = rfd::AsyncFileDialog::new()
+        .set_title("Select Game Installation Directory")
+        .pick_folder()
+        .await;
+
+    Ok(folder.map(|f| f.path().display().to_string()))
+}
+
+/// Opens a native file dialog allowing the user to pick a cover artwork image.
+#[tauri::command]
+pub async fn pick_game_artwork() -> AppResult<Option<String>> {
+    let file = rfd::AsyncFileDialog::new()
+        .add_filter("Image Files", &["png", "jpg", "jpeg", "webp", "bmp"])
+        .add_filter("All Files", &["*"])
+        .set_title("Select Cover Artwork Image")
+        .pick_file()
+        .await;
+
+    Ok(file.map(|f| f.path().display().to_string()))
+}
+
+
 

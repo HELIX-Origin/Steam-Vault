@@ -16,27 +16,29 @@ Universal Game Launcher inspects **local, authoritative client records** — off
 
 - **Zero Credential Handling**: The app never prompts for passwords, executes web scraping, or accesses user tokens.
 - **Offline Reliability**: Installed games are discovered locally on disk without requiring active network connectivity.
-- **Configurable Platform Sources**: In **Settings → Platforms**, you can enable or disable specific storefronts, add custom search folders, and configure multi-drive scanning.
+- **Configurable Platform Sources**: In **Settings → Plugins** and the **Plugin Settings** sub-window dialog, you can enable or disable specific storefronts, customize executable paths, and configure multi-drive scanning.
 
 ## 🎮 Supported Storefronts & Services
 
 | Platform | Detection Mechanism | Launch Delegation Protocol |
 | :--- | :--- | :--- |
-| **Steam** | Local `libraryfolders.vdf` and `appmanifest_*.acf` descriptors | `steam://run/{app_id}` |
+| **Steam** | Local `libraryfolders.vdf` and `appmanifest_*.acf` descriptors | `steam://rungameid/{app_id}` |
 | **GOG Galaxy** | Local SQLite Galaxy database (`galaxy-2.0.db`) & Windows Registry | `goggalaxy://openGameView/{game_id}` |
-| **Epic Games** | Official manifests (`.item` files in `Manifests/`) | `com.epicgames.launcher://apps/{app_name}?action=launch` |
-| **Xbox / Microsoft Store** | `XboxGames` library volumes, `MicrosoftGame.config`, and `appxmanifest.xml` | Native AppModel execution protocol |
-| **EA App** | Local EA installer registry entries and directory structures | Native client launch protocol |
+| **Epic Games** | Official manifests (`.item` files in `Manifests/`) | `com.epicgames.launcher://apps/{app_name}?action=launch` (Default) or `legendary launch <appName>` (Optional) |
+| **Xbox / Microsoft Store** | `XboxGames` library volumes, `MicrosoftGame.config`, and `appxmanifest.xml` | `shell:AppsFolder\{PackageFamilyName}!App` |
+| **EA App** | Local EA installer registry entries and directory structures | `origin2://game/launch?offerIds={app_id}` |
 | **Ubisoft Connect** | Local Ubisoft registry and launcher configurations | `uplay://launch/{game_id}/0` |
-| **Battle.net** | Blizzard installation product databases and system registry | Battle.net client protocol |
+| **Battle.net** | Blizzard installation product databases and system registry | `battlenet://{app_id}` |
 | **itch.io** | The itch desktop app library (`%APPDATA%\itch\apps`) | `itch://games/{game_id}` |
-| **Amazon Games** | Amazon Games library SQLite manifests and install folders | Amazon Games client protocol |
+| **Amazon Games** | Amazon Games library SQLite manifests and install folders | `amazon-games://play/{app_id}` |
+| **Rockstar Games** | Rockstar Games Launcher registry and manifests | `rockstar://launch/{app_id}` |
 | **Manually Added Local Games** | User-specified executable paths and custom working directories | Native process execution |
 
-## 🚀 Native Launcher Delegation
+## 🚀 Native Launcher Delegation & Alternate Backends
 
-When launching, updating, or managing games from different stores, Universal Game Launcher strictly delegates actions to the official client:
+When launching, updating, or managing games from different stores, Universal Game Launcher strictly delegates actions to the official client or configured alternate providers:
 - **Preserved Overlays & Cloud Sync:** Official client overlays, cloud save synchronization, playtime tracking, friend lists, and achievement unlocks function identically to launching from the official store.
+- **Epic Games Alternate Provider (Legendary CLI):** The Epic Games plugin defaults to the official Epic Games Launcher. If you prefer headless execution, faster launching, and independent cloud saves, you can enable Legendary integration in **Settings → Plugins → Configure (Epic Games Integration)** and specify the path to your `legendary.exe` binary. No separate plugin is required.
 - **Safe State Transitions:** If an update is required, the official launcher handles the secure package download without third-party intervention.
 
 ## 🗂️ Scanning & Managing Games

@@ -36,6 +36,12 @@ pub struct Settings {
     /// Optional free game promotion notifications for enabled storefront platforms.
     #[serde(default)]
     pub enable_free_game_notifications: bool,
+    /// Optional user-managed tools & helper binaries installation directory.
+    #[serde(default)]
+    pub custom_tools_dir: Option<String>,
+    /// Optional custom installation directory for downloaded platform launchers.
+    #[serde(default)]
+    pub custom_launchers_dir: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -58,6 +64,8 @@ impl Default for Settings {
             platform_sources: Vec::new(),
             legendary_path: None,
             enable_free_game_notifications: false,
+            custom_tools_dir: None,
+            custom_launchers_dir: None,
         }
     }
 }

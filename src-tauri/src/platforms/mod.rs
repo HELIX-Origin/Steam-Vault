@@ -10,22 +10,27 @@
 //! appid → platform mapping is persisted so the Library can keep grouping
 //! shortcuts by their source storefront.
 
-pub mod detectors;
-pub mod launchers;
-pub mod linux;
-pub mod macos;
+pub mod emulation;
+pub mod epic;
 pub mod promotions;
-pub mod windows;
+pub mod tools;
 
-#[cfg(windows)]
-pub mod registry;
-
-pub use launchers::{
-    detect_all_launchers, get_eos_overlay_status, get_legendary_auth_status, install_eos_overlay,
-    legendary_authenticate, legendary_logout, EosOverlayStatus, LauncherStatus,
+#[allow(unused_imports)]
+pub use emulation::{
+    normalize_rom_title, scaffold_emulation_folders, scan_emulation_roms, ScaffoldReport,
+    SystemFolderSpec, SYSTEM_FOLDER_SPECS,
+};
+pub use epic::{
+    get_eos_overlay_status, get_legendary_auth_status, install_eos_overlay,
+    install_legendary_cli, legendary_authenticate, legendary_logout, EosOverlayStatus,
     LegendaryAuthStatus,
 };
-pub use promotions::{FreeGamePromotion, PatchNote, StoreDeal};
+pub use tools::{
+    check_binary_installed, detect_all_launchers, install_winget_package,
+    is_winget_available, managed_launchers_dir, managed_tools_dir, LauncherStatus,
+    ManagedDirectories,
+};
+pub use promotions::{FeaturedStoreItem, FreeGamePromotion, PatchNote, StoreDeal};
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -33,9 +38,6 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::error::AppResult;
-
-pub use detectors::{library_folders, scan_all};
-pub(crate) use detectors::Detection;
 
 /// Per-platform detection preferences (persisted in `settings.json`).
 ///
@@ -108,6 +110,8 @@ pub enum Platform {
     Amazon,
     Xbox,
     Rockstar,
+    EmulationStation,
+    Standalone,
     Other,
 }
 
@@ -125,6 +129,8 @@ impl Platform {
             Platform::Amazon => "amazon",
             Platform::Xbox => "xbox",
             Platform::Rockstar => "rockstar",
+            Platform::EmulationStation => "emulationstation",
+            Platform::Standalone => "standalone",
             Platform::Other => "other",
         }
     }
@@ -142,6 +148,8 @@ impl Platform {
             Platform::Amazon => "Amazon Games",
             Platform::Xbox => "Xbox / Microsoft Store",
             Platform::Rockstar => "Rockstar",
+            Platform::EmulationStation => "EmulationStation",
+            Platform::Standalone => "Standalone & Local",
             Platform::Other => "Other",
         }
     }
@@ -158,6 +166,8 @@ impl Platform {
             "amazon" => Platform::Amazon,
             "xbox" => Platform::Xbox,
             "rockstar" => Platform::Rockstar,
+            "emulationstation" => Platform::EmulationStation,
+            "standalone" => Platform::Standalone,
             "other" => Platform::Other,
             _ => return None,
         })

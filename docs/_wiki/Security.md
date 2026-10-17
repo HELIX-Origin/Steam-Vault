@@ -1,48 +1,38 @@
 ---
 layout: wiki
 title: Security
-summary: Secrets handling, local writes, and vulnerability reporting
-parent: Steam Vault Technical Wiki
+summary: Zero external file modification, non-invasive credential boundaries, and secrets management
+parent: Technical Wiki
 nav_order: 7
 ---
 
 # Security
 
-Steam Vault runs entirely on your machine and interacts with files Steam already owns. This page
-summarizes its security posture; the canonical policy lives in the repository's `SECURITY.md`.
+Universal Game Launcher is built on a strict **non-invasive, privacy-first security model**. It runs 100% on-device and never alters host storefront configuration files or harvests third-party user credentials.
 
-## 🔑 Secrets & API keys
+## 🔒 Non-Invasive Invariant
 
-- No credentials are ever hardcoded in the source.
-- Keys you provide (Steam Web API, SteamGridDB, IGDB/Twitch) are stored **only** in your local
-  configuration directory and are sent **only** to the provider they belong to.
-- Keys are stored as plain text in the local settings file — the same threat model as Steam's own
-  configuration. Protect your user account accordingly.
+Unlike legacy tools that modified store files, Universal Game Launcher is entirely decoupled:
+- **Never modifies external client files:** Does not edit Steam's `shortcuts.vdf`, `cloud-storage-namespace-1.json`, `appmanifest.acf`, or external client databases.
+- **No process-locking requirements:** Official platform launchers do not need to be closed; Universal Game Launcher operates concurrently without risking file corruption or sync races.
+- **Local SQLite Persistence:** Custom collections, favorite flags, and artwork assignments are saved strictly in `database.sqlite` under the application's isolated local app data folder.
 
-## ✍️ Local writes
+## 🔑 Secrets & Plugin Configuration
 
-Steam Vault modifies only these local files:
+- **Zero Hardcoded Secrets:** No API keys or tokens are hardcoded into the source code or binary.
+- **Per-Plugin Settings Isolation:** Optional API keys provided by the user (e.g. SteamGridDB, IGDB, MobyGames) are stored in the local SQLite database and provided only to the specific plugin requesting them.
+- **Password Input Hygiene:** The frontend renders sensitive credential inputs with password masking and explicit eye show/hide toggles.
 
-- the collection cloud-storage namespace (JSON),
-- `shortcuts.vdf` (binary KeyValues),
-- `libraryfolders.vdf` (every copy), when a library is registered/removed or a game moves, and
-- `appmanifest_<appid>.acf`, moved alongside its game during a storage move.
+## 🚀 Process Execution & Launcher Delegation
 
-Every write is gated and reversible:
+- **Zero Credential Scraping:** The launcher never requests, intercepts, or stores user passwords or login credentials.
+- **Safe Protocol Delegation:** Launches are executed via documented operating system protocol URIs (`steam://rungameid/{id}`, `com.epicgames.launcher://`, `goggalaxy://`) or by launching verified local executable paths specified by the user.
 
-1. Writes are **refused while Steam is running**, preventing sync races.
-2. A **timestamped backup** is taken before the file is modified, so changes can be undone by
-   restoring the backup.
+## 🕵️ Reporting a Vulnerability
 
-## 🕵️ Reporting a vulnerability
+Report suspected vulnerabilities privately through GitHub Security Advisories on the repository, or by opening a security issue. See [SECURITY.md](https://github.com/HELIX-Origin/Universal-Game-Launcher/blob/main/SECURITY.md) for the full disclosure policy.
 
-Report suspected vulnerabilities privately through GitHub Security Advisories on the repository, or
-by opening a minimal issue that does not disclose exploit details.
+## ➡️ Next Steps
 
-See [SECURITY.md](https://github.com/HELIX-Origin/Steam-Vault/blob/main/SECURITY.md) for the full
-policy.
-
-## ➡️ Next
-
-- [Privacy](Privacy.md)
-- [Steam Data Layer](Steam-Data-Layer.md)
+- [Privacy Model](Privacy.md) — local data handling and zero telemetry.
+- [Plugins Architecture](Plugins-Architecture.md) — plugin sandboxing and schema compliance.

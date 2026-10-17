@@ -16,6 +16,8 @@
     settings,
     steamRunning
   } from "$lib/stores";
+  import { getAllPlatformMetadata, getPlatformMetadata, pluginEngine } from "$lib/plugins";
+  import AddGameModal from "$lib/components/library/AddGameModal.svelte";
   import type { Game } from "$lib/types";
 
   let { children } = $props();
@@ -23,6 +25,11 @@
   let splashVisible = $state(true);
   let splashExiting = $state(false);
   let isScanning = $state(false);
+  let showAddGameModal = $state(false);
+  let isStandaloneEnabled = $state(true);
+
+  // Navigation & Page State
+  let isLibraryPage = $derived(page.url.pathname === "/library" || page.url.pathname.startsWith("/library/"));
 
   // Steam/GOG Sidebar Game List Filter State
   let sidebarQuery = $state("");
@@ -31,27 +38,18 @@
   const titlebarNav = [
     { href: "/", label: "Dashboard" },
     { href: "/library", label: "Library" },
-    { href: "/platforms", label: "Platforms" },
+    { href: "/store", label: "Store" },
+    { href: "/social", label: "Social" },
     { href: "/storage", label: "Storage" },
+    { href: "/settings?tab=plugins", label: "Plugins" },
     { href: "/settings", label: "Settings" }
   ];
 
-  const platformTagMap: Record<string, string> = {
-    steam: "STM",
-    gog: "GOG",
-    epic: "EAS",
-    itch: "ITC",
-    ubisoft: "UBI",
-    ea: "EA",
-    battlenet: "BNET",
-    amazon: "AMZ",
-    xbox: "XBO",
-    rockstar: "RST",
-    other: "OTH"
-  };
+  let collapsedSections = $state<Record<string, boolean>>({});
 
-  function getPlatformTag(platform: string): string {
-    return platformTagMap[platform.toLowerCase()] || platform.slice(0, 3).toUpperCase();
+  function toggleSection(secId: string) {
+    collapsedSections[secId] = !collapsedSections[secId];
+    collapsedSections = { ...collapsedSections };
   }
 
   function getDisplayName(game: Game): string {
@@ -75,6 +73,77 @@
     })
   );
 
+  function getConsoleIcon(consoleName: string): string {
+    const c = consoleName.toLowerCase();
+    if (c.includes("gamecube") || c.includes("gc")) return "🎲";
+    if (c.includes("playstation") || c.includes("psx") || c.includes("ps1") || c.includes("ps2") || c.includes("ps3")) return "🎮";
+    if (c.includes("nintendo 64") || c.includes("n64")) return "🕹️";
+    if (c.includes("snes") || c.includes("super nintendo")) return "🎮";
+    if (c.includes("nes") || c.includes("entertainment system")) return "🕹️";
+    if (c.includes("wii")) return "🪄";
+    if (c.includes("switch")) return "🔴";
+    if (c.includes("game boy") || c.includes("gba") || c.includes("gbc") || c.includes("nds") || c.includes("3ds") || c.includes("psp") || c.includes("vita")) return "📱";
+    if (c.includes("dreamcast") || c.includes("saturn") || c.includes("sega") || c.includes("genesis") || c.includes("megadrive")) return "🌀";
+    if (c.includes("arcade") || c.includes("mame") || c.includes("neo geo")) return "👾";
+    return "🕹️";
+  }
+
+  let platformGroups = $derived.by(() => {
+    const map = new Map<string, { label: string; icon: string; games: Game[] }>();
+
+    for (const g of filteredGames) {
+      if (g.platform === "emulationstation" && (g.console || (g.collections && g.collections.length > 0))) {
+        // Group and sort emulation games by their console platform (GameCube, PlayStation 1, etc.)
+        const consoleName = g.console || g.collections[0];
+        const key = `console:${consoleName.toLowerCase()}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            label: consoleName,
+            icon: getConsoleIcon(consoleName),
+            games: []
+          });
+        }
+        map.get(key)!.games.push(g);
+      } else {
+        const p = (g.platform || "other").toLowerCase();
+        if (!map.has(p)) {
+          const meta = getPlatformMetadata(p);
+          map.set(p, {
+            label: meta.label,
+            icon: meta.icon,
+            games: []
+          });
+        }
+        map.get(p)!.games.push(g);
+      }
+    }
+
+    const groups: { id: string; label: string; icon: string; games: Game[] }[] = [];
+    for (const [id, grp] of map.entries()) {
+      if (grp.games.length > 0) {
+        // Sort games within each platform/console alphabetically
+        grp.games.sort((a, b) => (getDisplayName(a) || "").localeCompare(getDisplayName(b) || "", undefined, { sensitivity: "base" }));
+        groups.push({
+          id,
+          label: grp.label,
+          icon: grp.icon,
+          games: grp.games
+        });
+      }
+    }
+
+    // Sort platform groups: PC platforms first, then Emulation console platforms, then Other
+    groups.sort((a, b) => {
+      const isConsoleA = a.id.startsWith("console:");
+      const isConsoleB = b.id.startsWith("console:");
+      if (!isConsoleA && isConsoleB) return -1;
+      if (isConsoleA && !isConsoleB) return 1;
+      return a.label.localeCompare(b.label);
+    });
+
+    return groups;
+  });
+
   function selectGame(game: Game) {
     selectedGameId.set(game.appId);
     if (page.url.pathname !== "/library") {
@@ -88,6 +157,24 @@
     try {
       const scan = await api.scanAllPlatforms();
       platformScan.set(scan);
+
+      // If EmulationStation plugin is enabled, scan and import ROMs
+      try {
+        const installedPlugs = await api.getInstalledPlugins();
+        const esPlug = installedPlugs.find((p) => p.id === "platform-emulationstation");
+        if (esPlug?.enabled) {
+          const cfg = await pluginEngine.loadPluginConfig("platform-emulationstation");
+          const romsPath = (cfg?.romsPath || "C:\\ROMs").trim();
+          const normalize = cfg?.normalizeTitles !== false;
+          const roms = await api.scanEmulationRoms(romsPath, normalize);
+          if (roms.length > 0) {
+            await api.importPlatformGames(roms);
+          }
+        }
+      } catch (esErr) {
+        console.warn("EmulationStation scan error:", esErr);
+      }
+
       const updated = await api.loadLibrary(undefined, true);
       games.set(updated);
       if (!$selectedGameId && updated.length > 0) {
@@ -108,6 +195,15 @@
       settings.set(loadedSettings);
       syncWithSettingsLanguage(loadedSettings?.language);
       steamRunning.set(await api.isSteamRunning());
+
+      // Check standalone plugin enabled state
+      try {
+        const installedPlugs = await api.getInstalledPlugins();
+        const standalonePlug = installedPlugs.find((p) => p.id === "platform-standalone");
+        isStandaloneEnabled = standalonePlug ? standalonePlug.enabled : true;
+      } catch {
+        isStandaloneEnabled = true;
+      }
 
       // Initial library load if empty
       const initialGames = await api.loadLibrary();
@@ -143,9 +239,18 @@
     <!-- Title Bar Navigation Links (Steam / GOG Top Menu Style) -->
     <nav class="tb-nav" data-tauri-drag-region="false">
       {#each titlebarNav as item (item.href)}
+        {@const isPluginsLink = item.href.includes("tab=plugins")}
+        {@const isSettingsLink = item.href === "/settings"}
+        {@const currentPath = page.url.pathname}
+        {@const currentSearch = page.url.search}
+        {@const isActive = isPluginsLink
+          ? (currentPath === "/settings" && currentSearch.includes("tab=plugins"))
+          : isSettingsLink
+            ? (currentPath === "/settings" && !currentSearch.includes("tab=plugins"))
+            : (currentPath === item.href || (item.href !== "/" && currentPath.startsWith(item.href)))}
         <a
           class="tb-nav-link"
-          class:active={page.url.pathname === item.href || (item.href !== "/" && page.url.pathname.startsWith(item.href))}
+          class:active={isActive}
           href={item.href}
           data-tauri-drag-region="false"
         >
@@ -158,107 +263,153 @@
     <WindowControls position="right" />
   </header>
 
-  <div class="shell">
-    <!-- Steam / GOG Galaxy Left Game List Sidebar -->
-    <aside class="sidebar glass">
-      <div class="sidebar-top">
-        <div class="sidebar-search-row">
-          <div class="sidebar-search-wrap">
-            <span class="search-icon">🔍</span>
-            <input
-              type="text"
-              class="sidebar-search-input"
-              placeholder="Filter games..."
-              bind:value={sidebarQuery}
-            />
-            {#if sidebarQuery}
+  <div class="shell" class:with-sidebar={isLibraryPage}>
+    {#if isLibraryPage}
+      <!-- Steam / GOG Galaxy Left Game List Sidebar (Library View Only) -->
+      <aside class="sidebar glass">
+        <div class="sidebar-top">
+          <div class="sidebar-search-row">
+            <div class="sidebar-search-wrap">
+              <span class="search-icon">🔍</span>
+              <input
+                type="text"
+                class="sidebar-search-input"
+                placeholder="Filter games..."
+                bind:value={sidebarQuery}
+              />
+              {#if sidebarQuery}
+                <button
+                  class="search-clear-btn"
+                  onclick={() => (sidebarQuery = "")}
+                  title="Clear filter"
+                >
+                  ×
+                </button>
+              {/if}
+            </div>
+            {#if isStandaloneEnabled}
               <button
-                class="search-clear-btn"
-                onclick={() => (sidebarQuery = "")}
-                title="Clear filter"
+                class="add-game-action-btn"
+                onclick={() => (showAddGameModal = true)}
+                title="Add local game manually (Standalone & Local Executables)"
               >
-                ×
+                +
               </button>
             {/if}
-          </div>
-          <button
-            class="scan-action-btn"
-            class:spinning={isScanning}
-            onclick={handleScanAllPlatforms}
-            title="Scan all platforms for installed games and updates"
-            disabled={isScanning}
-          >
-            ↻
-          </button>
-        </div>
-
-        <!-- Quick Filter Pills -->
-        <div class="sidebar-filters">
-          <button
-            class="filter-pill"
-            class:active={sidebarFilterMode === "all"}
-            onclick={() => (sidebarFilterMode = "all")}
-          >
-            All <span class="pill-count">{$games.length}</span>
-          </button>
-          <button
-            class="filter-pill"
-            class:active={sidebarFilterMode === "installed"}
-            onclick={() => (sidebarFilterMode = "installed")}
-          >
-            Installed <span class="pill-count">{installedCount}</span>
-          </button>
-          <button
-            class="filter-pill"
-            class:active={sidebarFilterMode === "favorites"}
-            onclick={() => (sidebarFilterMode = "favorites")}
-          >
-            ★ <span class="pill-count">{favoriteCount}</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- Live Game List -->
-      <div class="sidebar-game-list">
-        {#if filteredGames.length === 0}
-          <div class="sidebar-empty">
-            {#if sidebarQuery}
-              <span>No matching games</span>
-            {:else if $games.length === 0}
-              <span>No games found.<br />Click ↻ Scan above.</span>
-            {:else}
-              <span>No games in this filter</span>
-            {/if}
-          </div>
-        {:else}
-          {#each filteredGames as game (game.kind + "-" + game.appId)}
             <button
-              class="game-list-item"
-              class:selected={game.appId === $selectedGameId}
-              class:installed={game.installed}
-              onclick={() => selectGame(game)}
+              class="scan-action-btn"
+              class:spinning={isScanning}
+              onclick={handleScanAllPlatforms}
+              title="Scan all platforms for installed games and updates"
+              disabled={isScanning}
             >
-              <span class="status-dot" class:is-installed={game.installed}></span>
-              <span class="platform-badge platform-{game.platform}">
-                {getPlatformTag(game.platform)}
-              </span>
-              <span class="game-item-title" title={getDisplayName(game)}>
-                {getDisplayName(game)}
-              </span>
-              {#if game.favorite}
-                <span class="game-item-fav">★</span>
-              {/if}
+              ↻
             </button>
-          {/each}
-        {/if}
-      </div>
+          </div>
 
-      <div class="sidebar-footer">
-        <span class="sidebar-status-note">
-          {installedCount} of {$games.length} installed
-        </span>
-      </div>
-    </aside>
+          <!-- Quick Filter Pills -->
+          <div class="sidebar-filters">
+            <button
+              class="filter-pill"
+              class:active={sidebarFilterMode === "all"}
+              onclick={() => (sidebarFilterMode = "all")}
+            >
+              All <span class="pill-count">{$games.length}</span>
+            </button>
+            <button
+              class="filter-pill"
+              class:active={sidebarFilterMode === "installed"}
+              onclick={() => (sidebarFilterMode = "installed")}
+            >
+              Installed <span class="pill-count">{installedCount}</span>
+            </button>
+            <button
+              class="filter-pill"
+              class:active={sidebarFilterMode === "favorites"}
+              onclick={() => (sidebarFilterMode = "favorites")}
+            >
+              ★ <span class="pill-count">{favoriteCount}</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Live Game List -->
+        <div class="sidebar-game-list">
+          {#if filteredGames.length === 0}
+            <div class="sidebar-empty">
+              {#if sidebarQuery}
+                <span>No matching games</span>
+              {:else if $games.length === 0}
+                <span>No games found.<br />Click ↻ Scan above.</span>
+              {:else}
+                <span>No games in this filter</span>
+              {/if}
+            </div>
+          {:else if sidebarQuery.trim()}
+            <!-- Flat Search Results -->
+            {#each filteredGames as game (game.kind + "-" + game.appId)}
+              <button
+                class="game-list-item"
+                class:selected={game.appId === $selectedGameId}
+                class:installed={game.installed}
+                onclick={() => selectGame(game)}
+              >
+                <span class="status-dot" class:is-installed={game.installed}></span>
+                <span class="game-item-title" title={getDisplayName(game)}>
+                  {getDisplayName(game)}
+                </span>
+                {#if game.favorite}
+                  <span class="game-item-fav">★</span>
+                {/if}
+              </button>
+            {/each}
+          {:else}
+            <!-- Steam & GOG Collapsible Platform Accordions -->
+            {#each platformGroups as group (group.id)}
+              {@const isCollapsed = Boolean(collapsedSections[group.id])}
+              <div class="platform-group-accordion">
+                <button
+                  type="button"
+                  class="platform-accordion-header"
+                  onclick={() => toggleSection(group.id)}
+                  title={isCollapsed ? "Expand section" : "Collapse section"}
+                >
+                  <span class="accordion-chevron">{isCollapsed ? "▸" : "▾"}</span>
+                  <span class="accordion-label">{group.icon ? `${group.icon} ` : ""}{group.label}</span>
+                  <span class="accordion-count">({group.games.length})</span>
+                </button>
+                {#if !isCollapsed}
+                  <div class="platform-accordion-body">
+                    {#each group.games as game (game.kind + "-" + game.appId)}
+                      <button
+                        class="game-list-item"
+                        class:selected={game.appId === $selectedGameId}
+                        class:installed={game.installed}
+                        onclick={() => selectGame(game)}
+                      >
+                        <span class="status-dot" class:is-installed={game.installed}></span>
+                        <span class="game-item-title" title={getDisplayName(game)}>
+                          {getDisplayName(game)}
+                        </span>
+                        {#if game.favorite}
+                          <span class="game-item-fav">★</span>
+                        {/if}
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          {/if}
+        </div>
+
+        <div class="sidebar-footer">
+          <span class="sidebar-status-note">
+            {installedCount} of {$games.length} installed
+          </span>
+        </div>
+      </aside>
+    {/if}
 
     <main class="content">
       {#if $error}
@@ -291,6 +442,10 @@
       </div>
     </div>
   </div>
+{/if}
+
+{#if showAddGameModal}
+  <AddGameModal onclose={() => (showAddGameModal = false)} />
 {/if}
 
 <style>
@@ -397,12 +552,18 @@
   }
 
   .shell {
-    display: grid;
-    grid-template-columns: 280px 1fr;
+    display: flex;
+    flex-direction: column;
     flex: 1;
     min-height: 0;
     padding: 12px;
     gap: 12px;
+  }
+
+  .shell.with-sidebar {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    flex-direction: row;
   }
 
   /* Steam/GOG Left Game List Sidebar */
@@ -494,6 +655,31 @@
     flex-shrink: 0;
   }
 
+  .add-game-action-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    background: rgba(168, 85, 247, 0.22);
+    border: 1px solid rgba(168, 85, 247, 0.45);
+    color: #f3e8ff;
+    font-size: 1.35rem;
+    font-weight: 600;
+    line-height: 1;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: all 0.16s ease;
+    flex-shrink: 0;
+  }
+
+  .add-game-action-btn:hover {
+    background: rgba(168, 85, 247, 0.45);
+    border-color: rgba(192, 132, 252, 0.85);
+    color: #ffffff;
+    box-shadow: 0 0 12px rgba(168, 85, 247, 0.5);
+    transform: scale(1.05);
+  }
+
   .scan-action-btn:hover:not(:disabled) {
     background: rgba(168, 85, 247, 0.32);
     border-color: rgba(192, 132, 252, 0.65);
@@ -579,6 +765,61 @@
     line-height: 1.5;
   }
 
+  .platform-group-accordion {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 4px;
+  }
+
+  .platform-accordion-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 8px;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    text-align: left;
+    user-select: none;
+    border-radius: var(--radius-sm);
+    transition: background 0.12s ease, color 0.12s ease;
+    width: 100%;
+  }
+
+  .platform-accordion-header:hover {
+    background: rgba(168, 85, 247, 0.1);
+    color: #ffffff;
+  }
+
+  .accordion-chevron {
+    font-size: 0.75rem;
+    color: var(--text-mute);
+    width: 12px;
+    display: inline-block;
+  }
+
+  .accordion-label {
+    flex: 1;
+  }
+
+  .accordion-count {
+    font-size: 0.68rem;
+    color: var(--text-mute);
+    font-weight: 500;
+  }
+
+  .platform-accordion-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-left: 6px;
+  }
+
   .game-list-item {
     display: flex;
     align-items: center;
@@ -619,42 +860,6 @@
   .status-dot.is-installed {
     background: #4ade80;
     box-shadow: 0 0 6px rgba(74, 222, 128, 0.6);
-  }
-
-  .platform-badge {
-    font-size: 0.62rem;
-    font-weight: 750;
-    letter-spacing: 0.04em;
-    padding: 1px 4px;
-    border-radius: 3px;
-    background: rgba(255, 255, 255, 0.07);
-    color: #cbd5e1;
-    flex-shrink: 0;
-  }
-
-  .platform-badge.platform-steam {
-    background: rgba(56, 189, 248, 0.2);
-    color: #7dd3fc;
-  }
-
-  .platform-badge.platform-gog {
-    background: rgba(168, 85, 247, 0.2);
-    color: #d8b4fe;
-  }
-
-  .platform-badge.platform-epic {
-    background: rgba(244, 63, 94, 0.2);
-    color: #fda4af;
-  }
-
-  .platform-badge.platform-itch {
-    background: rgba(239, 68, 68, 0.2);
-    color: #fca5a5;
-  }
-
-  .platform-badge.platform-xbox {
-    background: rgba(34, 197, 94, 0.2);
-    color: #86efac;
   }
 
   .game-item-title {

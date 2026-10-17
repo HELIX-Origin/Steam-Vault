@@ -1,4 +1,4 @@
-// Hand-rolled i18n type definitions for Steam-Vault.
+// Hand-rolled i18n type definitions for Universal Game Launcher.
 // Supports all 30 official Steam platform languages.
 
 export interface SteamLanguage {
@@ -80,7 +80,6 @@ export interface TranslationDictionary {
     openLibrary: string;
     scanPlatforms: string;
     manageArtwork: string;
-    autoCategorize: string;
     recentGames: string;
   };
   library: {

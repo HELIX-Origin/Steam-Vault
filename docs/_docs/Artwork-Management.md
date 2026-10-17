@@ -8,92 +8,87 @@ nav_order: 13
 
 # Artwork Management
 
-The **Artwork** view lets you replace the artwork displayed for any game in your library — across all your official storefront games and manually added local titles. You can pull art from **SteamGridDB** or apply your own image
-file, and you can clear art you no longer want.
+The **Custom Artwork Studio** in Universal Game Launcher allows you to customize the visual assets displayed for any title in your library — across all supported storefront games, manually added local executables, and emulator ROMs. You can fetch high-resolution artwork from community providers such as **SteamGridDB**, extract official storefront assets, or apply your own local image files.
 
-## 🖼️ The five slots
+---
 
-Steam stores custom artwork per game in five **slots**. Each slot is a fixed filename and a typical
-size:
+## 🖼️ The Visual Slots
 
-| Slot | File name | Usual size |
-| :--- | :--- | :--- |
-| **Portrait grid** | `<appid>p` | 600×900 |
-| **Landscape grid** | `<appid>` | 920×430 |
-| **Hero banner** | `<appid>_hero` | 1920×620 |
-| **Logo** | `<appid>_logo` | transparent PNG, any size |
-| **Icon** | `<appid>_icon` | 256×256 |
+Universal Game Launcher manages five standardized artwork slots for every title:
 
-Steam Vault writes the image with an extension matching its real format (`.png`, `.jpg`, or
-`.jpeg`), so Steam always loads it.
+| Slot | File / Key Identifier | Recommended Dimensions | Format |
+| :--- | :--- | :--- | :--- |
+| **Portrait Grid** | `<appid>p` / `capsule` | 600×900 (2:3 aspect ratio) | PNG or JPEG |
+| **Landscape Grid** | `<appid>` / `grid` | 920×430 | PNG or JPEG |
+| **Hero Banner** | `<appid>_hero` / `hero` | 1920×620 or 1920×1080 (16:9) | PNG or JPEG |
+| **Logo** | `<appid>_logo` / `logo` | Variable width / height | Transparent PNG |
+| **Icon** | `<appid>_icon` / `icon` | 256×256 (1:1 square) | PNG or ICO |
 
-## 📂 Where the files live
+Universal Game Launcher writes and references images with extensions matching their native formats (`.png`, `.jpg`, `.jpeg`), ensuring crisp hardware-accelerated rendering.
 
-Custom artwork is stored inside your Steam user data:
+---
 
-```plaintext
-userdata/<account-id>/config/grid/
-```
+## 📂 Where Artwork is Stored
 
-This is the same location Steam's own **Customize** screen writes to. Because it is keyed by app id,
-the same system covers **manually added local games**, whose synthetic app ids have no store page of their
-own.
+- **Storefront & Local Titles**: Stored in the local application data directory under `%APPDATA%\universal-game-launcher\artwork\` and indexed directly in `database.sqlite` via the in-memory KV tier.
+- **Steam User Data Synchronization**: For Steam titles, Universal Game Launcher also synchronizes with Steam's native custom grid directory:
+  ```plaintext
+  userdata/<account-id>/config/grid/
+  ```
+  This ensures that custom artwork configured inside Universal Game Launcher also renders natively if you launch the Steam client directly.
 
-## 🌐 Applying art from Multiple Providers
+---
 
-1. Open **Artwork** (or click **Manage → Artwork** from any game details page).
-2. Choose the visual slot you want to configure: **Portrait**, **Landscape**, **Hero Banner**, **Logo**, or **Icon**.
-3. Use the **Keyword Search** bar to search by game title (e.g. "Chrono Trigger", "Doom", "Hollow Knight").
-4. Filter by artwork provider using the provider dropdown:
-   - **GOG Store & Galaxy** (official high-res vertical box covers and background banners)
-   - **PCGamingWiki** (box art & infobox covers)
-   - **Wikipedia** (high-res box art covers from encyclopedic pages)
-   - **VNDB** (visual novel covers & Japanese title art)
-   - **SteamGridDB** (community grids, heroes, logos, icons)
-   - **Steam Store** (official store capsules & banners)
-   - **IGDB** (cover art)
-5. Filter by animated/static artwork or toggle **Safe Search** (NSFW filtering).
-6. Click any card to apply it instantly to your game. Dead or unreachable CDN links are filtered out automatically so you never see broken image cards.
+## 🌐 Applying Artwork from Multiple Providers
 
-SteamGridDB and IGDB optionally use API keys configured in [Settings & API Keys](Settings-and-API-Keys.md). All other providers work 100% keyless out of the box.
+1. Open the game in the **Library Showcase View** (`/library`) and scroll to the **Custom Artwork Studio** section (or click **Manage → Artwork**).
+2. Choose the artwork slot you want to configure: **Portrait Capsule**, **Hero Banner**, **Logo**, or **Icon**.
+3. Use the search input to query titles across providers:
+   - **SteamGridDB**: Community portrait grids, hero wallpapers, transparent logos, and square icons. (Configurable via **Settings → Plugin Settings**).
+   - **Steam Store**: Official store capsules, wide headers, and community wallpapers.
+   - **GOG Catalog**: High-resolution vertical box art and galaxy banners.
+   - **PCGamingWiki**: Authentic original physical box art and wiki infobox covers.
+   - **Wikipedia**: Encyclopedic cover scans and historical box artwork.
+   - **VNDB**: Visual novel covers and Japanese character banners.
+   - **IGDB**: High-resolution box art from Twitch's video game database.
+4. Filter by static or animated art, or toggle NSFW content filtering.
+5. Click any card to apply the artwork instantly. Dead or unreachable links are filtered out automatically.
+
+---
 
 ## ⚡ Automatic Artwork Fetching
 
-Universal Game Launcher automatically ensures games don't have blank posters in your library:
+Universal Game Launcher automatically avoids blank or missing posters:
 
-- **Automatic on Import:** When discovering games from storefront launchers or importing manually added local titles, Universal Game Launcher automatically attempts to download missing artwork (portrait grid, hero banner, logo, and icon) via SteamGridDB if an API key is configured. If no key is set or no match is found, it falls back to extracting cover art from Steam Store, VNDB, or itch metadata caches.
-- **Auto-fetch Missing Art Button:** In the **Artwork** view header, click **Auto-fetch missing art** to run a background pass across your entire library and populate all games that currently lack grid art.
+- **Automatic on Import**: When discovering games from storefront launchers or importing manually added local titles, the launcher automatically downloads missing artwork using SteamGridDB and Steam Store Search.
+- **One-Click Library Refresh**: In **Settings**, click **Library Metadata Refresh** to perform a background pass and fetch missing artwork for all library titles without interrupting playback.
 
-## 📁 Applying art from a file
+---
 
-1. Select the game and the slot, then choose **From file…**.
-2. Paste the full path to a PNG or JPEG image and click **Apply**.
+## 📁 Applying Artwork from Local Files
 
-Only **PNG** and **JPEG** images are accepted, up to **64 MiB**. Anything else is rejected with a
-message, because Steam cannot display it.
+1. Select the title and the target slot, then select **From File…**.
+2. Select or enter the path to a PNG or JPEG file on your drive and click **Apply**.
+3. Images up to 64 MiB are supported. Transparent PNGs are recommended for the **Logo** slot to avoid solid background boxes.
 
-## 🗑️ Removing art
+---
 
-If a slot already has custom art, its card shows a **Remove** button. The previous image is copied to
-the timestamped backup store first, so you can always restore it by hand.
+## 🗑️ Removing Artwork
 
-## 🛡️ Write safety
+If a slot contains custom artwork, clicking **Remove** clears the custom override and reverts the game to its default storefront asset. Previous custom images are copied to a timestamped backup directory (`universal-game-launcher/backups/<timestamp>/`), ensuring no assets are lost.
 
-- **Steam does not need to be closed** to change artwork — Steam watches the `config/grid` folder and
-  repaints with the new image. (Collection and shortcut writes still require Steam to be closed.)
-- Before an image is replaced or removed, the old one is copied into
-  `steam-vault/backups/<timestamp>/`. Nothing is destroyed irreversibly.
-- The Artwork view never touches a game's install files — it only manages the images in
-  `config/grid`.
+---
 
-## 💡 Tips
+## 💡 Practical Tips
 
-- Portrait grids and heroes give the biggest visual improvement for manually added local games.
-- A **logo** should be a transparent PNG, or it will show a coloured box behind it.
-- If the application does not immediately show new art, refresh the view or restart the app.
+- **Transparent Logos**: Always use transparent PNGs for the **Logo** slot so the artwork floats cleanly over the 16:9 hero wallpaper.
+- **Hero Wallpaper Vignette**: Universal Game Launcher automatically applies an obsidian gradient vignette across hero banners, ensuring title text and action buttons remain readable.
+- **Offline Reliability**: Once fetched or applied, all artwork is cached locally on disk for instantaneous offline access.
 
-## ➡️ Next steps
+---
 
-- [Manually Added Local Games](Non-Steam-Games.md)
-- [Metadata Providers](Metadata-Providers.md)
-- [Storage Management](Storage-Management.md)
+## ➡️ Next Steps
+
+- [Organizing Your Library](Organizing-Your-Library.md) — viewing games in the showcase view.
+- [Manually Added Local Games](Non-Steam-Games.md) — customizing standalone executables.
+- [Plugin Development](Plugin-Development.md) — building custom artwork and metadata plugins.

@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: 📖 Steam Vault Documentation
-    url: https://github.com/HELIX-Origin/Steam-Vault/tree/main/docs
+  - name: 📖 Universal Game Launcher Documentation
+    url: https://github.com/HELIX-Origin/Universal-Game-Launcher/tree/main/docs
     about: Read the user guide, architecture wiki, and troubleshooting documentation.
   - name: 💬 Discord Community
     url: https://discord.com/invite/Ww3XBZC2HV
     about: Join our Discord server to ask questions, share collection ideas, or engage with the community.
   - name: 🔒 Security & Privacy Policy
-    url: https://github.com/HELIX-Origin/Steam-Vault/blob/main/SECURITY.md
+    url: https://github.com/HELIX-Origin/Universal-Game-Launcher/blob/main/SECURITY.md
     about: Guidelines on secret storage, local-only offline operations, and responsible disclosure.

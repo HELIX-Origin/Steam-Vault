@@ -40,7 +40,6 @@ Rather than adding every game by hand, Universal Game Launcher automatically ins
 Manually added local games appear seamlessly in the **Library** view alongside all your storefront titles with a platform badge (such as **Epic**, **GOG**, or **Other**). You can:
 - Filter and sort them dynamically by name, playtime, or install status.
 - Add them to custom collections and dynamic smart collections.
-- Auto-categorize them by genre, developer, and tags via [AutoCategorization](AutoCategorization.md).
 
 ## 🛡️ Persistence & Backups
 

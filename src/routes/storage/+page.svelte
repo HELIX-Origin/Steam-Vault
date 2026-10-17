@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { api, errorMessage } from "$lib/api";
   import { t } from "$lib/i18n";
-  import { error, games, storageReport } from "$lib/stores";
+  import { error, games, settings, storageReport } from "$lib/stores";
   import type { DiskInfo, Game, GamePlacement, Platform, StorageReport } from "$lib/types";
   import "$styles/storage.scss";
 
@@ -36,21 +36,39 @@
     { id: "other", label: "Other / Standalone", icon: "⚙", color: "#94a3b8" }
   ];
 
-  onMount(async () => {
-    await refresh();
+  function isPluginEnabled(pluginId: string): boolean {
+    if ($settings?.enabledPlugins && $settings.enabledPlugins[pluginId] !== undefined) {
+      return $settings.enabledPlugins[pluginId];
+    }
+    return true; // default to enabled if not explicitly disabled
+  }
+
+  function isPlatformPluginEnabled(platformId: Platform): boolean {
+    const pluginId = platformId === "other" ? "platform-standalone" : `platform-${platformId}`;
+    return isPluginEnabled(pluginId);
+  }
+
+  let activePlatforms = $derived(
+    PLATFORMS.filter((p) => isPlatformPluginEnabled(p.id))
+  );
+
+  onMount(() => {
+    // Non-blocking background worker: UI renders immediately, values populate in background
+    refresh();
   });
 
   async function refresh(isManual = false) {
-    if (!$storageReport || isManual) {
-      busy = true;
-    }
+    busy = true;
     try {
+      const storageEnabled = isPluginEnabled("utility-storage");
       const [storageRep, lib] = await Promise.all([
-        api.getStorageReport(),
-        api.loadLibrary().catch(() => [])
+        storageEnabled ? api.getStorageReport().catch(() => null) : Promise.resolve(null),
+        $games.length > 0 ? Promise.resolve($games) : api.loadLibrary().catch(() => [])
       ]);
       storageReport.set(storageRep);
-      games.set(lib);
+      if (lib && lib.length > 0) {
+        games.set(lib);
+      }
       error.set(null);
     } catch (e) {
       error.set(errorMessage(e));
@@ -77,11 +95,13 @@
     if (report?.games) {
       for (const g of report.games) {
         if (!g.installed && g.sizeOnDisk === 0) continue;
-        const key = `${g.platform ?? "steam"}:${g.appId}`;
+        const plat = (g.platform as Platform) || "steam";
+        if (!isPlatformPluginEnabled(plat)) continue;
+        const key = `${plat}:${g.appId}`;
         map.set(key, {
           appId: g.appId,
           name: g.name,
-          platform: (g.platform as Platform) || "steam",
+          platform: plat,
           sizeOnDisk: g.sizeOnDisk || 0,
           installDir: g.installDir,
           libraryPath: g.libraryPath,
@@ -93,6 +113,7 @@
     // 2. Ingest libraryGames (e.g. non-Steam standalone titles)
     for (const g of libraryGames) {
       if (!g.installed && !g.sizeOnDisk) continue;
+      if (!isPlatformPluginEnabled(g.platform)) continue;
       const key = `${g.platform}:${g.appId}`;
       if (!map.has(key)) {
         map.set(key, {
@@ -127,17 +148,19 @@
   }
 
   let platformStats = $derived.by<PlatformStatSummary[]>(() => {
-    return PLATFORMS.map((meta) => {
-      const platformGames = allInstalledGames.filter((g) => g.platform === meta.id);
-      const bytes = platformGames.reduce((sum, g) => sum + g.sizeOnDisk, 0);
-      const percentage = totalGamingBytes > 0 ? (bytes / totalGamingBytes) * 100 : 0;
-      return {
-        meta,
-        bytes,
-        gameCount: platformGames.length,
-        percentage
-      };
-    });
+    return activePlatforms
+      .map((meta) => {
+        const platformGames = allInstalledGames.filter((g) => g.platform === meta.id);
+        const bytes = platformGames.reduce((sum, g) => sum + g.sizeOnDisk, 0);
+        const percentage = totalGamingBytes > 0 ? (bytes / totalGamingBytes) * 100 : 0;
+        return {
+          meta,
+          bytes,
+          gameCount: platformGames.length,
+          percentage
+        };
+      })
+      .filter((stat) => stat.gameCount > 0);
   });
 
   // Calculate gaming footprint per disk
@@ -214,8 +237,15 @@
 
 <div class="row-between" style="margin-bottom:1.25rem">
   <div>
-    <h1>{$t("storage.title")}</h1>
-    <p class="muted">Storage utilization, drive footprints, and installed games across all supported platforms.</p>
+    <div class="row" style="align-items:center;gap:0.75rem">
+      <h1 style="margin:0">{$t("storage.title")}</h1>
+      {#if busy}
+        <span class="pill pill-accent2" style="font-size:0.72rem;letter-spacing:0.03em;text-transform:uppercase">
+          <span class="spin" style="display:inline-block;margin-right:0.25rem">↻</span> Background Sync
+        </span>
+      {/if}
+    </div>
+    <p class="muted" style="margin:0.25rem 0 0 0">Storage utilization, drive footprints, and installed games across all supported platforms.</p>
   </div>
   <div class="row" style="gap:0.5rem">
     <button class="btn btn-ghost" onclick={() => refresh(true)} disabled={busy}>
@@ -225,7 +255,6 @@
   </div>
 </div>
 
-{#if report}
   <!-- Storage KPI Overview Cards -->
   <div class="grid kpi-grid">
     <div class="glass card kpi-card">
@@ -241,8 +270,8 @@
       <span class="kpi-label">Installed Games Tracked</span>
     </div>
     <div class="glass card kpi-card">
-      <span class="kpi-num">{platformStats.filter((p) => p.gameCount > 0).length}</span>
-      <span class="kpi-label">Active Storefront Platforms</span>
+      <span class="kpi-num">{platformStats.length}</span>
+      <span class="kpi-label">Active Enabled Platforms</span>
     </div>
   </div>
 
@@ -298,28 +327,42 @@
     </div>
 
     <div class="grid drives">
-      {#each disks as disk (disk.mount)}
-        {@const driveStats = getDiskGamingStats(disk)}
-        <div class="glass card drive-card">
-          <div class="row-between">
-            <span class="name">{disk.name?.trim() || disk.mount}</span>
-            <span class="pill pill-accent">{disk.mount}</span>
-          </div>
-          <div class="bar">
-            <span style="width:{usedFraction(disk.total, disk.free) * 100}%"></span>
-          </div>
-          <div class="row-between muted-sm">
-            <span>{formatBytes(disk.total - disk.free)} used ({((disk.total - disk.free) / (disk.total || 1) * 100).toFixed(0)}%)</span>
-            <span>{formatBytes(disk.free)} free of {formatBytes(disk.total)}</span>
-          </div>
-          {#if driveStats.gameCount > 0}
-            <div class="drive-game-meta">
-              <span>Games: <strong>{formatBytes(driveStats.gamingBytes)}</strong> ({driveStats.gameCount} titles)</span>
-              <span>{driveStats.pct.toFixed(1)}% of disk</span>
+      {#if disks.length > 0}
+        {#each disks as disk (disk.mount)}
+          {@const driveStats = getDiskGamingStats(disk)}
+          <div class="glass card drive-card">
+            <div class="row-between">
+              <span class="name">{disk.name?.trim() || disk.mount}</span>
+              <span class="pill pill-accent">{disk.mount}</span>
             </div>
-          {/if}
+            <div class="bar">
+              <span style="width:{usedFraction(disk.total, disk.free) * 100}%"></span>
+            </div>
+            <div class="row-between muted-sm">
+              <span>{formatBytes(disk.total - disk.free)} used ({((disk.total - disk.free) / (disk.total || 1) * 100).toFixed(0)}%)</span>
+              <span>{formatBytes(disk.free)} free of {formatBytes(disk.total)}</span>
+            </div>
+            {#if driveStats.gameCount > 0}
+              <div class="drive-game-meta">
+                <span>Games: <strong>{formatBytes(driveStats.gamingBytes)}</strong> ({driveStats.gameCount} titles)</span>
+                <span>{driveStats.pct.toFixed(1)}% of disk</span>
+              </div>
+            {/if}
+          </div>
+        {/each}
+      {:else}
+        <div class="glass card drive-card" style="grid-column: 1 / -1; padding: 1.5rem; text-align: center;">
+          <p class="muted-sm" style="margin: 0;">
+            {#if !isPluginEnabled("utility-storage")}
+              The <strong>Storage &amp; Drive Analyzer</strong> utility plugin is currently disabled in <a href="/settings?tab=plugins" style="color:var(--accent)">Plugins &amp; Modules</a>.
+            {:else if busy}
+              Analyzing drive capacities in background…
+            {:else}
+              No physical drives detected.
+            {/if}
+          </p>
         </div>
-      {/each}
+      {/if}
     </div>
   </div>
 
@@ -367,7 +410,7 @@
           >
             All Platforms ({allInstalledGames.length})
           </button>
-          {#each PLATFORMS as p}
+          {#each activePlatforms as p}
             {@const count = allInstalledGames.filter((g) => g.platform === p.id).length}
             {#if count > 0}
               <button
@@ -427,8 +470,3 @@
       {/if}
     </div>
   </div>
-{:else}
-  <div class="glass" style="padding:3rem;text-align:center;border-radius:var(--radius)">
-    <p class="muted">Loading storage statistics and drive overview…</p>
-  </div>
-{/if}

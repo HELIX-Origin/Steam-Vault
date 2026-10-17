@@ -2,19 +2,8 @@
 
 export type GameKind = "steam" | "shortcut";
 
-/** A storefront / launcher a game can come from. */
-export type Platform =
-  | "steam"
-  | "gog"
-  | "epic"
-  | "itch"
-  | "ubisoft"
-  | "ea"
-  | "battlenet"
-  | "amazon"
-  | "xbox"
-  | "rockstar"
-  | "other";
+/** A storefront / launcher a game can come from (dynamically contributed by platform plugins). */
+export type Platform = string;
 
 export interface SteamSearchResult {
   id: number;
@@ -68,6 +57,7 @@ export interface Game {
   capsuleImage?: string | null;
   heroImage?: string | null;
   logoImage?: string | null;
+  console?: string | null;
 }
 
 export interface Collection {
@@ -110,6 +100,8 @@ export interface AppMeta {
   movies?: string[];
   locales?: Record<string, { title?: string; shortDescription?: string | null; aliases?: string[] }>;
   providers?: Record<string, any>;
+  userEnhanced?: boolean;
+  enhancedBy?: string[];
 }
 
 export interface MediaItem {
@@ -135,66 +127,39 @@ export interface OwnedGame {
   img_icon_url: string | null;
 }
 
-export interface SgdbGame {
-  id: number;
-  name: string;
-  release_date: number | null;
+export interface ScaffoldReport {
+  romsDir: string;
+  createdFoldersCount: number;
+  totalSystemsCount: number;
+  scaffoldedSystems: string[];
+  message: string;
 }
 
-export interface SgdbAsset {
-  id: number;
-  url: string;
-  thumb: string | null;
-  width: number | null;
-  height: number | null;
-  style: string | null;
-  mime: string | null;
-}
-
-export interface IgdbNamed {
-  name: string;
-}
-
-export interface IgdbCompany {
-  company: IgdbNamed | null;
-  developer: boolean | null;
-  publisher: boolean | null;
-}
-
-export interface IgdbGame {
-  id: number;
-  name: string;
-  summary: string | null;
-  first_release_date: number | null;
-  genres: IgdbNamed[];
-  involved_companies: IgdbCompany[];
-  cover: { url: string | null } | null;
-}
-
-export interface AutoCat {
-  id: string;
-  name: string;
-  kind:
-    | "genre"
-    | "developer"
-    | "publisher"
-    | "flag"
-    | "tag"
-    | "releaseyear"
-    | "userscore"
-    | "platform"
-    | "installedstate"
-    | "playtime"
-    | "name";
-  enabled: boolean;
-  prefix: string | null;
-  maxCategories: number | null;
-  removeExisting: boolean;
-  include: string[];
-  exclude: string[];
-}
 
 export type PluginType = "platform" | "metadata" | "media" | "utility";
+
+export interface PluginSettingOption {
+  label: string;
+  value: string;
+}
+
+export interface PluginSettingField {
+  key: string;
+  label: string;
+  type: "string" | "text" | "password" | "boolean" | "number" | "select";
+  description?: string;
+  required?: boolean;
+  default?: any;
+  placeholder?: string;
+  helpUrl?: string;
+  helpLabel?: string;
+  options?: PluginSettingOption[];
+}
+
+export interface PluginSettingsConfig {
+  requiresApiKey?: boolean;
+  fields?: PluginSettingField[];
+}
 
 export interface PluginInfo {
   id: string;
@@ -209,6 +174,7 @@ export interface PluginInfo {
   homepage?: string | null;
   features: string[];
   path: string;
+  settings?: PluginSettingsConfig | null;
 }
 
 export interface Settings {
@@ -225,6 +191,40 @@ export interface Settings {
   platformSources: PlatformSource[];
   legendaryPath?: string | null;
   enableFreeGameNotifications?: boolean;
+  customToolsDir?: string | null;
+  customLaunchersDir?: string | null;
+}
+
+export interface ManagedDirectories {
+  toolsDir: string;
+  launchersDir: string;
+  wingetAvailable: boolean;
+}
+
+export interface PlatformFriend {
+  id: string;
+  name: string;
+  status: "online" | "in-game" | "offline" | "away" | "busy";
+  currentGame?: string | null;
+  avatarUrl?: string | null;
+}
+
+export interface PlatformAchievement {
+  id: string;
+  name: string;
+  description?: string;
+  iconUrl?: string;
+  unlocked: boolean;
+  unlockedAt?: number | null;
+  progress?: number;
+  maxProgress?: number;
+}
+
+export interface CloudSyncStatus {
+  synced: boolean;
+  lastSync?: number | null;
+  pendingUploads?: number;
+  pendingDownloads?: number;
 }
 
 /** Per-platform detection preference (mirrors the Rust `PlatformSource`). */
@@ -236,15 +236,6 @@ export interface PlatformSource {
   roots: string[];
 }
 
-export interface AutoCatAssignment {
-  collection: string;
-  appIds: number[];
-}
-
-export interface AutoCatPlan {
-  assignments: AutoCatAssignment[];
-  gamesWithoutMetadata: number[];
-}
 
 // --- External platforms -----------------------------------------------------
 
@@ -300,29 +291,12 @@ export interface OwnedLibrary {
   games: OwnedGameRecord[];
 }
 
-// --- Create collections from a sorting option ------------------------------
-
-export type CategorizeKind = AutoCat["kind"];
-
 export interface Filter {
   allowed: string[];
   required: string[];
   excluded: string[];
   search: string | null;
   kind: GameKind | null;
-}
-
-export interface CategorizeRequest {
-  kind: CategorizeKind;
-  prefix?: string | null;
-  maxCategories?: number | null;
-  include?: string[];
-  exclude?: string[];
-  removeExisting?: boolean;
-  onlyInstalled?: boolean;
-  /** Download missing store metadata before computing (default true). */
-  fetchMetadata?: boolean;
-  filter?: Filter | null;
 }
 
 /** Outcome of warming the local metadata cache. */
@@ -332,15 +306,6 @@ export interface MetadataSyncResult {
   tagsFetched: number;
   cached: number;
   unavailable: number;
-}
-
-export interface CategorizationPlan {
-  kind: CategorizeKind;
-  assignments: AutoCatAssignment[];
-  categorizedGames: number;
-  totalGames: number;
-  gamesWithoutMetadata: number[];
-  removeExisting: boolean;
 }
 
 export interface ApplyResult {
@@ -484,6 +449,8 @@ export interface LauncherStatus {
   downloadUrl: string;
   alternativeUrl?: string | null;
   alternativeLabel?: string | null;
+  supportsSilentInstall?: boolean;
+  wingetPackageId?: string | null;
 }
 
 export interface LegendaryAuthStatus {
@@ -526,6 +493,22 @@ export interface StoreDeal {
   originalPrice?: string | null;
   finalPrice: string;
   endDate?: string | null;
+}
+
+export interface FeaturedStoreItem {
+  id: string;
+  title: string;
+  platform: string;
+  storeUrl: string;
+  mainImage: string;
+  thumbnails: string[];
+  description: string;
+  tags: string[];
+  originalPrice?: string | null;
+  finalPrice: string;
+  discountPercent?: number | null;
+  isFree: boolean;
+  tagLabel?: string | null;
 }
 
 export interface PatchNote {

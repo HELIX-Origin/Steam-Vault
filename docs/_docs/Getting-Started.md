@@ -1,83 +1,90 @@
 ---
 layout: docs
 title: Getting Started
-summary: Prerequisites, building Steam Vault, and your first launch
+summary: Prerequisites, building Universal Game Launcher, and your first launch
 parent: Documentation Home
 nav_order: 2
 ---
 
 # Getting Started
 
-This page walks you through building **Steam Vault** and running it for the first time.
+This guide walks you through building **Universal Game Launcher** from source and running it for the first time.
+
+---
 
 ## 📦 1. Prerequisites
 
 - [Rust](https://rustup.rs/) (stable toolchain)
 - [Node.js](https://nodejs.org/) 18 or newer
-- The [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your platform
-  (on Windows this is the WebView2 runtime, which ships with Windows 10/11)
+- The [Tauri v2 prerequisites](https://tauri.app/start/prerequisites/) for your operating system (on Windows this is the WebView2 runtime, which comes preinstalled on Windows 10/11)
 - **Windows System Runtimes:**
   - [Microsoft Visual C++ 2015–2022 Redistributable (x64)](https://aka.ms/vs/17/release/vc_redist.x64.exe) — ensures standard C runtime DLLs (`vcruntime140.dll`, `msvcp140.dll`) are present for native bundled SQLite and MSVC dependencies.
   - [Microsoft .NET Desktop Runtime 8.0+ (x64)](https://dotnet.microsoft.com/download/dotnet/8.0) — optional; required if configuring third-party companion tools or external utilities that rely on .NET.
 
-## 🛠️ 2. Build and run
+---
+
+## 🛠️ 2. Build and Run
 
 From the repository root:
 
 ```bash
+# Install frontend dependencies
 npm install
-npm run tauri:dev      # development
-npm run tauri:build    # production bundle
+
+# Start local development server with Tauri desktop window
+npm run tauri:dev
+
+# Build production bundle and desktop installer
+npm run tauri:build
 ```
 
-> **Note:** The Tauri build embeds the compiled frontend, so a fresh clone must run the frontend
-> build before a bare `cargo check`. Use the npm scripts (which handle ordering) or run
-> `npm run build` first.
+> **Note:** The Tauri build embeds the compiled SvelteKit frontend, so a fresh clone must compile the frontend before a bare `cargo check`. Use the project npm scripts (e.g. `npm run check`) or execute `npm run build` first.
 
-## 🏁 3. First launch
+---
 
-When the app opens, it shows the **Dashboard** and tries to detect your Steam installation
-automatically.
+## 🏁 3. First Launch & Discovery
 
-1. Confirm the **Steam folder** on the Dashboard or in **Settings**. If detection fails, point it
-   at your Steam directory manually (for example `C:\Program Files (x86)\Steam`).
-2. Choose the **account** you want to organize.
-3. Optionally add **API keys** (Steam Web API, SteamGridDB, IGDB) in **Settings** to unlock the
-   matching metadata providers.
-4. Open the **Library** view to load your games.
+When the application launches, it displays the **Dashboard** and automatically discovers games installed across all supported storefronts:
 
-## 🔒 4. Writing changes safely
+1. **Automatic Multi-Platform Scan:** On startup, the launcher inspects standard installation paths and registry manifests for all installed clients — **Steam**, **Epic Games Store**, **GOG Galaxy**, **Ubisoft Connect**, **EA App**, **Xbox / Microsoft Store**, **Battle.net**, **itch.io**, and **Amazon Games**.
+2. **Library View:** Navigate to **Library** from the top title bar menu. The left sidebar presents your full aggregated games list grouped into collapsible platform accordions with quick filters (`All`, `Installed`, `★ Favorites`).
+3. **Dedicated Showcase:** Click any title in the sidebar to view its high-resolution hero banner, portrait capsule, 10-image screenshot media gallery, storage footprint, and prominent **Play Now** launch button.
+4. **Plugin Settings & Credentials:** Optional credentials (such as **SteamGridDB** for custom community artwork or **IGDB** for extended taxonomy) can be configured by clicking **Plugin Settings** in **Settings**. Each enabled plugin presents its own dedicated tab with live connection verification.
 
-Steam Vault only writes when it is safe to do so:
+---
 
-- **Close Steam completely** before saving changes. Writes are refused while Steam is running to
-  avoid sync conflicts.
-- Every write is preceded by a **timestamped backup**, so changes can be undone from the app data
-  directory.
+## 🔒 4. Safe Non-Invasive Architecture
 
-See [Collections](Collections.md) for the details of what gets written and where.
+Universal Game Launcher operates completely non-invasively:
 
-## 🧪 5. Verify your setup
+- **Zero External File Writes:** The launcher never modifies Steam's internal files (`shortcuts.vdf`, `cloud-storage-namespace-1.json`, or `appmanifest.acf`) and never edits other client databases.
+- **No Client Lockout:** You never need to close Steam or any other game launcher. Universal Game Launcher runs concurrently with all official clients safely.
+- **Local SQLite Persistence:** All user overrides, custom tags, favorite flags, and artwork assignments persist locally in `database.sqlite` (backed by an in-memory Redis KV tier for sub-millisecond retrieval).
 
-Both the frontend and backend have type checks and tests you can run locally. The quickest way is the
-project's test runner, which runs each step directly, logs it to `logs/`, and applies a timeout so a
-stuck command can never hang your session:
+---
+
+## 🧪 5. Verification & Testing
+
+Both the frontend and backend have strict type checks and automated tests:
 
 ```bash
-npm test                                                 # Rust + Svelte/TypeScript checks & tests
-npm run verify                                           # the above, plus a production build
+# Verify TypeScript types and Svelte diagnostics
+npm run check
+
+# Run Rust unit tests
+cargo test --manifest-path src-tauri/Cargo.toml
+
+# Full end-to-end verification suite (check, rust, frontend, build)
+node scripts/test.mjs check rust frontend build
 ```
 
-The raw toolchain commands still work if you prefer them:
+---
 
-```bash
-npm run check                                            # Svelte/TypeScript
-cargo check --manifest-path src-tauri/Cargo.toml         # Rust
-cargo test  --manifest-path src-tauri/Cargo.toml         # Rust tests
-```
-
-## ➡️ Next steps
+## ➡️ Next Steps
 
 - [Organizing Your Library](Organizing-Your-Library.md)
-- [Collections](Collections.md)
-- [Metadata Providers](Metadata-Providers.md)
+- [Managing Collections](Collections.md)
+- [Supported Launchers & Platforms](External-Platforms.md)
+- [Manually Added Local Games](Non-Steam-Games.md)
+- [Custom Artwork Studio](Artwork-Management.md)
+- [Plugin Development Guide](Plugin-Development.md)

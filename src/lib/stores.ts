@@ -27,7 +27,9 @@ function createCustomNamesStore() {
   let initial: Record<number, string> = {};
   if (typeof window !== "undefined" && window.localStorage) {
     try {
-      const stored = localStorage.getItem("steam_vault_custom_names");
+      const stored =
+        localStorage.getItem("universal_game_launcher_custom_names") ??
+        localStorage.getItem("steam_vault_custom_names");
       if (stored) initial = JSON.parse(stored);
     } catch {}
   }
@@ -35,7 +37,7 @@ function createCustomNamesStore() {
   if (typeof window !== "undefined" && window.localStorage) {
     store.subscribe((val) => {
       try {
-        localStorage.setItem("steam_vault_custom_names", JSON.stringify(val));
+        localStorage.setItem("universal_game_launcher_custom_names", JSON.stringify(val));
       } catch {}
     });
   }

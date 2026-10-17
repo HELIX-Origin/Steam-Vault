@@ -19,6 +19,34 @@ pub struct SteamSearchResult {
     pub tiny_image: Option<String>,
 }
 
+/// Strip common file suffixes and release metadata tags for clean searching.
+pub fn clean_search_term(name: &str) -> String {
+    let mut term = name.trim();
+    for ext in &[".exe", ".iso", ".zip", ".7z", ".rar", ".rpy", ".sh"] {
+        if let Some(stripped) = term.strip_suffix(ext) {
+            term = stripped;
+        }
+    }
+    let mut result = String::new();
+    let mut in_paren = false;
+    let mut in_bracket = false;
+    for ch in term.chars() {
+        match ch {
+            '(' => in_paren = true,
+            ')' => in_paren = false,
+            '[' => in_bracket = true,
+            ']' => in_bracket = false,
+            _ => {
+                if !in_paren && !in_bracket {
+                    result.push(ch);
+                }
+            }
+        }
+    }
+    let cleaned = result.trim().replace(['_', '-'], " ");
+    cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// Search the Steam Store for a game title and return matching games.
 pub async fn search_steam_store(
     client: &reqwest::Client,
@@ -26,7 +54,7 @@ pub async fn search_steam_store(
     cc: &str,
     lang: &str,
 ) -> AppResult<Vec<SteamSearchResult>> {
-    let clean = crate::metadata::vndb::clean_search_term(title);
+    let clean = clean_search_term(title);
     if clean.is_empty() {
         return Ok(Vec::new());
     }
@@ -75,7 +103,7 @@ pub async fn find_steam_app_id(
     lang: &str,
 ) -> AppResult<Option<u32>> {
     let results = search_steam_store(client, title, cc, lang).await?;
-    let clean_lower = crate::metadata::vndb::clean_search_term(title).to_lowercase();
+    let clean_lower = clean_search_term(title).to_lowercase();
     // Prefer exact name match, otherwise first result
     let best = results
         .iter()

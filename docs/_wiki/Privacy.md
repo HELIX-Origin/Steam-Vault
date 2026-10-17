@@ -2,47 +2,56 @@
 layout: wiki
 title: Privacy
 summary: What leaves your machine, and what never does
-parent: Steam Vault Technical Wiki
+parent: Universal Game Launcher Technical Wiki
 nav_order: 8
 ---
 
 # Privacy
 
-Steam Vault is designed to keep your data on your machine. This page is explicit about the very
-small amount that ever leaves it.
+Universal Game Launcher is engineered to keep your gaming data strictly on your machine. This document explicitly outlines what is processed locally and what minimal network activity may occur.
 
-## 🏠 Local by default
+---
 
-- All library parsing, collection editing, and categorization run **locally**.
-- There is **no telemetry**, no analytics, no accounts, and no first-party server.
-- Your library, playtime, and account identifiers are never uploaded to HELIX Origin.
+## 🏠 Local by Default
 
-## 🌐 What does go over the network
+- All library discovery, collection organization, categorizations, and playtime calculations run **100% locally on your machine**.
+- There is **no telemetry**, no usage tracking, no remote logging, no user account system, and no first-party telemetry server.
+- Your gaming library, installed paths, playtime records, and account identifiers are **never uploaded to HELIX Origin** or any central cloud service.
 
-The only outbound requests are **metadata lookups you trigger**, and they go directly to the
-provider — never through a proxy of ours:
+---
 
-| Destination | When | Key required |
+## 🌐 Network Communication
+
+Universal Game Launcher operates fully offline. The only outbound HTTP requests that ever occur are **metadata and artwork lookups you trigger**, and they connect directly to the respective third-party provider — never through an intermediary proxy:
+
+| Destination | When Triggered | API Key Required |
 | :--- | :--- | :--- |
-| `store.steampowered.com` | Fetching Steam Store metadata | No |
-| `api.steampowered.com` | Fetching owned games / summaries | Yes |
-| `www.steamgriddb.com` | Searching and fetching artwork | Yes |
-| `id.twitch.tv` / `api.igdb.com` | IGDB token and queries | Yes |
-| `www.pcgamingwiki.com` | Supplemental metadata | No |
-| `en.wikipedia.org` | Article summaries | No |
+| `store.steampowered.com` | Fetching Steam Store metadata & official capsules | ❌ No |
+| `catalog.gog.com` | Fetching official GOG catalog descriptions & covers | ❌ No |
+| `www.pcgamingwiki.com` | Fetching game engine, taxonomy, and box art | ❌ No |
+| `en.wikipedia.org` | Fetching article summaries & high-resolution cover images | ❌ No |
+| `api.vndb.org` | Fetching visual novel metadata & tags | ❌ No |
+| `api.steampowered.com` | Fetching Steam owned games list / player summaries | ✅ Yes (Optional) |
+| `api.steamgriddb.com` | Searching and downloading custom grids, heroes, logos, icons | ✅ Yes (Optional) |
+| `id.twitch.tv` / `api.igdb.com` | Fetching IGDB game summaries and companies | ✅ Yes (Optional) |
+| `itch.io/api` | Fetching itch.io library titles | ✅ Yes (Optional) |
 
-Each provider sees only what its API requires — typically a game name or app id, and your key. See
-[Metadata Providers]({{ '/docs/Metadata-Providers/' | relative_url }}) for what each contributes.
+Each provider endpoint receives only what its specific API query requires — typically a game title string or numeric app ID, along with your user-configured API key (if keyed).
 
-## 🗄️ Local storage
+---
 
-- **Metadata cache** — fetched results are cached locally as JSON for speed.
-- **Settings** — including API keys, stored in your user configuration directory.
-- **Backups** — timestamped copies of Steam files, stored in the app data directory.
+## 🗄️ Local Persistence
 
-You can delete any of these at any time; the app rebuilds what it needs.
+- **Local SQLite Database (`database.sqlite`)**: Persists custom collections, user title overrides, favorite flags, and cached metadata records locally on your system.
+- **In-Memory KV Cache (`mem_kv`)**: Sub-millisecond transient key-value cache persisted to disk on shutdown.
+- **Settings (`settings.json`)**: Application preferences and localized UI selections stored in your user configuration directory.
+- **Backups (`backups/`)**: Timestamped backups taken prior to physical file relocations.
 
-## ➡️ Next
+You can purge or reset the metadata and artwork cache at any time under **Settings → Local Storage & Cache Architecture**.
 
-- [Security](Security.md)
-- [Metadata Providers]({{ '/docs/Metadata-Providers/' | relative_url }})
+---
+
+## ➡️ Next Steps
+
+- [Security Model](Security.md) — non-invasive invariants and credential boundaries.
+- [Metadata Providers Reference]({{ '/docs/Metadata-Providers/' | relative_url }}) — provider details and capabilities.

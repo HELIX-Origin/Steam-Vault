@@ -1,31 +1,31 @@
 ---
 layout: wiki
-title: Steam Vault Technical Wiki
-summary: Architecture, the Steam data layer, the Rust backend, the SvelteKit frontend, and the security and privacy model.
+title: Universal Game Launcher Technical Wiki
+summary: Architecture, in-app modular plugin system, Rust backend, SvelteKit frontend, and security model.
 permalink: /wiki/
 nav_order: 1
 ---
 
-# Steam Vault Technical Wiki
+# Universal Game Launcher Technical Wiki
 
-This wiki documents how Steam Vault is put together: where it reads and writes Steam data, how the
-Rust backend is organized, how the frontend talks to it, and how the project handles safety,
-security, and privacy.
+This technical wiki documents how Universal Game Launcher is built: the decoupled core architecture, the in-app modular plugin system, the Rust backend with generic SQLite persistence and fast-tier in-memory KV caching, the SvelteKit frontend, and the non-invasive security and privacy model.
+
+---
 
 <section class="doc-section">
   <div class="section-heading">
     <span class="section-number">01</span>
     <div>
-      <p class="eyebrow">Architecture &amp; Data</p>
+      <p class="eyebrow">Architecture &amp; Core Engine</p>
       <h2>Core Internals</h2>
     </div>
   </div>
   <p>
-    How the application is structured and how it interacts with Steam's own files:
+    How the core application is structured and decoupled from features:
   </p>
   <ul>
-    <li><a href="{{ '/wiki/Architecture/' | relative_url }}">Architecture</a> — the big picture and the module map.</li>
-    <li><a href="{{ '/wiki/Steam-Data-Layer/' | relative_url }}">Steam Data Layer</a> — files read and written, formats, and write safety.</li>
+    <li><a href="{{ '/wiki/Architecture/' | relative_url }}">Architecture</a> — core launcher responsibilities, in-app modular plugin boundaries, and module map.</li>
+    <li><a href="{{ '/wiki/Plugins-Architecture/' | relative_url }}">Plugins Architecture</a> — dedicated per-plugin files, `UniversalPlugin` TypeScript framework, client capabilities, and tabbed settings dialog.</li>
   </ul>
 </section>
 
@@ -38,8 +38,8 @@ security, and privacy.
     </div>
   </div>
   <ul>
-    <li><a href="{{ '/wiki/Backend-Rust/' | relative_url }}">Backend (Rust)</a> — the Tauri command surface and modules.</li>
-    <li><a href="{{ '/wiki/Frontend-SvelteKit/' | relative_url }}">Frontend (SvelteKit)</a> — the SPA, stores, and typed API layer.</li>
+    <li><a href="{{ '/wiki/Backend-Rust/' | relative_url }}">Backend (Rust)</a> — the Tauri v2 command surface, in-memory KV tier (`mem_kv`), and SQLite persistence (`database.sqlite`).</li>
+    <li><a href="{{ '/wiki/Frontend-SvelteKit/' | relative_url }}">Frontend (SvelteKit)</a> — frameless titlebar navigation, Steam/GOG sidebar games list, showcase view, and `PluginSettingsDialog`.</li>
   </ul>
 </section>
 
@@ -52,19 +52,8 @@ security, and privacy.
     </div>
   </div>
   <ul>
-    <li><a href="{{ '/wiki/Development-and-Contributing/' | relative_url }}">Development &amp; Contributing</a> — the quality gate and workflow.</li>
-    <li><a href="{{ '/wiki/Security/' | relative_url }}">Security</a> — secrets, local writes, and reporting.</li>
-    <li><a href="{{ '/wiki/Privacy/' | relative_url }}">Privacy</a> — what leaves your machine (almost nothing).</li>
+    <li><a href="{{ '/wiki/Development-and-Contributing/' | relative_url }}">Development &amp; Contributing</a> — building from source, quality gates, authoring plugins, and verification workflows.</li>
+    <li><a href="{{ '/wiki/Security/' | relative_url }}">Security</a> — non-invasive invariants, zero credential harvesting, and secrets handling.</li>
+    <li><a href="{{ '/wiki/Privacy/' | relative_url }}">Privacy</a> — 100% on-device local operation and zero telemetry.</li>
   </ul>
 </section>
-
----
-
-### 📚 Wiki Index
-- **Core**: [Architecture](Architecture.md) · [Steam Data Layer](Steam-Data-Layer.md)
-- **Implementation**: [Backend (Rust)](Backend-Rust.md) · [Frontend (SvelteKit)](Frontend-SvelteKit.md)
-- **Project**: [Development & Contributing](Development-and-Contributing.md) · [Security](Security.md) · [Privacy](Privacy.md)
-
----
-
-*[Steam Vault](https://github.com/HELIX-Origin/Steam-Vault) — a cross-platform Steam library organizer.*

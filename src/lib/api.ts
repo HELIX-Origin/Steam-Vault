@@ -7,22 +7,20 @@ import type {
   ApplyResult,
   ArtworkOutcome,
   ArtworkSlotId,
-  AutoCatPlan,
   CacheResetReport,
   CacheStats,
-  CategorizationPlan,
-  CategorizeRequest,
   Collection,
   EosOverlayStatus,
+  FeaturedStoreItem,
   Filter,
   FilterPreset,
   FreeGamePromotion,
   Game,
   GameArtwork,
-  IgdbGame,
   ImportResult,
   LauncherStatus,
   LegendaryAuthStatus,
+  ManagedDirectories,
   MetadataSyncResult,
   MoveOutcome,
   MovePreview,
@@ -33,9 +31,8 @@ import type {
   PlatformScan,
   PluginInfo,
   ProviderInfo,
+  ScaffoldReport,
   Settings,
-  SgdbAsset,
-  SgdbGame,
   SteamInstall,
   SteamSearchResult,
   StorageReport,
@@ -84,28 +81,20 @@ export const api = {
     invoke<AppMeta[]>("fetch_steam_store_metadata", { appIds }),
   fetchOwnedGames: () => invoke<OwnedGame[]>("fetch_owned_games"),
 
-  steamGridDbSearch: (term: string) => invoke<SgdbGame[]>("steamgriddb_search", { term }),
-  steamGridDbAssets: (gameId: number, kind: "grids" | "heroes" | "logos" | "icons") =>
-    invoke<SgdbAsset[]>("steamgriddb_assets", { gameId, kind }),
-
-  igdbSearch: (query: string) => invoke<IgdbGame[]>("igdb_search", { query }),
-  pcgamingwikiLookup: (name: string) => invoke<AppMeta | null>("pcgamingwiki_lookup", { name }),
-  wikipediaSummary: (title: string) => invoke<string | null>("wikipedia_summary", { title }),
-  wikipediaGameLookup: (title: string) =>
-    invoke<AppMeta | null>("wikipedia_game_lookup", { title }),
-  vndbLookup: (title: string) => invoke<AppMeta | null>("vndb_lookup", { title }),
-  gogLookup: (title: string) => invoke<AppMeta | null>("gog_lookup", { title }),
-  epicLookup: (title: string) => invoke<AppMeta | null>("epic_lookup", { title }),
-  indiedbLookup: (title: string) => invoke<AppMeta | null>("indiedb_lookup", { title }),
-  itchLookup: (title: string) => invoke<AppMeta | null>("itch_lookup", { title }),
   steamStoreSearch: (term: string) =>
     invoke<SteamSearchResult[]>("steam_store_search", { term }),
 
-  // Community & First-Party Plugin Engine
+  // EmulationStation & ROM Management
+  scaffoldEmulationFolders: (romsDir: string) =>
+    invoke<ScaffoldReport>("scaffold_emulation_folders", { romsDir }),
+  scanEmulationRoms: (romsDir: string, normalizeTitles?: boolean) =>
+    invoke<PlatformGame[]>("scan_emulation_roms", { romsDir, normalizeTitles: normalizeTitles ?? true }),
+  normalizeRomTitle: (title: string) =>
+    invoke<string>("normalize_rom_title_cmd", { title }),
+
+  // Native Plugin Engine
   getInstalledPlugins: () => invoke<PluginInfo[]>("get_installed_plugins"),
   togglePlugin: (id: string, enabled: boolean) => invoke<void>("toggle_plugin", { id, enabled }),
-  openPluginsFolder: () => invoke<boolean>("open_plugins_folder"),
-  installPluginFromUrl: (url: string) => invoke<PluginInfo>("install_plugin_from_url", { url }),
   scanAllPlatforms: (includeOtherDrives?: boolean) =>
     invoke<PlatformScan>("scan_all_platforms", { includeOtherDrives: includeOtherDrives ?? false }),
 
@@ -115,6 +104,9 @@ export const api = {
     invoke<string[]>("find_platform_folders", { platform }),
   importPlatformGames: (games: PlatformGame[], accountId3?: string) =>
     invoke<ImportResult>("import_platform_games", { games, accountId3: accountId3 ?? null }),
+  pickGameExecutable: () => invoke<string | null>("pick_game_executable"),
+  pickGameDirectory: () => invoke<string | null>("pick_game_directory"),
+  pickGameArtwork: () => invoke<string | null>("pick_game_artwork"),
   setGamePlatform: (appId: number, platform: string | null) =>
     invoke<void>("set_game_platform", { appId, platform }),
   getOwnedLibrary: () => invoke<OwnedLibrary>("get_owned_library"),
@@ -172,6 +164,15 @@ export const api = {
 
   // Launcher Installation & Download Detection
   getInstalledLaunchers: () => invoke<LauncherStatus[]>("get_installed_launchers"),
+  checkBinaryInstalled: (binaries: string[], customPath?: string | null) =>
+    invoke<string | null>("check_binary_installed", { binaries, customPath: customPath ?? null }),
+  installWingetPackage: (packageId: string, location?: string | null) =>
+    invoke<boolean>("install_winget_package", { packageId, location: location ?? null }),
+  isWingetAvailable: () => invoke<boolean>("is_winget_available"),
+  getManagedDirectories: () => invoke<ManagedDirectories>("get_managed_directories"),
+  setManagedDirectories: (toolsDir?: string | null, launchersDir?: string | null) =>
+    invoke<boolean>("set_managed_directories", { toolsDir: toolsDir ?? null, launchersDir: launchersDir ?? null }),
+  openLaunchersFolder: () => invoke<boolean>("open_launchers_folder"),
   installLegendary: () => invoke<LauncherStatus>("install_legendary"),
   openExternalUrl: (url: string) => invoke<boolean>("open_external_url", { url }),
   openToolsFolder: () => invoke<boolean>("open_tools_folder"),
@@ -193,6 +194,10 @@ export const api = {
     }),
   getStoreDeals: (platforms?: string[]) =>
     invoke<StoreDeal[]>("get_store_deals", {
+      platforms: platforms ?? null,
+    }),
+  getFeaturedStoreItems: (platforms?: string[]) =>
+    invoke<FeaturedStoreItem[]>("get_featured_store_items", {
       platforms: platforms ?? null,
     }),
   getLibraryPatchNotes: (games?: [string, string][]) =>

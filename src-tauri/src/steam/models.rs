@@ -85,6 +85,8 @@ pub struct Game {
     pub hero_image: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logo_image: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub console: Option<String>,
 }
 
 /// A Steam collection (a.k.a. category), modern or legacy-derived.
@@ -153,6 +155,10 @@ pub struct AppMeta {
     pub locales: std::collections::HashMap<String, serde_json::Value>,
     #[serde(default)]
     pub providers: std::collections::HashMap<String, serde_json::Value>,
+    #[serde(default, alias = "user_enhanced")]
+    pub user_enhanced: Option<bool>,
+    #[serde(default, alias = "enhanced_by")]
+    pub enhanced_by: Vec<String>,
 }
 
 impl AppMeta {

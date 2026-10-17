@@ -4,7 +4,8 @@
   import { t } from "$lib/i18n";
   import { listen } from "@tauri-apps/api/event";
   import { error, platformScan } from "$lib/stores";
-  import type { EosOverlayStatus, LauncherStatus, LegendaryAuthStatus, Platform, PlatformGame } from "$lib/types";
+  import { PLATFORM_PLUGINS } from "$lib/plugins";
+  import type { EosOverlayStatus, LauncherStatus, LegendaryAuthStatus, ManagedDirectories, Platform, PlatformGame } from "$lib/types";
 
   type SourceRow = { id: string; label: string; enabled: boolean; roots: string[] };
 
@@ -44,7 +45,7 @@
 
   let launcherStatuses = $state<Record<string, LauncherStatus>>({});
   let loadingLaunchers = $state(true);
-  let installingLegendary = $state(false);
+  let installingLauncherId = $state<string | null>(null);
   let legendaryMsg = $state<string | null>(null);
 
   let legendaryAuth = $state<LegendaryAuthStatus | null>(null);
@@ -57,19 +58,95 @@
   let eosOverlayStatus = $state<EosOverlayStatus | null>(null);
   let installingEos = $state(false);
 
+  let managedDirs = $state<ManagedDirectories | null>(null);
+  let customToolsInput = $state("");
+  let customLaunchersInput = $state("");
+  let savingDirs = $state(false);
+
   async function loadLaunchers() {
     loadingLaunchers = true;
     try {
-      const list = await api.getInstalledLaunchers();
-      const map: Record<string, LauncherStatus> = {};
-      for (const item of list) {
-        map[item.id] = item;
+      const dirs = await api.getManagedDirectories().catch(() => null);
+      if (dirs) {
+        managedDirs = dirs;
+        customToolsInput = dirs.toolsDir;
+        customLaunchersInput = dirs.launchersDir;
       }
+
+      const map: Record<string, LauncherStatus> = {};
+      await Promise.all(
+        PLATFORM_PLUGINS.map(async (plugin) => {
+          const key = plugin.id.replace("platform-", "");
+          try {
+            const detected = await plugin.detectLauncher?.();
+            map[key] = {
+              id: key,
+              name: plugin.name.replace(" Integration", "").replace(" Platform", ""),
+              installed: detected?.installed ?? false,
+              executablePath: detected?.executablePath,
+              alternativeMethod: detected?.alternativeMethod,
+              downloadUrl: plugin.downloadUrl ?? "",
+              alternativeUrl: plugin.alternativeUrl,
+              alternativeLabel: plugin.alternativeLabel,
+              supportsSilentInstall: (plugin.supportsSilentInstall ?? false) && (dirs?.wingetAvailable ?? false),
+              wingetPackageId: plugin.wingetPackageId,
+            };
+          } catch {
+            map[key] = {
+              id: key,
+              name: plugin.name,
+              installed: false,
+              downloadUrl: plugin.downloadUrl ?? "",
+              alternativeUrl: plugin.alternativeUrl,
+              alternativeLabel: plugin.alternativeLabel,
+              supportsSilentInstall: (plugin.supportsSilentInstall ?? false) && (dirs?.wingetAvailable ?? false),
+              wingetPackageId: plugin.wingetPackageId,
+            };
+          }
+        })
+      );
       launcherStatuses = map;
     } catch (e) {
-      console.warn("Could not inspect installed launchers:", e);
+      console.warn("Could not inspect platform plugins:", e);
     } finally {
       loadingLaunchers = false;
+    }
+  }
+
+  async function handleInstallLauncher(platformKey: string) {
+    const plugin = PLATFORM_PLUGINS.find(
+      (p) => p.id === `platform-${platformKey}` || p.id === platformKey
+    );
+    if (!plugin?.installLauncher) return;
+
+    installingLauncherId = platformKey;
+    legendaryMsg = `Installing ${plugin.name}…`;
+    try {
+      const targetLocation = managedDirs?.launchersDir || undefined;
+      const res = await plugin.installLauncher({ targetDir: targetLocation });
+      if (res.success) {
+        legendaryMsg = res.message;
+        await loadLaunchers();
+      } else {
+        error.set(res.message);
+      }
+    } catch (e) {
+      error.set(errorMessage(e));
+    } finally {
+      installingLauncherId = null;
+    }
+  }
+
+  async function handleSaveManagedDirs() {
+    savingDirs = true;
+    try {
+      await api.setManagedDirectories(customToolsInput || null, customLaunchersInput || null);
+      managedDirs = await api.getManagedDirectories();
+      legendaryMsg = "Updated managed installation directories successfully.";
+    } catch (e) {
+      error.set(errorMessage(e));
+    } finally {
+      savingDirs = false;
     }
   }
 
@@ -89,6 +166,14 @@
   async function handleOpenToolsFolder() {
     try {
       await api.openToolsFolder();
+    } catch (e) {
+      error.set(errorMessage(e));
+    }
+  }
+
+  async function handleOpenLaunchersFolder() {
+    try {
+      await api.openLaunchersFolder();
     } catch (e) {
       error.set(errorMessage(e));
     }
@@ -170,10 +255,13 @@
         <button class="btn mini btn-ghost" onclick={handleOpenToolsFolder} title="Open user tools directory where helper binaries and CLI tools are stored">
           Tools Folder ↗
         </button>
+        <button class="btn mini btn-ghost" onclick={handleOpenLaunchersFolder} title="Open user launchers directory where games and platform clients are installed">
+          Launchers Folder ↗
+        </button>
       </div>
     </div>
     <p class="muted-sm">
-      Automatically detect games from installed launchers and native gaming services. Launchers that are not installed on your system or drives cannot be enabled until installed or downloaded via your browser.
+      Automatically detect games from installed launchers and native gaming services. Launchers are detected directly via binaries on PATH, system packages, or user-managed custom directories.
     </p>
     <div class="integrations-grid">
       {#each sources.filter((s) => s.id !== "other" && s.id !== "emulator") as source (source.id)}
@@ -207,7 +295,7 @@
               </div>
               <span class="muted-xs">
                 {#if !isInstalled}
-                  Disabled — Launcher or native service not detected
+                  Disabled — Launcher binary not detected on PATH or custom folders
                 {:else if source.enabled}
                   Active &amp; scanned
                 {:else}
@@ -217,19 +305,83 @@
             </div>
           </label>
 
-          {#if !isInstalled && launcher?.downloadUrl}
-            <div class="integration-actions-row">
-              <button
-                class="btn mini btn-ghost launcher-action-btn"
-                onclick={() => handleOpenUrl(launcher.downloadUrl)}
-                title="Download official {launcher.name} via web browser"
-              >
-                Download Launcher ↗
-              </button>
+          {#if !isInstalled && launcher}
+            <div class="integration-actions-row" style="display:flex;gap:0.4rem;align-items:center;flex-wrap:wrap">
+              {#if launcher.supportsSilentInstall}
+                <button
+                  class="btn mini btn-accent launcher-action-btn"
+                  onclick={() => handleInstallLauncher(source.id)}
+                  disabled={installingLauncherId === source.id}
+                  title="Silently install {launcher.name} via winget into user-managed folder"
+                >
+                  {installingLauncherId === source.id ? "Installing…" : "⚡ Install"}
+                </button>
+              {/if}
+              {#if launcher.downloadUrl}
+                <button
+                  class="btn mini btn-ghost launcher-action-btn"
+                  onclick={() => handleOpenUrl(launcher.downloadUrl)}
+                  title="Download official {launcher.name} via web browser"
+                >
+                  Download ↗
+                </button>
+              {/if}
+              {#if launcher.alternativeUrl}
+                <button
+                  class="btn mini btn-ghost launcher-action-btn"
+                  onclick={() => handleOpenUrl(launcher.alternativeUrl!)}
+                  title={launcher.alternativeLabel ?? "Download CLI"}
+                >
+                  {launcher.alternativeLabel ?? "CLI ↗"}
+                </button>
+              {/if}
             </div>
           {/if}
         </div>
       {/each}
+    </div>
+
+    <!-- User-Managed Installation Directories -->
+    <div class="glass card" style="margin-top:1rem;padding:0.85rem 1rem">
+      <div class="row-between" style="align-items:center;margin-bottom:0.5rem">
+        <div>
+          <strong style="font-size:0.92rem">User-Manageable Folders &amp; Organization</strong>
+          <p class="muted-xs" style="margin:0.2rem 0 0">
+            Specify custom installation directories for tools, helpers, and downloaded launchers to maintain clean library organization.
+          </p>
+        </div>
+        <button class="btn mini btn-primary" onclick={handleSaveManagedDirs} disabled={savingDirs}>
+          {savingDirs ? "Saving…" : "Save Folders"}
+        </button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-top:0.5rem">
+        <div>
+          <label for="custom-tools-folder" class="muted-xs" style="display:block;margin-bottom:0.25rem">Custom Tools &amp; Helper Binaries Folder</label>
+          <div class="row" style="gap:0.35rem">
+            <input
+              id="custom-tools-folder"
+              type="text"
+              bind:value={customToolsInput}
+              placeholder={managedDirs?.toolsDir ?? "Default tools directory"}
+              style="flex:1;font-size:0.8rem;padding:0.35rem 0.5rem"
+            />
+            <button class="btn mini btn-ghost" onclick={handleOpenToolsFolder} title="Open folder">↗</button>
+          </div>
+        </div>
+        <div>
+          <label for="custom-launchers-folder" class="muted-xs" style="display:block;margin-bottom:0.25rem">Custom Platform Launchers Folder</label>
+          <div class="row" style="gap:0.35rem">
+            <input
+              id="custom-launchers-folder"
+              type="text"
+              bind:value={customLaunchersInput}
+              placeholder={managedDirs?.launchersDir ?? "Default launchers directory"}
+              style="flex:1;font-size:0.8rem;padding:0.35rem 0.5rem"
+            />
+            <button class="btn mini btn-ghost" onclick={handleOpenLaunchersFolder} title="Open folder">↗</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Free Game Notifications & Promotions Opt-in Toggle -->
@@ -325,7 +477,7 @@
         <button class="btn mini" onclick={selectVisible} disabled={shown.length === 0}>Select shown</button>
         <button class="btn btn-ghost mini" onclick={clearSelection} disabled={selected.size === 0}>Clear</button>
         <button class="btn btn-primary mini" onclick={importSelected} disabled={busy || selected.size === 0}>
-          Import {selected.size || ""} selected to Steam
+          Import {selected.size || ""} selected to Library
         </button>
       </div>
 
@@ -355,7 +507,7 @@
           Click "Scan Non-Steam Games" to search for games installed across your launchers and system drives.
         </p>
         <p class="muted-sm" style="margin:0">
-          Steam Vault reads launcher manifests and local registries without launching background processes.
+          Universal Game Launcher reads launcher manifests and local registries without launching background processes.
         </p>
       </div>
     {/if}
@@ -369,7 +521,7 @@
           <div>
             <h2 class="section-title">Local &amp; Standalone Games</h2>
             <p class="muted-sm">
-              Manual path entries for local games that have no custom installer or launcher. Steam Vault scans these folders for games and executables using the folder name as the game title.
+              Manual path entries for local games that have no custom installer or launcher. Universal Game Launcher scans these folders for games and executables using the folder name as the game title.
             </p>
           </div>
           <label class="row" style="gap:0.5rem;margin:0;cursor:pointer">

@@ -1,10 +1,13 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { page } from "$app/state";
   import { api, errorMessage } from "$lib/api";
   import { STEAM_LANGUAGES, setLocale, syncWithSettingsLanguage, t } from "$lib/i18n";
   import { collections, error, games, install, settings, steamRunning } from "$lib/stores";
   import type { CacheStats, PluginInfo, Settings } from "$lib/types";
   import PlatformsSection from "$lib/components/settings/PlatformsSection.svelte";
+  import PluginSettingsDialog from "$lib/components/settings/PluginSettingsDialog.svelte";
+  import { pluginEngine } from "$lib/plugins/engine";
   import "$styles/settings.scss";
 
   type SettingsTab = "general" | "platforms" | "plugins";
@@ -21,18 +24,34 @@
   let busy = $state(false);
   let saved = $state(false);
 
-  // Community & Drop-In Plugins State
+  // Modular Plugins State
   let installedPlugins = $state<PluginInfo[]>([]);
   let loadingPlugins = $state(false);
-  let pluginUrlInput = $state("");
-  let installingPlugin = $state(false);
   let pluginActionMsg = $state<string | null>(null);
   let pluginFilterType = $state<string>("all");
+  let showPluginSettingsDialog = $state(false);
+  let configuringPluginId = $state<string | null>(null);
+
+  // Synchronize activeTab with URL search params reactively
+  $effect(() => {
+    const tabParam = page.url.searchParams.get("tab") as SettingsTab | null;
+    if (tabParam && ["general", "platforms", "plugins"].includes(tabParam)) {
+      if (activeTab !== tabParam) {
+        activeTab = tabParam;
+        if (tabParam === "plugins") {
+          loadPlugins();
+        }
+      }
+    } else if (!tabParam && activeTab !== "general") {
+      activeTab = "general";
+    }
+  });
 
   async function loadPlugins() {
     loadingPlugins = true;
     try {
-      installedPlugins = await api.getInstalledPlugins();
+      const backendList = await api.getInstalledPlugins();
+      installedPlugins = pluginEngine.mergePluginInfo(backendList);
     } catch (e) {
       console.error("Failed to load plugins:", e);
     } finally {
@@ -49,31 +68,6 @@
       setTimeout(() => (pluginActionMsg = null), 3000);
     } catch (e) {
       pluginActionMsg = `Error: ${errorMessage(e)}`;
-    }
-  }
-
-  async function handleInstallFromUrl() {
-    if (!pluginUrlInput.trim()) return;
-    installingPlugin = true;
-    pluginActionMsg = "Fetching plugin manifest from GitHub/URL…";
-    try {
-      const installed = await api.installPluginFromUrl(pluginUrlInput.trim());
-      pluginActionMsg = `Successfully installed "${installed.name}" v${installed.version}!`;
-      pluginUrlInput = "";
-      await loadPlugins();
-      setTimeout(() => (pluginActionMsg = null), 4000);
-    } catch (e) {
-      pluginActionMsg = `Installation failed: ${errorMessage(e)}`;
-    } finally {
-      installingPlugin = false;
-    }
-  }
-
-  async function handleOpenPluginsFolder() {
-    try {
-      await api.openPluginsFolder();
-    } catch (e) {
-      pluginActionMsg = `Could not open folder: ${errorMessage(e)}`;
     }
   }
 
@@ -279,7 +273,7 @@
   </button>
   <button class="tab-btn" class:active={activeTab === "plugins"} onclick={() => { setTab("plugins"); loadPlugins(); }}>
     <span class="tab-icon">🧩</span>
-    <span>Plugins</span>
+    <span>Plugins &amp; Modules</span>
   </button>
 </div>
 
@@ -318,35 +312,6 @@
             <div class="kv" style="margin-top:0.5rem"><span class="muted">{$t("settings.librariesCount")}</span><span>{$install.libraries.length} folders</span></div>
             <div class="kv"><span class="muted">{$t("settings.accountsCount")}</span><span>{$install.accounts.length} accounts</span></div>
           {/if}
-        </section>
-
-        <!-- API Keys -->
-        <section class="glass-strong card">
-          <div class="row-between" style="align-items:center;margin-bottom:0.4rem">
-            <h2 class="section-title" style="margin:0">API &amp; Storefront Keys</h2>
-            <span class="pill" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:0.04em">Keyless Architecture</span>
-          </div>
-          <p class="muted-sm" style="margin-bottom:0.75rem">
-            Universal Game Launcher uses direct native storefront integrations (Steam, GOG, Epic, Xbox, itch) and offline engine discovery. Third-party API keys are strictly optional.
-          </p>
-          <div class="field">
-            <label for="steamkey">Steam Web API Key <span class="muted-xs">(Optional remote sync)</span></label>
-            <input id="steamkey" type="password" bind:value={form.steamApiKey} placeholder="Optional — steamcommunity.com/dev/apikey" />
-          </div>
-          <div class="field">
-            <label for="sgdb">SteamGridDB Key <span class="muted-xs">(Optional fallback)</span></label>
-            <input id="sgdb" type="password" bind:value={form.steamgriddbApiKey} placeholder="SteamGridDB API key" />
-          </div>
-          <div class="row" style="gap:1rem">
-            <div class="field" style="flex:1">
-              <label for="igdbid">IGDB Client ID <span class="muted-xs">(Optional)</span></label>
-              <input id="igdbid" bind:value={form.igdbClientId} placeholder="Twitch client ID" />
-            </div>
-            <div class="field" style="flex:1">
-              <label for="igdbsec">IGDB Secret <span class="muted-xs">(Optional)</span></label>
-              <input id="igdbsec" type="password" bind:value={form.igdbClientSecret} placeholder="Twitch client secret" />
-            </div>
-          </div>
         </section>
       </div>
 
@@ -452,17 +417,17 @@
     />
   {:else if activeTab === "plugins"}
     <div class="plugins-panel">
-      <!-- Header row with Open Plugins Folder & Refresh buttons -->
+      <!-- Header row with Plugin Settings & Refresh buttons -->
       <div class="row-between" style="align-items: center; margin-bottom: 1.25rem;">
         <div>
-          <h2 style="margin: 0; font-size: 1.2rem;">Drop-In Plugins &amp; Extensions</h2>
+          <h2 style="margin: 0; font-size: 1.2rem;">Plugins &amp; Modules</h2>
           <p class="muted-sm" style="margin: 0.25rem 0 0 0;">
-            Universal Game Launcher loads plugins dynamically from drop-in manifests (<code>index.json</code>).
+            Platform integrations and metadata providers operate as dedicated, modular plugins with isolated capabilities.
           </p>
         </div>
         <div class="row" style="gap: 0.5rem;">
-          <button class="btn mini" onclick={handleOpenPluginsFolder} title="Open local plugins folder on disk">
-            📁 Open Plugins Folder
+          <button class="btn mini btn-primary" onclick={() => { showPluginSettingsDialog = true; configuringPluginId = null; }}>
+            🧩 Plugin Settings
           </button>
           <button class="btn mini btn-ghost" onclick={loadPlugins} disabled={loadingPlugins} title="Refresh plugins list">
             🔄 Refresh
@@ -475,29 +440,6 @@
           {pluginActionMsg}
         </div>
       {/if}
-
-      <!-- Install Plugin from URL Card -->
-      <section class="glass-strong card" style="margin-bottom: 1.5rem;">
-        <h3 class="section-title" style="margin-top: 0;">Install Community Plugin via GitHub / URL</h3>
-        <p class="muted-xs" style="margin-bottom: 0.75rem;">
-          Enter a URL pointing to a GitHub repository's entry point or direct <code>index.json</code> manifest file.
-        </p>
-        <div class="row" style="gap: 0.5rem; align-items: center;">
-          <input
-            type="text"
-            placeholder="https://github.com/author/my-launcher-plugin/raw/main/index.json"
-            bind:value={pluginUrlInput}
-            style="flex: 1;"
-          />
-          <button
-            class="btn btn-primary"
-            onclick={handleInstallFromUrl}
-            disabled={installingPlugin || !pluginUrlInput.trim()}
-          >
-            {installingPlugin ? "Installing…" : "Install Plugin"}
-          </button>
-        </div>
-      </section>
 
       <!-- Plugins Filter Bar -->
       <div class="row-between" style="align-items: center; margin-bottom: 1rem;">
@@ -535,15 +477,26 @@
                   </div>
                   <span class="muted-xs" style="display: block; margin-top: 0.2rem;">By {plugin.author}</span>
                 </div>
-                <button
-                  class="btn mini"
-                  class:btn-primary={plugin.enabled}
-                  class:btn-ghost={!plugin.enabled}
-                  onclick={() => handleTogglePlugin(plugin)}
-                  title={plugin.enabled ? "Disable plugin" : "Enable plugin"}
-                >
-                  {plugin.enabled ? "Enabled" : "Disabled"}
-                </button>
+                <div class="row" style="gap: 0.35rem; align-items: center;">
+                  {#if plugin.settings?.fields && plugin.settings.fields.length > 0}
+                    <button
+                      class="btn mini btn-ghost"
+                      onclick={() => { configuringPluginId = plugin.id; showPluginSettingsDialog = true; }}
+                      title="Configure plugin settings"
+                    >
+                      ⚙ Configure
+                    </button>
+                  {/if}
+                  <button
+                    class="btn mini"
+                    class:btn-primary={plugin.enabled}
+                    class:btn-ghost={!plugin.enabled}
+                    onclick={() => handleTogglePlugin(plugin)}
+                    title={plugin.enabled ? "Disable plugin" : "Enable plugin"}
+                  >
+                    {plugin.enabled ? "Enabled" : "Disabled"}
+                  </button>
+                </div>
               </div>
 
               <p class="muted-sm" style="margin: 0.5rem 0; font-size: 0.8rem; line-height: 1.4;">{plugin.description}</p>
@@ -564,6 +517,13 @@
           </div>
         {/each}
       </div>
+
+      {#if showPluginSettingsDialog}
+        <PluginSettingsDialog
+          initialPluginId={configuringPluginId}
+          onclose={() => { showPluginSettingsDialog = false; configuringPluginId = null; }}
+        />
+      {/if}
     </div>
   {/if}
 {:else}

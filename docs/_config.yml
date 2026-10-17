@@ -7,8 +7,8 @@ tagline: Universal Game Launcher & Library Hub
 tagline_short: Universal Game Launcher
 description: "A fast, lightweight, privacy-first universal game launcher and library organizer across Steam, Epic, GOG, Xbox, EA, Ubisoft, and local games."
 url: "https://helix-origin.github.io"
-baseurl: "/Steam-Vault"
-repository: "HELIX-Origin/Steam-Vault"
+baseurl: "/Universal-Game-Launcher"
+repository: "HELIX-Origin/Universal-Game-Launcher"
 github_username: "HELIX-Origin"
 logo: "assets/images/logo.svg"
 favicon: "assets/images/favicon.ico"

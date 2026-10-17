@@ -25,9 +25,14 @@ vite.config.ts.timestamp-*
 /src-tauri/target
 /src-tauri/gen/schemas
 
-# Local backups created by Steam Vault before writing to Steam files
+# Local backups created by Universal Game Launcher
 /scratch
 *.local.json
+
+# Signing and Certificates (protect private keys and certificates)
+/certificates/
+*.pfx
+*.p12
 
 # Jekyll local docs preview (scratch files - not committed)
 /Gemfile

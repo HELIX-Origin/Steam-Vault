@@ -1,4 +1,4 @@
-// Hand-rolled reactive i18n localization engine for Steam-Vault.
+// Hand-rolled reactive i18n localization engine for Universal Game Launcher.
 // Full support for all 30 Valve/Steam officially supported platform languages.
 
 import { derived, writable } from "svelte/store";
@@ -9,13 +9,14 @@ import type { SteamLanguage, TranslationDictionary } from "./types";
 export * from "./languages";
 export * from "./types";
 
-const STORAGE_KEY = "steam_vault_language";
+const STORAGE_KEY = "universal_game_launcher_language";
+const LEGACY_STORAGE_KEY = "steam_vault_language";
 
 /** Get initial language choice from storage, browser preference, or default to English. */
 function getInitialLocale(): string {
   if (typeof window !== "undefined") {
     try {
-      const stored = localStorage.getItem(STORAGE_KEY);
+      const stored = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY);
       if (stored) return stored;
     } catch {
       // Storage unavailable or blocked

@@ -1,71 +1,86 @@
 ---
 layout: wiki
 title: Frontend (SvelteKit)
-summary: The static SPA, stores, and typed API layer
-parent: Steam Vault Technical Wiki
+summary: The static SPA, Svelte 5 Runes architecture, SCSS design system, and views
+parent: Technical Wiki
 nav_order: 5
 ---
 
 # Frontend (SvelteKit)
 
-The frontend is a **SvelteKit** application in static SPA mode, built with **Svelte 5**, strict
-**TypeScript**, and **Vite**. It is compiled to static assets that Tauri embeds in the binary.
+The Universal Game Launcher frontend is a high-performance **SvelteKit static SPA** built with **Svelte 5 Runes**, strict **TypeScript**, and **Vite**.
 
-## 🏗️ SPA configuration
+It compiles to static HTML/CSS/JS assets bundled directly into the Tauri desktop application.
 
-- `@sveltejs/adapter-static` with a fallback page, so the app runs as a single-page application.
-- Server-side rendering is disabled; the UI is a client-only shell that talks to Rust over IPC.
+---
 
-## 📁 Layout
+## 🏗️ SPA Configuration & Architecture
+
+- **Adapter:** `@sveltejs/adapter-static` with client-side routing fallback.
+- **Rendering:** Pure client-side SPA (no Node.js SSR). Communicates with Rust backend exclusively through typed Tauri IPC (`invoke`).
+- **State Management:** Svelte 5 modern runes (`$state`, `$derived`, `$effect`, `$props`) coupled with cross-view reactive stores (`$games`, `$collections`, `$settings`).
+- **Styling Architecture:** Modular SCSS design system (`src/styles/`):
+  - `_tokens.scss`: Obsidian dark purple design tokens (`#080511`, `#0f0920`, `#160e2e`, accent `#a855f7` neon violet, secondary `#38bdf8` cyan).
+  - High-performance GPU rendering: Zero `backdrop-filter: blur` overhead; hardware-accelerated transforms (`translateZ(0)`).
+
+---
+
+## 📁 Layout & Route Structure
 
 | Path | Role |
 | :--- | :--- |
-| `src/app.css` | The global theme: dark surfaces, glass panels, buttons, pills, and form styles. |
-| `src/lib/types.ts` | TypeScript mirrors of the Rust serde models. |
-| `src/lib/api.ts` | Typed `invoke` wrappers, one per command, plus an error-message helper. |
-| `src/lib/stores.ts` | Writable stores: settings, providers, install, games, collections, Steam-running, owned library, platform scan, loading, and error. |
-| `src/lib/platform.ts` | Platform detection for window-control rendering. |
-| `src/lib/components/WindowControls.svelte` | Custom title-bar controls (macOS traffic lights / Windows buttons). |
-| `src/lib/i18n/` | Zero-dependency reactive internationalization engine supporting all 30 Steam languages with Arabic RTL layout. |
-| `src/routes/+layout.svelte` | The app shell: custom title bar, sidebar navigation, and status. |
-| `src/routes/+page.svelte` | Dashboard. |
-| `src/routes/library/+page.svelte` | Library. |
-| `src/routes/storage/+page.svelte` | Storage: libraries, drives, and moving games between them. |
-| `src/routes/artwork/+page.svelte` | Artwork: custom grid, hero, logo, and icon art for any game. |
-| `src/routes/collections/+page.svelte` | Collections. |
-| `src/routes/platforms/+page.svelte` | External-platform detection and import. |
-| `src/routes/organize/+page.svelte` | Create collections from a sorting option, with the Allowed / Required / Excluded filter builder. |
-| `src/routes/settings/+page.svelte` | Settings. |
+| `src/routes/+layout.svelte` | App shell: Custom frameless title bar navigation (Dashboard, Library, Storage, Plugins, Settings) and the persistent **Steam & GOG Galaxy-style left games list sidebar**. |
+| `src/routes/+page.svelte` | **Dashboard**: Quick launch carousel, library statistics, volume utilization snapshot, and plugin-powered free games and deals feeds. |
+| `src/routes/library/+page.svelte` | **Library Showcase**: Dedicated selected game showcase featuring 16:9 hero wallpaper, capsule, title logo, big prominent PLAY NOW button, 10-screenshot gallery with lightbox, and custom artwork studio. |
+| `src/routes/storage/+page.svelte` | **Storage**: Disk capacity usage gauges and game storage footprint explorer across connected drives. |
+| `src/routes/settings/+page.svelte` | **Settings & Plugins Manager**: Core preferences, system locale, cache reset, and installed plugin toggles. |
+| `src/lib/components/settings/PluginSettingsDialog.svelte` | Tabbed per-plugin settings configuration dialog for API keys (with password toggle), executable paths, options, and live connection testing. |
+| `src/lib/components/WindowControls.svelte` | Frameless window controls (Minimize, Maximize, Close). |
+| `src/lib/api.ts` | Strongly typed wrappers around Tauri IPC commands. |
+| `src/lib/types.ts` | TypeScript interfaces mirroring backend Rust structs. |
 
-## 🔌 Talking to the backend
+---
 
-The API layer wraps each command in a typed function, for example:
+## 🎮 Navigation & Interaction Model
 
+```
++---------------------------------------------------------------------------------------------------------+
+| [LOGO] Universal Game Launcher  < >   DASHBOARD   LIBRARY   STORAGE   PLUGINS   SETTINGS    [Search] [_][#][X]|  <- Custom Title Bar
++------------------------------------+--------------------------------------------------------------------+
+|  [🔍 Filter games...             ] |  HERO WALLPAPER BANNER (16:9 / 21:9 with dark vignette)            |
+|  [All (142)] [Installed] [★ Favs]  |  +---------------------------------------------------------------+ |
+|                                    |  | [Capsule]  TITLE LOGO TYPOGRAPHY                              | |
+|  ▼ STEAM (84)                      |  |            By Developer · Published by Publisher · 2024       | |
+|    • Cyberpunk 2077                |  |            [▶ PLAY NOW]  [★] [⚙ Manage]   Playtime: 48.2 hrs  | |
+|    • Elden Ring                    |  +---------------------------------------------------------------+ |
+|  ▼ GOG GALAXY (28)                 |  MEDIA GALLERY (10 Screenshots with Fullscreen Lightbox)           |
+|    • The Witcher 3: Wild Hunt      |  [Img 1] [Img 2] [Img 3] [Img 4] [Img 5]                           |
+|  ▼ EPIC GAMES (18)                 |  GAME DETAILS & OVERVIEW                                           |
+|    • Alan Wake 2                   |  Full description, community tags, store links.                    |
+|  ▼ STANDALONE / INDIE (12)         |  CUSTOM ARTWORK STUDIO                                             |
+|    • Custom Game                   |  Portrait Capsule · Hero Wallpaper · Transparent Logo · Icon       |
++------------------------------------+--------------------------------------------------------------------+
+```
+
+---
+
+## 🔌 Talking to the Backend
+
+All IPC calls are wrapped in strongly typed functions in `src/lib/api.ts`:
 ```ts
 export const api = {
-  loadLibrary: (accountId3?: string) =>
-    invoke<Game[]>("load_library", { accountId3: accountId3 ?? null }),
+  loadLibrary: () => invoke<Game[]>("load_library"),
+  launchGame: (appId: number, launchUri?: string | null, exe?: string | null, platform?: string | null) =>
+    invoke<boolean>("launch_game", { appId, launchUri: launchUri ?? null, exe: exe ?? null, platform: platform ?? null }),
   // ...
 };
 ```
+Tauri automatically maps camelCase parameters in TypeScript to snake_case parameters in Rust.
 
-Because Tauri maps camelCase JavaScript keys to snake_case Rust parameters, the TypeScript surface
-stays idiomatic while matching the Rust signatures.
+---
 
-## 🧩 Reactivity
+## ➡️ Next Steps
 
-Components use Svelte 5 in **legacy (non-runes) mode** — `let` declarations, props, and reactive
-`$:` statements — while shared `writable` stores carry cross-view state (the loaded library,
-collections, and settings). Pages read stores with the `$` prefix and update them after each command.
-
-## 🎨 Theming
-
-The interface uses an M5 **dark obsidian glassmorphism** design system: translucent frosted panels with
-backdrop blur over an atmospheric deep sapphire mesh, accented in cyan (`#38bdf8`) and purple (`#a855f7`). Styling is driven by
-CSS custom properties in `app.css` plus modular glass classes (`.glass`, `.glass-strong`, `.card`, `.btn-primary`). The window is **frameless** with a custom, draggable title bar and platform-aware window
-controls.
-
-## ➡️ Next
-
-- [Backend (Rust)](Backend-Rust.md)
-- [Development & Contributing](Development-and-Contributing.md)
+- [Backend Rust Architecture](Backend-Rust.md) — Rust core and IPC command handlers.
+- [Plugins Architecture](Plugins-Architecture.md) — in-app modular plugin system.
+- [Security Model](Security.md) — non-invasive security and permissions.

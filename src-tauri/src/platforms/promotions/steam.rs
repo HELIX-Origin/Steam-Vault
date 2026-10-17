@@ -179,3 +179,127 @@ pub async fn fetch_steam_patch_notes(client: &Client, app_id: &str, game_name: &
 
     notes
 }
+
+const STEAM_FEATURED_URL: &str = "https://store.steampowered.com/api/featured/?cc=us&l=en";
+const STEAM_SEARCH_URL: &str = "https://store.steampowered.com/api/storesearch/?l=english&cc=US&term=";
+
+/// Resolve a game title to a Steam numeric App ID using the public store search API.
+pub async fn resolve_appid_by_name(client: &Client, name: &str) -> Option<String> {
+    let clean = name.trim();
+    if clean.is_empty() {
+        return None;
+    }
+    let encoded = urlencoding::encode(clean);
+    let url = format!("{STEAM_SEARCH_URL}{encoded}");
+
+    if let Ok(resp) = client.get(&url).header("User-Agent", CHROME_USER_AGENT).send().await {
+        if resp.status().is_success() {
+            if let Ok(json) = resp.json::<Value>().await {
+                if let Some(items) = json.get("items").and_then(|i| i.as_array()) {
+                    if let Some(first) = items.first() {
+                        if let Some(id) = first.get("id").and_then(|v| v.as_i64()) {
+                            return Some(id.to_string());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Fetch spotlight featured items from the official Steam store API.
+pub async fn fetch_steam_featured(client: &Client) -> Vec<super::FeaturedStoreItem> {
+    let mut items = Vec::new();
+    let resp = match client
+        .get(STEAM_FEATURED_URL)
+        .header("User-Agent", CHROME_USER_AGENT)
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => r,
+        _ => return items,
+    };
+
+    let json: Value = match resp.json().await {
+        Ok(j) => j,
+        Err(_) => return items,
+    };
+
+    if let Some(featured_win) = json.get("featured_win").and_then(|f| f.as_array()) {
+        for sp in featured_win.iter().take(6) {
+            let id = sp.get("id").and_then(|v| v.as_i64()).unwrap_or(0);
+            let name = sp.get("name").and_then(|n| n.as_str()).unwrap_or("").trim().to_string();
+            if id <= 0 || name.is_empty() {
+                continue;
+            }
+
+            let discounted = sp.get("discounted").and_then(|d| d.as_bool()).unwrap_or(false);
+            let discount_percent = sp.get("discount_percent").and_then(|d| d.as_u64()).unwrap_or(0) as u32;
+            let orig_price = sp.get("original_price").and_then(|p| p.as_i64()).unwrap_or(0);
+            let final_price_num = sp.get("final_price").and_then(|p| p.as_i64()).unwrap_or(0);
+
+            let header_img = sp.get("header_image").and_then(|h| h.as_str()).map(str::to_string);
+            let large_capsule = sp.get("large_capsule_image").and_then(|c| c.as_str()).map(str::to_string);
+            let small_capsule = sp.get("small_capsule_image").and_then(|s| s.as_str()).map(str::to_string);
+
+            let main_image = large_capsule.clone().or_else(|| header_img.clone()).unwrap_or_else(|| {
+                format!("https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/{id}/header.jpg")
+            });
+
+            let mut thumbnails = Vec::new();
+            if let Some(ref h) = header_img {
+                thumbnails.push(h.clone());
+            }
+            if let Some(ref l) = large_capsule {
+                if !thumbnails.contains(l) {
+                    thumbnails.push(l.clone());
+                }
+            }
+            if let Some(ref s) = small_capsule {
+                if !thumbnails.contains(s) {
+                    thumbnails.push(s.clone());
+                }
+            }
+            if thumbnails.is_empty() {
+                thumbnails.push(main_image.clone());
+            }
+
+            let final_price = if final_price_num == 0 {
+                "FREE".to_string()
+            } else {
+                format!("${:.2}", final_price_num as f64 / 100.0)
+            };
+
+            let original_price = if discounted && orig_price > 0 {
+                Some(format!("${:.2}", orig_price as f64 / 100.0))
+            } else {
+                None
+            };
+
+            let tag_label = if discounted && discount_percent > 0 {
+                Some(format!("Featured -{discount_percent}% on Steam"))
+            } else {
+                Some("Featured on Steam".to_string())
+            };
+
+            items.push(super::FeaturedStoreItem {
+                id: format!("steam-feat-{id}"),
+                title: name,
+                platform: "steam".to_string(),
+                store_url: format!("https://store.steampowered.com/app/{id}"),
+                main_image,
+                thumbnails,
+                description: "Top spotlight title featured on the Steam storefront. Available for Windows, macOS, or Steam Deck.".to_string(),
+                tags: vec!["Featured".to_string(), "Steam Spotlight".to_string(), "Top Seller".to_string()],
+                original_price,
+                final_price,
+                discount_percent: if discount_percent > 0 { Some(discount_percent) } else { None },
+                is_free: final_price_num == 0,
+                tag_label,
+            });
+        }
+    }
+
+    items
+}

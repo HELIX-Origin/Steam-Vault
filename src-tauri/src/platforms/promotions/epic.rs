@@ -147,3 +147,146 @@ pub async fn fetch_epic_promotions(client: &Client) -> (Vec<FreeGamePromotion>, 
 
     (promotions, deals)
 }
+
+/// Fetch featured promotions and spotlight titles from Epic Games Store.
+pub async fn fetch_epic_featured(client: &Client) -> Vec<super::FeaturedStoreItem> {
+    let mut items = Vec::new();
+
+    let resp = match client
+        .get(EPIC_FREE_GAMES_URL)
+        .header("User-Agent", CHROME_USER_AGENT)
+        .send()
+        .await
+    {
+        Ok(r) if r.status().is_success() => r,
+        _ => return items,
+    };
+
+    let json: Value = match resp.json().await {
+        Ok(j) => j,
+        Err(_) => return items,
+    };
+
+    let elements = match json
+        .pointer("/data/Catalog/searchStore/elements")
+        .and_then(|v| v.as_array())
+    {
+        Some(arr) => arr,
+        None => return items,
+    };
+
+    for el in elements.iter().take(6) {
+        let title = el.get("title").and_then(|t| t.as_str()).unwrap_or("").trim().to_string();
+        let id = el.get("id").and_then(|t| t.as_str()).unwrap_or("").to_string();
+        if title.is_empty() || id.is_empty() {
+            continue;
+        }
+
+        let description = el.get("description")
+            .and_then(|d| d.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| "Featured title on the Epic Games Store.".to_string());
+
+        let product_slug = el.get("productSlug").and_then(|s| s.as_str())
+            .or_else(|| el.pointer("/catalogNs/mappings/0/pageSlug").and_then(|s| s.as_str()))
+            .or_else(|| el.get("urlSlug").and_then(|s| s.as_str()))
+            .unwrap_or("");
+
+        let store_url = if !product_slug.is_empty() {
+            format!("https://store.epicgames.com/p/{product_slug}")
+        } else {
+            "https://store.epicgames.com/free-games".to_string()
+        };
+
+        let mut main_image = String::new();
+        let mut thumbnails = Vec::new();
+
+        if let Some(images) = el.get("keyImages").and_then(|k| k.as_array()) {
+            for img in images {
+                let img_type = img.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                let url = img.get("url").and_then(|u| u.as_str()).unwrap_or("");
+                if url.is_empty() {
+                    continue;
+                }
+
+                if img_type == "OfferImageWide" && main_image.is_empty() {
+                    main_image = url.to_string();
+                } else if img_type == "featuredMedia" || img_type == "Thumbnail" {
+                    if thumbnails.len() < 4 && !thumbnails.contains(&url.to_string()) {
+                        thumbnails.push(url.to_string());
+                    }
+                }
+            }
+        }
+
+        if main_image.is_empty() {
+            if let Some(first) = thumbnails.first() {
+                main_image = first.clone();
+            } else {
+                continue;
+            }
+        }
+
+        if !thumbnails.contains(&main_image) {
+            thumbnails.insert(0, main_image.clone());
+        }
+
+        let discount_price = el.pointer("/price/totalPrice/discountPrice").and_then(|p| p.as_i64()).unwrap_or(-1);
+        let original_price_num = el.pointer("/price/totalPrice/originalPrice").and_then(|p| p.as_i64()).unwrap_or(-1);
+        let fmt_original = el.pointer("/price/totalPrice/fmtPrice/originalPrice").and_then(|p| p.as_str()).map(str::to_string);
+        let fmt_discount = el.pointer("/price/totalPrice/fmtPrice/discountPrice").and_then(|p| p.as_str()).map(str::to_string);
+
+        let is_free = discount_price == 0;
+        let final_price = if is_free {
+            "FREE".to_string()
+        } else if let Some(fd) = fmt_discount {
+            fd
+        } else if discount_price > 0 {
+            format!("${:.2}", discount_price as f64 / 100.0)
+        } else {
+            "FREE".to_string()
+        };
+
+        let original_price = if is_free && fmt_original.is_some() {
+            fmt_original
+        } else if original_price_num > discount_price && discount_price >= 0 {
+            Some(format!("${:.2}", original_price_num as f64 / 100.0))
+        } else {
+            None
+        };
+
+        let discount_pct = if is_free {
+            Some(100)
+        } else if original_price_num > 0 && discount_price >= 0 && original_price_num > discount_price {
+            Some(((original_price_num - discount_price) * 100 / original_price_num) as u32)
+        } else {
+            None
+        };
+
+        let tag_label = if is_free {
+            Some("100% Free on Epic".to_string())
+        } else if let Some(pct) = discount_pct {
+            Some(format!("Featured -{pct}% on Epic"))
+        } else {
+            Some("Featured on Epic".to_string())
+        };
+
+        items.push(super::FeaturedStoreItem {
+            id: format!("epic-feat-{id}"),
+            title,
+            platform: "epic".to_string(),
+            store_url,
+            main_image,
+            thumbnails,
+            description,
+            tags: vec!["Epic Games".to_string(), "Promotional Offer".to_string(), "Featured".to_string()],
+            original_price,
+            final_price,
+            discount_percent: discount_pct,
+            is_free,
+            tag_label,
+        });
+    }
+
+    items
+}

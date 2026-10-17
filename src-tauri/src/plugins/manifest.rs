@@ -66,6 +66,42 @@ pub struct PluginMetadataConfig {
     pub artwork: Option<PluginArtworkConfig>,
 }
 
+/// Option entry for select fields in plugin settings.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginSettingOption {
+    pub label: String,
+    pub value: String,
+}
+
+/// Single user-configurable configuration field declared by a plugin.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginSettingField {
+    pub key: String,
+    pub label: String,
+    #[serde(rename = "type")]
+    pub field_type: String,
+    pub description: Option<String>,
+    #[serde(default)]
+    pub required: bool,
+    pub default: Option<serde_json::Value>,
+    pub placeholder: Option<String>,
+    pub help_url: Option<String>,
+    #[serde(default)]
+    pub options: Option<Vec<PluginSettingOption>>,
+}
+
+/// User settings specification declared by a plugin.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginSettingsConfig {
+    #[serde(default)]
+    pub requires_api_key: bool,
+    #[serde(default)]
+    pub fields: Vec<PluginSettingField>,
+}
+
 /// Schema for `plugin.json` contained inside each self-contained plugin directory.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,6 +123,8 @@ pub struct PluginManifest {
     pub platform: Option<PluginPlatformConfig>,
     /// Optional metadata provider configuration
     pub metadata: Option<PluginMetadataConfig>,
+    /// Optional user settings and configuration fields
+    pub settings: Option<PluginSettingsConfig>,
 }
 
 /// Resolved plugin summary passed to the Svelte UI.
@@ -106,6 +144,7 @@ pub struct PluginInfo {
     #[serde(default)]
     pub features: Vec<String>,
     pub path: String,
+    pub settings: Option<PluginSettingsConfig>,
 }
 
 /// Store-provided artwork URLs resolved from official store CDNs or catalog endpoints.

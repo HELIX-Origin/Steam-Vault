@@ -9,7 +9,7 @@ header_actions:
     url: /docs/
     class: button--primary
   - title: Source on GitHub ↗
-    url: https://github.com/HELIX-Origin/Steam-Vault
+    url: https://github.com/HELIX-Origin/Universal-Game-Launcher
     class: button--secondary
 image: assets/images/universal-game-launcher.svg
 ---
@@ -30,17 +30,17 @@ It automatically discovers games across all installed official clients — inclu
 <strong>Epic Games Store</strong>, <strong>GOG Galaxy</strong>, <strong>Ubisoft Connect</strong>,
 <strong>EA App</strong>, <strong>Xbox / Microsoft Store</strong>, <strong>Battle.net</strong>,
 <strong>itch.io</strong>, and <strong>Amazon Games</strong> — with full support for manually adding
-standalone local executables and indie titles.
+standalone local executables, DRM-free games, and emulation / ROM libraries via drop-in plugins.
 </p>
 <p>
-It serves as a clean-room, modernized revival of the library organization philosophies of Depressurizer:
-build and edit custom collections, filter with an advanced Allowed / Required / Excluded builder,
-auto-categorize by genre, developer, publisher, platform, and tags, and manage local storage across drives.
+Designed for speed, privacy, and ergonomics, Universal Game Launcher adopts a proven <strong>Steam and GOG Galaxy-inspired layout</strong>:
+top titlebar navigation, an interactive left game list sidebar with live filtering and platform accordions, and a dedicated showcase
+view featuring hero artwork, media screenshot galleries, and one-click launch controls.
 </p>
 <p>
-Built with <strong>Tauri v2</strong> (Rust backend and SvelteKit frontend), Universal Game Launcher
-relies strictly on <strong>official client protocols and documented local data sources</strong> rather than
-scraping or credential harvesting, delivering instant performance, zero-friction privacy, and full offline usability.
+Built with <strong>Tauri v2</strong> (Rust backend and SvelteKit frontend), Universal Game Launcher operates completely non-invasively.
+It never alters external client files, never harvests credentials, and persists all library overrides and artwork mappings locally
+in a high-performance SQLite database (<code>database.sqlite</code>) backed by an in-memory serverless KV tier for sub-millisecond responsiveness.
 </p>
 </section>
 
@@ -54,79 +54,64 @@ scraping or credential harvesting, delivering instant performance, zero-friction
 </div>
 <div class="features-grid">
 <div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🚀</span>
-<h3>Library Grid Launcher</h3>
-<p>Browse your multi-platform library with vertical capsule covers, platform badges, install pills, and instant one-click launch controls.</p>
+<span class="feature-card__icon" aria-hidden="true">🎮</span>
+<h3>Steam &amp; GOG Left Games List Sidebar</h3>
+<p>Interactive sidebar featuring instant name search, quick filter pills (All, Installed, ★ Favorites), background platform scan trigger, and collapsible platform and collection accordions.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🧭</span>
+<h3>Frameless Title Bar Navigation</h3>
+<p>Clean top-level navigation seamlessly integrated into the custom titlebar: Dashboard, Library, Storage, Plugins, and Settings.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🖼️</span>
+<h3>Dedicated Game Showcase View</h3>
+<p>Showcase selected games with high-resolution 16:9 hero wallpaper banners, title typography, prominent PLAY NOW launch buttons, playtime metrics, and descriptions.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">📸</span>
+<h3>10-Image Screenshot Gallery</h3>
+<p>Interactive media carousel featuring up to 10 high-resolution screenshots with a fullscreen lightbox viewer.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">🧩</span>
+<h3>Native In-App Modular Plugins Framework</h3>
+<p>All game platforms, metadata scrapers, and utility tools are delivered via native modular plugins built directly into the app, eliminating Cloudflare network blocks and fragile external manifests.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">⚙️</span>
+<h3>Tabbed Plugin Settings Sub-Window</h3>
+<p>Dedicated sub-window dialog for configuring each enabled plugin, featuring live password visibility eye toggles, direct help links, and real-time in-memory connection tests.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🔒</span>
 <h3>Native Launcher Delegation</h3>
-<p>Launches, updates, and uninstalls delegate directly to official clients, preserving overlays, cloud saves, friend lists, and achievements without storing credentials.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">📑</span>
-<h3>Per-Game Details &amp; Management</h3>
-<p>Extensive details sub-pages featuring a 10-image media gallery with fullscreen lightbox, meta links, playtime tracking, and management tools.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🎛️</span>
-<h3>Collapsible Filter Sidebar</h3>
-<p>Toggle sort options, platform counts, install state, and collections instantly from a dedicated right sidebar.</p>
+<p>Launches, updates, and uninstalls delegate directly to official client protocols or native binaries, preserving overlays, cloud saves, friend lists, and achievements without storing credentials.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🎁</span>
 <h3>Free Games, Deals &amp; Patch Notes</h3>
-<p>Track verified 100% free giveaways, store specials across Steam/Epic/GOG, and official changelogs for installed games.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🗂️</span>
-<h3>Custom Collections</h3>
-<p>Read and write categorized collections with favorites and hidden states, plus native smart collections.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🧩</span>
-<h3>Multi-Scope Organize Lists</h3>
-<p>Select multiple organization scopes simultaneously with custom rule builders to categorise your entire library.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🧠</span>
-<h3>AutoCats</h3>
-<p>Generate categories automatically from genre, developer, publisher, tags, and storefront flags.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">💾</span>
-<h3>Storage Statistics</h3>
-<p>Dedicated drive capacity and usage gauges with Steam Library Folder management and safe cross-drive moves.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🎮</span>
-<h3>All Major Storefronts</h3>
-<p>Automatic detection across Steam, GOG Galaxy, Epic Games, itch.io, Xbox, EA App, Ubisoft, and Battle.net.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">📁</span>
-<h3>Manually Added Local Games</h3>
-<p>Easily import and manage standalone executables, DRM-free games, and indie projects with custom artwork and tags.</p>
+<p>Track verified 100% free giveaways, store specials across major storefronts, and official changelogs for installed games on your Dashboard.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">🎨</span>
-<h3>Artwork Manager</h3>
-<p>Inspect, fetch, and set portrait grid, hero, logo, and icon artwork via SteamGridDB and local file imports.</p>
+<h3>Custom Artwork Studio</h3>
+<p>Inspect, fetch, and set portrait capsule covers, hero banners, transparent logos, and square icons via SteamGridDB and local image imports.</p>
 </div>
 <div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🌍</span>
-<h3>Multi-Language Support</h3>
-<p>Hand-rolled reactive i18n supporting 28+ languages with Arabic RTL layout and zero runtime overhead.</p>
+<span class="feature-card__icon" aria-hidden="true">🗄️</span>
+<h3>Custom &amp; Dynamic Collections</h3>
+<p>Create custom game categories, tag favorites, hide titles, and build dynamic smart collections persisted safely in local SQLite.</p>
+</div>
+<div class="feature-card">
+<span class="feature-card__icon" aria-hidden="true">💾</span>
+<h3>Storage Footprint Explorer</h3>
+<p>Dedicated drive capacity and usage gauges showing disk space consumed across all connected volumes and platform libraries.</p>
 </div>
 <div class="feature-card">
 <span class="feature-card__icon" aria-hidden="true">⚡</span>
-<h3>Generic SQLite Persistence</h3>
-<p>High-performance embedded SQLite database (<code>database.sqlite</code>) in WAL mode decoupled from application branding.</p>
-</div>
-<div class="feature-card">
-<span class="feature-card__icon" aria-hidden="true">🛡️</span>
-<h3>Safe writes</h3>
-<p>Timestamped backups before every write, and changes are refused while platform launchers are running.</p>
+<h3>Zero-Lag Obsidian Purple Theme</h3>
+<p>High-contrast obsidian purple visual identity (#080511 / #0f0920 / #a855f7) with hardware-accelerated rendering and zero <code>backdrop-filter: blur</code> performance overhead.</p>
 </div>
 </div>
 </section>
@@ -211,11 +196,11 @@ Explore the complete guides and references on this site. The
 </div>
 </div>
 <p>
-Universal Game Launcher is distributed on the official Windows Package Manager (WinGet) and can be built from source today with Rust and Node.js.
+Universal Game Launcher is distributed as standalone installers via GitHub Releases and can be built from source today with Rust and Node.js.
 See <a href="{{ '/docs/Getting-Started/' | relative_url }}">Getting Started</a> for the walkthrough.
 </p>
 <div class="header-actions">
 <a class="button button--primary" href="{{ '/docs/Getting-Started/' | relative_url }}">Getting Started</a>
-<a class="button button--secondary" href="https://github.com/HELIX-Origin/Steam-Vault">Source on GitHub ↗</a>
+<a class="button button--secondary" href="https://github.com/HELIX-Origin/Universal-Game-Launcher">Source on GitHub ↗</a>
 </div>
 </section>

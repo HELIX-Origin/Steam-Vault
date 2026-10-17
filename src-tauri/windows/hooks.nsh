@@ -1,5 +1,7 @@
 !macro NSIS_HOOK_PREINSTALL
-  ; Terminate any existing Steam Vault instance to prevent file locking during installation or update
+  ; Terminate any existing Universal Game Launcher instance to prevent file locking during installation or update
+  nsExec::Exec 'taskkill /F /IM "Universal Game Launcher.exe" /T'
+  nsExec::Exec 'taskkill /F /IM "universal-game-launcher.exe" /T'
   nsExec::Exec 'taskkill /F /IM "Steam Vault.exe" /T'
   nsExec::Exec 'taskkill /F /IM "steam-vault.exe" /T'
   Sleep 500
@@ -10,6 +12,8 @@
   ; Windows Add/Remove Programs invokes "$INSTDIR\uninstall.exe". If the application
   ; or helper sidecars are running, Windows locks open files and causes uninstallation
   ; failure or orphaned files.
+  nsExec::Exec 'taskkill /F /IM "Universal Game Launcher.exe" /T'
+  nsExec::Exec 'taskkill /F /IM "universal-game-launcher.exe" /T'
   nsExec::Exec 'taskkill /F /IM "Steam Vault.exe" /T'
   nsExec::Exec 'taskkill /F /IM "steam-vault.exe" /T'
   nsExec::Exec 'taskkill /F /IM "legendary.exe" /T'

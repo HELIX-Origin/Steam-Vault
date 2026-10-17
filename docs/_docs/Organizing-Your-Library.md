@@ -1,64 +1,50 @@
 ---
 layout: docs
 title: Organizing Your Library
-summary: The Library view, searching, filtering, and multi-select
+summary: The Steam & GOG-style sidebar games list and main game showcase view
 parent: Documentation Home
 nav_order: 3
 ---
 
 # Organizing Your Library
 
-The **Library** view is where you inspect your games and move them between collections.
+Universal Game Launcher pairs a proven **Steam and GOG Galaxy-style games list sidebar** with a dedicated **Main Game Showcase View**, giving you instant access to your entire multi-platform library.
 
-## 🔎 Finding games
+## 🎮 Left Sidebar — The Games List
 
-Three controls narrow the list:
+The left sidebar is permanently accessible across the application and serves as your interactive game selector:
 
-- **Search** — filters by game name as you type.
-- **Collection filter** — show only games that belong to a chosen collection.
-- **Installed only** — hide entries that are not currently installed.
+- **Instant Search:** Type any title to filter the games list instantly in real-time.
+- **Filter Pills:**
+  - **All:** Displays all imported titles across all platforms.
+  - **Installed:** Filters exclusively to titles with verified local installations on disk.
+  - **★ Favorites:** Shows your pinned favorite games across all storefronts.
+- **Background Scan (`↻ Scan`):** Trigger an asynchronous background scan of all platform integrations without interrupting your gameplay or browsing.
+- **Platform Accordions:** Collapsible platform headers with badge and live game counts (Steam, Epic Games, GOG Galaxy, Xbox, EA App, Ubisoft Connect, Battle.net, itch.io, Amazon Games, Standalone, and Emulation / ROMs). Clicking a platform expands or collapses its games.
+- **Collections Tree:** Expand custom and dynamic collections to focus on specific groups.
+- **Instant Selection:** Clicking any game instantly loads that title in the Main Showcase View with zero page reload latency.
 
-The header reports how many games you **own**, how many are **installed**, how many are shown, and
-how many are selected.
+## 🖼️ Main Game Showcase View (`/library`)
 
-> **The whole library, not just what is installed.** With a Steam Web API key configured, press
-> **Sync owned games** to fetch every game on your account. The Library then includes games you own
-> but have not installed — marked with a **not installed** pill — so you can organize your entire
-> collection.
+When a game is selected, the main view showcases the title in rich detail:
 
-## 🖱️ Selecting and editing
+- **16:9 Hero Wallpaper Banner:** High-resolution backdrop with a dark vignette overlay.
+- **Title & Primary Action Header:**
+  - 2:3 Portrait capsule artwork.
+  - Transparent game logo or crisp title typography.
+  - Big prominent **PLAY NOW** launch button that delegates to the native platform client or executes the local binary.
+  - Favorite star toggle and Manage dropdown (open install folder, rename, custom arguments).
+  - Playtime counter and Last Played timestamp.
+- **10-Screenshot Media Gallery:** Interactive screenshot carousel supporting up to 10 images with a fullscreen lightbox viewer.
+- **Overview & Metadata:** Developer, Publisher, Release Date, Store links, and Community Tag pills.
+- **Custom Artwork Studio:** Dedicated artwork slot inspector allowing you to customize portrait capsule, hero banner, transparent logo, and square icon via SteamGridDB or local file imports.
 
-1. Click a game row to select or deselect it. The checkbox on the left reflects its state.
-2. Pick a **target collection** in the toolbar.
-3. Use **Add** to place every selected game into that collection, or **Remove** to take them out.
+## 🗂️ Adding to Collections
 
-Selections persist while you adjust the filters, so you can gather games across several searches
-before applying a change.
-
-Use **Select all** to act on everything currently shown, and **Clear** to reset the selection.
-
-> **Note:** Writing to a collection requires Steam to be closed. If Steam is running, the change is
-> refused and an error banner explains why.
-
-## 🏷️ Reading collection membership
-
-Each row lists the collections a game already belongs to as small pills, so you can see membership
-at a glance. Favorites are marked with a star, and titles carry a badge naming their
-source platform (e.g. Steam, Epic, GOG, or Other for manually added games).
-
-## 📊 Columns
-
-- **Name** — the game title, with membership pills.
-- **Size** — on-disk size for installed games.
-
-## 🧱 Creating collections automatically
-
-For bulk work, the **Organize** view creates one collection per value of a chosen sorting option —
-genre, developer, publisher, Steam feature, tag, release year, user score, **platform**, **installed
-state**, **playtime**, or **name**. Choose the option, preview the result, then create the
-collections. See [AutoCategorization](AutoCategorization.md).
+You can assign games to custom collections directly from the game's Manage menu or the Collections inspector, safely persisted in local SQLite with 0ms in-memory cache synchronization.
 
 ## ➡️ Next steps
 
-- [Collections](Collections.md) — how collections are stored and written.
-- [AutoCategorization](AutoCategorization.md) — generate collections automatically.
+- [Collections](Collections.md) — managing custom and dynamic collections.
+- [Artwork Management](Artwork-Management.md) — customize covers, heroes, logos, and icons.
+- [Plugin Development](Plugin-Development.md) — build custom platform and metadata plugins.
