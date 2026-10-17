@@ -32,7 +32,8 @@
   "license": "BSD-3-Clause",
   "dependencies": {
     "@tauri-apps/api": "^2",
-    "@tauri-apps/plugin-opener": "^2"
+    "@tauri-apps/plugin-opener": "^2",
+    "i18next": "^26.4.7"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.10",
