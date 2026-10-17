@@ -172,24 +172,64 @@ export async function getHelixDbSearchIndex(
   const path = isV3 ? "/api/v3/search/index.json" : "/api/v2/search/index.json";
   const kvKey = `helix_db_index_${tier}`;
 
-  // 1. Try remote fetch
+  // 1. Try remote fetch across volume shards (or custom mirror)
   try {
-    const index = await fetchWithFallback<HelixDbSearchIndex>(path, customBase);
-    if (index && Array.isArray(index.entries)) {
-      if (isV3) {
-        cachedV3Index = index;
-        lastV3FetchTime = now;
-      } else {
-        cachedV2Index = index;
-        lastV2FetchTime = now;
+    if (customBase) {
+      const index = await fetchWithFallback<HelixDbSearchIndex>(path, customBase);
+      if (index && Array.isArray(index.entries)) {
+        if (isV3) {
+          cachedV3Index = index;
+          lastV3FetchTime = now;
+        } else {
+          cachedV2Index = index;
+          lastV2FetchTime = now;
+        }
+        try {
+          await api.kvSetJson(kvKey, index, 86400 * 7);
+        } catch {}
+        return index;
       }
-      // Persist to serverless KV cache asynchronously
-      try {
-        await api.kvSetJson(kvKey, index, 86400 * 7); // 7-day retention
-      } catch {
-        // Non-fatal
+    } else {
+      // Aggregate entries across all active volume shards
+      const allEntries: HelixDbSearchEntry[] = [];
+      const seenSlugs = new Set<string>();
+
+      for (const shard of SHARDS) {
+        try {
+          const shardIndex = await fetchWithFallback<HelixDbSearchIndex>(path, undefined, shard);
+          if (shardIndex && Array.isArray(shardIndex.entries)) {
+            for (const entry of shardIndex.entries) {
+              if (!seenSlugs.has(entry.slug)) {
+                seenSlugs.add(entry.slug);
+                allEntries.push(entry);
+              }
+            }
+          }
+        } catch {
+          // Continue to next shard
+        }
       }
-      return index;
+
+      if (allEntries.length > 0) {
+        const consolidated: HelixDbSearchIndex = {
+          version: "2.0.0",
+          updatedAt: new Date().toISOString(),
+          totalEntries: allEntries.length,
+          entries: allEntries,
+        };
+
+        if (isV3) {
+          cachedV3Index = consolidated;
+          lastV3FetchTime = now;
+        } else {
+          cachedV2Index = consolidated;
+          lastV2FetchTime = now;
+        }
+        try {
+          await api.kvSetJson(kvKey, consolidated, 86400 * 7);
+        } catch {}
+        return consolidated;
+      }
     }
   } catch {
     // Network offline; proceed to persistent cache
@@ -249,9 +289,12 @@ export async function getHelixDbGame(
 
   // 2. Federated multi-repo resolution if hosted on dedicated shard repository
   if (meta?.repository && meta.repository !== "HELIX-Origin/helix-gaming-db-00") {
+    const shardName = meta.repository.replace("HELIX-Origin/", "");
+    const shardProxyUrl = `https://api.helix-origin.club/${shardName}/api/${tier}/games/${slug}.json`;
     const rawShardUrl = `https://raw.githubusercontent.com/${meta.repository}/main/api/${tier}/games/${slug}.json`;
     try {
-      const data = await api.fetchExternalJson<HelixDbGamePayload>(rawShardUrl);
+      const data = (await api.fetchExternalJson<HelixDbGamePayload>(shardProxyUrl)) ||
+                   (await api.fetchExternalJson<HelixDbGamePayload>(rawShardUrl));
       if (data && data.title) {
         cachedGames.set(memKey, data);
         try {
