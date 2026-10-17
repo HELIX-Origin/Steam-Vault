@@ -11,7 +11,6 @@ import {
   titlesMatchStrict,
   validateMetadataCandidate,
   backupMetadataForTitle,
-  findHandRolledGame,
 } from "./developers";
 import {
   queryHelixGamingDb,
@@ -428,8 +427,11 @@ export async function resolveUniversalMetadata(
   query: { appId?: number | string; name?: string; platform?: string },
   config?: Record<string, any>
 ): Promise<PluginMetadataResult | null> {
-  // 0. Primary authoritative check: HELIX Gaming DB REST API (with offline hand-rolled fallback)
-  const helixMeta = await queryHelixGamingDb(query);
+  // 0. Primary authoritative check: HELIX Gaming DB Three-Tier REST API
+  const helixMeta = await queryHelixGamingDb(query, {
+    customBase: config?.endpoint_url,
+    includeAdult: config?.include_adult_content !== false,
+  });
   if (helixMeta && (helixMeta.shortDescription || helixMeta.capsuleImage)) {
     return helixMeta;
   }
@@ -530,8 +532,11 @@ export async function resolveUniversalArtwork(
   query: { appId?: number | string; name?: string; platform?: string },
   config?: Record<string, any>
 ): Promise<PluginArtworkResult | null> {
-  // 1. Primary authoritative check: HELIX Gaming DB REST API (with offline hand-rolled fallback)
-  const helixArt = await queryHelixGamingDbArtwork(query);
+  // 1. Primary authoritative check: HELIX Gaming DB Three-Tier REST API
+  const helixArt = await queryHelixGamingDbArtwork(query, {
+    customBase: config?.endpoint_url,
+    includeAdult: config?.include_adult_content !== false,
+  });
   if (helixArt && (helixArt.capsuleImage || helixArt.heroImage || helixArt.logoImage)) {
     return helixArt;
   }

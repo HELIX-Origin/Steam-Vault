@@ -66,6 +66,6 @@ export interface DeveloperDefinition {
   primaryGenres: string[];
   /** Official corporate or developer website */
   website?: string;
-  /** Hand-rolled game metadata catalog */
-  games: HandRolledGame[];
+  /** Optional hand-rolled game metadata catalog (deprecated in favor of HELIX Gaming DB REST API) */
+  games?: HandRolledGame[];
 }
