@@ -93,8 +93,43 @@ export interface HelixQueryOptions {
   lang?: string;
 }
 
-// Volume shards configuration
-const SHARDS = ["00", "01", "02", "03"];
+// Volume shards configuration with dynamic federation fallback
+let activeShards = ["00", "01", "02", "03"];
+let lastShardFetchTime = 0;
+
+/**
+ * Returns the currently active volume shards dynamically discovered from the federation manifest.
+ */
+export async function getActiveShards(): Promise<string[]> {
+  const now = Date.now();
+  if (now - lastShardFetchTime < 3600000 && activeShards.length > 0) {
+    return activeShards;
+  }
+
+  try {
+    const federation = await fetchWithFallback<{ shards: Array<{ id: string }> }>(
+      "/api/v2/federation/shards.json"
+    );
+    if (federation && Array.isArray(federation.shards) && federation.shards.length > 0) {
+      activeShards = federation.shards.map((s) => s.id);
+      lastShardFetchTime = now;
+      try {
+        await api.kvSetJson("helix_db_dynamic_shards", activeShards, 86400 * 7);
+      } catch {}
+      return activeShards;
+    }
+  } catch {}
+
+  try {
+    const persisted = await api.kvGetJson<string[]>("helix_db_dynamic_shards");
+    if (persisted && Array.isArray(persisted) && persisted.length > 0) {
+      activeShards = persisted;
+      return activeShards;
+    }
+  } catch {}
+
+  return activeShards;
+}
 
 /**
  * Returns candidate gateways for fetching metadata.
@@ -193,8 +228,9 @@ export async function getHelixDbSearchIndex(
       // Aggregate entries across all active volume shards
       const allEntries: HelixDbSearchEntry[] = [];
       const seenSlugs = new Set<string>();
+      const currentShards = await getActiveShards();
 
-      for (const shard of SHARDS) {
+      for (const shard of currentShards) {
         try {
           const shardIndex = await fetchWithFallback<HelixDbSearchIndex>(path, undefined, shard);
           if (shardIndex && Array.isArray(shardIndex.entries)) {
@@ -310,9 +346,10 @@ export async function getHelixDbGame(
   }
 
   // 3. Try primary registry / CDN domains across shards
+  const currentShards = await getActiveShards();
   const shardsToTry = meta?.shard
-    ? [meta.shard, ...SHARDS.filter(s => s !== meta.shard)]
-    : SHARDS;
+    ? [meta.shard, ...currentShards.filter((s) => s !== meta.shard)]
+    : currentShards;
 
   for (const shard of shardsToTry) {
     try {
