@@ -97,22 +97,25 @@ export interface HelixQueryOptions {
 const SHARDS = ["00", "01", "02", "03"];
 
 /**
- * Returns candidate domains for a specific shard with priority on the Cloudflare edge proxy wildcard.
+ * Returns candidate gateways for fetching metadata.
+ * Prioritizes the Cloudflare Worker Unified Gateway (Mode 2) without shard prefix,
+ * followed by Direct Shard Proxies (Mode 1), GitHub Pages, and raw GitHub CDN.
  */
-function getShardCandidateDomains(customBase?: string, shard: string = "00"): string[] {
+function getCandidateGateways(customBase?: string, shard: string = "00"): string[] {
   if (customBase) {
     return [customBase];
   }
   return [
+    // 1. Cloudflare Worker Unified Gateway (aggregates/searches across all shards automatically)
+    "https://api.helix-origin.club",
+    // 2. Direct Shard Proxies (Mode 1)
     `https://api.helix-origin.club/helix-gaming-db-${shard}`,
-    `https://helix-origin.club/helix-gaming-db-${shard}`,
+    // 3. GitHub Pages Custom Domain & Origin Fallbacks
     `https://www.helix-origin.club/helix-gaming-db-${shard}`,
+    `https://helix-origin.club/helix-gaming-db-${shard}`,
     `https://helix-origin.github.io/helix-gaming-db-${shard}`,
-    // Backward compatibility fallback to primary alias
-    `https://api.helix-origin.club/helix-gaming-db`,
-    `https://helix-origin.club/helix-gaming-db`,
-    `https://www.helix-origin.club/helix-gaming-db`,
-    `https://helix-origin.github.io/helix-gaming-db`,
+    // 4. Raw GitHub CDN Fallback
+    `https://raw.githubusercontent.com/HELIX-Origin/helix-gaming-db-${shard}/main`,
   ];
 }
 
@@ -139,7 +142,7 @@ function normalizeKey(str: string): string {
  */
 async function fetchWithFallback<T>(relativePath: string, customBase?: string, shard: string = "00"): Promise<T | null> {
   const path = relativePath.startsWith("/") ? relativePath : `/${relativePath}`;
-  const candidates = getShardCandidateDomains(customBase, shard);
+  const candidates = getCandidateGateways(customBase, shard);
   for (const domain of candidates) {
     try {
       const cleanDomain = domain.endsWith("/") ? domain.slice(0, -1) : domain;
@@ -448,9 +451,9 @@ export const helixDbMetadataPlugin: UniversalPlugin = {
           key: "endpoint_url",
           label: "Custom API Endpoint",
           type: "text",
-          default: "https://api.helix-origin.club/helix-gaming-db-00",
-          description: "Base URL for the HELIX Gaming DB REST API (defaults to Cloudflare edge proxy with GitHub Pages fallback).",
-          placeholder: "https://api.helix-origin.club/helix-gaming-db-00",
+          default: "https://api.helix-origin.club",
+          description: "Base URL for the HELIX Gaming DB Unified Gateway or custom mirror.",
+          placeholder: "https://api.helix-origin.club",
         },
         {
           key: "preferred_language",
