@@ -5,6 +5,20 @@ All notable changes to Universal Game Launcher are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-10-17
+
+### Added
+
+- **Dynamic Federation Shard Discovery (`getActiveShards()`)**:
+  - Implemented dynamic volume shard discovery in `src/lib/plugins/metadata/helix-db.ts` querying the `/api/v2/federation/shards.json` manifest.
+  - Added multi-tier fallback architecture: in-memory 1-hour cache, resilient 7-day SQLite KV persistent storage (`helix_db_dynamic_shards`), and static baseline fallback (`00`, `01`, `02`, `03`).
+  - Seamlessly discovers newly provisioned sequential metadata shards (`04`, `05`, etc.) in real time without requiring application updates.
+
+### Changed
+
+- **Multi-Shard Query Resolution**:
+  - `getHelixDbSearchIndex` and `getHelixDbGame` now resolve shard lists dynamically via `getActiveShards()` instead of relying on a hardcoded array.
+
 ## [1.4.0] - 2026-10-17
 
 ### Added
