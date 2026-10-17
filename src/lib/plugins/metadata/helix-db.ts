@@ -106,15 +106,11 @@ function getCandidateGateways(customBase?: string, shard: string = "00"): string
     return [customBase];
   }
   return [
-    // 1. Cloudflare Worker Unified Gateway (aggregates/searches across all shards automatically)
+    // 1. Cloudflare Worker Unified Gateway (Mode 2 — aggregates across all shards automatically)
     "https://api.helix-origin.club",
     // 2. Direct Shard Proxies (Mode 1)
     `https://api.helix-origin.club/helix-gaming-db-${shard}`,
-    // 3. GitHub Pages Custom Domain & Origin Fallbacks
-    `https://www.helix-origin.club/helix-gaming-db-${shard}`,
-    `https://helix-origin.club/helix-gaming-db-${shard}`,
-    `https://helix-origin.github.io/helix-gaming-db-${shard}`,
-    // 4. Raw GitHub CDN Fallback
+    // 3. Raw GitHub CDN Fallback
     `https://raw.githubusercontent.com/HELIX-Origin/helix-gaming-db-${shard}/main`,
   ];
 }
@@ -252,7 +248,7 @@ export async function getHelixDbGame(
   }
 
   // 2. Federated multi-repo resolution if hosted on dedicated shard repository
-  if (meta?.repository && meta.repository !== "HELIX-Origin/helix-gaming-db") {
+  if (meta?.repository && meta.repository !== "HELIX-Origin/helix-gaming-db-00") {
     const rawShardUrl = `https://raw.githubusercontent.com/${meta.repository}/main/api/${tier}/games/${slug}.json`;
     try {
       const data = await api.fetchExternalJson<HelixDbGamePayload>(rawShardUrl);
