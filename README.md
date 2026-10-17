@@ -4,11 +4,20 @@
 
 # Universal Game Launcher
 
+<p align="center">
+  <a href="https://docs.helix-origin.club/universal-game-launcher/"><img src="https://img.shields.io/badge/Docs-docs.helix--origin.club-brightgreen" alt="Documentation" height="20" /></a>
+  <a href="https://wiki.helix-origin.club/universal-game-launcher/"><img src="https://img.shields.io/badge/Wiki-wiki.helix--origin.club-brightgreen" alt="Technical Wiki" height="20" /></a>
+  <a href="https://opensource.org/licenses/BSD-3-Clause"><img src="https://img.shields.io/badge/License-BSD--3--Clause-blue.svg" alt="License: BSD-3-Clause" height="20" /></a>
+  <a href="https://tauri.app"><img src="https://img.shields.io/badge/Tauri-v2-blue?logo=tauri" alt="Tauri v2" height="20" /></a>
+  <a href="https://svelte.dev"><img src="https://img.shields.io/badge/Svelte-5-orange?logo=svelte" alt="Svelte 5" height="20" /></a>
+</p>
+
 **A fast, lightweight, privacy-first universal game launcher and library organizer — built with Tauri v2.**
 
 Organize, categorize, filter, and launch your entire multi-platform game library from a single unified desktop application without scraping or credentials.
 
 </div>
+
 
 ---
 
