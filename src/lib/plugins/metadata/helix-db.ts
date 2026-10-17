@@ -93,13 +93,28 @@ export interface HelixQueryOptions {
   lang?: string;
 }
 
-// Support Cloudflare edge proxy (auto branch resolver), custom domain, www alias, and GitHub Pages origin fallback
-const HELIX_DOMAINS = [
-  "https://api.helix-origin.club/helix-gaming-db",
-  "https://helix-origin.club/helix-gaming-db",
-  "https://www.helix-origin.club/helix-gaming-db",
-  "https://helix-origin.github.io/helix-gaming-db",
-];
+// Volume shards configuration
+const SHARDS = ["00", "01", "02", "03"];
+
+/**
+ * Returns candidate domains for a specific shard with priority on the Cloudflare edge proxy wildcard.
+ */
+function getShardCandidateDomains(customBase?: string, shard: string = "00"): string[] {
+  if (customBase) {
+    return [customBase];
+  }
+  return [
+    `https://api.helix-origin.club/helix-gaming-db-${shard}`,
+    `https://helix-origin.club/helix-gaming-db-${shard}`,
+    `https://www.helix-origin.club/helix-gaming-db-${shard}`,
+    `https://helix-origin.github.io/helix-gaming-db-${shard}`,
+    // Backward compatibility fallback to primary alias
+    `https://api.helix-origin.club/helix-gaming-db`,
+    `https://helix-origin.club/helix-gaming-db`,
+    `https://www.helix-origin.club/helix-gaming-db`,
+    `https://helix-origin.github.io/helix-gaming-db`,
+  ];
+}
 
 // Dual-tier in-memory index cache
 let cachedV2Index: HelixDbSearchIndex | null = null;
@@ -122,9 +137,9 @@ function normalizeKey(str: string): string {
 /**
  * Fetch a JSON resource trying candidate domains sequentially with graceful error handling.
  */
-async function fetchWithFallback<T>(relativePath: string, customBase?: string): Promise<T | null> {
+async function fetchWithFallback<T>(relativePath: string, customBase?: string, shard: string = "00"): Promise<T | null> {
   const path = relativePath.startsWith("/") ? relativePath : `/${relativePath}`;
-  const candidates = customBase ? [customBase, ...HELIX_DOMAINS] : HELIX_DOMAINS;
+  const candidates = getShardCandidateDomains(customBase, shard);
   for (const domain of candidates) {
     try {
       const cleanDomain = domain.endsWith("/") ? domain.slice(0, -1) : domain;
@@ -252,21 +267,27 @@ export async function getHelixDbGame(
     }
   }
 
-  // 3. Try primary registry / CDN domains
-  try {
-    const path = tier === "v3" ? `/api/v3/games/${slug}.json` : `/api/v2/games/${slug}.json`;
-    const game = await fetchWithFallback<HelixDbGamePayload>(path, customBase);
-    if (game && game.title) {
-      cachedGames.set(memKey, game);
-      try {
-        await api.kvSetJson(kvKey, game, 86400 * 14); // 14-day retention
-      } catch {
-        // Non-fatal
+  // 3. Try primary registry / CDN domains across shards
+  const shardsToTry = meta?.shard
+    ? [meta.shard, ...SHARDS.filter(s => s !== meta.shard)]
+    : SHARDS;
+
+  for (const shard of shardsToTry) {
+    try {
+      const path = tier === "v3" ? `/api/v3/games/${slug}.json` : `/api/v2/games/${slug}.json`;
+      const game = await fetchWithFallback<HelixDbGamePayload>(path, customBase, shard);
+      if (game && game.title) {
+        cachedGames.set(memKey, game);
+        try {
+          await api.kvSetJson(kvKey, game, 86400 * 14); // 14-day retention
+        } catch {
+          // Non-fatal
+        }
+        return game;
       }
-      return game;
+    } catch {
+      // Try next shard
     }
-  } catch {
-    // Network offline; proceed to persistent cache
   }
 
   // 4. Offline fallback: read persistent KV cache
@@ -416,7 +437,7 @@ export const helixDbMetadataPlugin: UniversalPlugin = {
   author: "HELIX Origin",
   description:
     "Authoritative open REST metadata API and gaming database for PC, indie, Patreon, and emulation titles.",
-  homepage: "https://helix-origin.club/helix-gaming-db",
+  homepage: "https://docs.helix-origin.club/helix-gaming-db/",
   features: ["indie_metadata", "patreon_titles", "verified_artwork", "offline_fallback", "adult_v3_tier", "i18n_localization", "multi_repo_federation"],
 
   getSettingsSchema(): PluginSettingsConfig {
@@ -427,9 +448,9 @@ export const helixDbMetadataPlugin: UniversalPlugin = {
           key: "endpoint_url",
           label: "Custom API Endpoint",
           type: "text",
-          default: "https://api.helix-origin.club/helix-gaming-db",
+          default: "https://api.helix-origin.club/helix-gaming-db-00",
           description: "Base URL for the HELIX Gaming DB REST API (defaults to Cloudflare edge proxy with GitHub Pages fallback).",
-          placeholder: "https://api.helix-origin.club/helix-gaming-db",
+          placeholder: "https://api.helix-origin.club/helix-gaming-db-00",
         },
         {
           key: "preferred_language",

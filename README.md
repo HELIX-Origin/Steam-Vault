@@ -22,6 +22,14 @@ Built on **Tauri v2** (Rust backend, SvelteKit + Svelte 5 frontend), Universal G
 
 ---
 
+## 📖 Documentation & Technical Wiki
+
+Comprehensive guides, plugin development manuals, and technical architecture specifications are hosted at:
+- **Documentation**: [docs.helix-origin.club/universal-game-launcher](https://docs.helix-origin.club/universal-game-launcher/)
+- **Technical Wiki**: [wiki.helix-origin.club/universal-game-launcher](https://wiki.helix-origin.club/universal-game-launcher/)
+
+---
+
 ## 🧩 Features
 
 - **Steam & GOG Left Games List Sidebar** — Dedicated to the Library view, featuring instant real-time search, quick filter pills (All, Installed, ★ Favorites), platform scan trigger (`↻ Scan`), and collapsible platform and console accordions with live game counts.
